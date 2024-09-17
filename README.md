@@ -57,7 +57,7 @@ python src/main.py --port 105 --destination "https://webhook.site/98745971-f3a3-
 
 ```
 
-##Packaging the Application as a Standalone Executable on macOS
+## Packaging the Application as a Standalone Executable on macOS
 
 If you want to package your Python application as a standalone executable so that it can run without manually setting up a Python environment, you can use PyInstaller.
 
