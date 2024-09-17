@@ -1,7 +1,8 @@
 # Bounce
 
-Bounce is a small service that runs within your network 
-and sends any received files to Aurabox.
+Bounce is a small service that runs within your network and sends any received files to Aurabox.
+
+Bounce is still under development and probably shouldn't be used in a production environment.
 
 ## Build
 
