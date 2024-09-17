@@ -91,7 +91,7 @@ cd dist/
 ./Bounce
 ```
 
-##Running the Application as a Background Service (Optional)
+## Running the Application as a Background Service (Optional)
 
 You can run your application as a background service on macOS using launchd.
 
