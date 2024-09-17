@@ -6,7 +6,7 @@ pynetdicom==1.5.7
 cryptography==43.0.1
 
 # HTTP Requests and Transmission
-requests==2.32.2
+requests==2.32.3
 httpx==0.24.0  # Optional if you want to use async HTTP requests
 
 # Asynchronous Processing
