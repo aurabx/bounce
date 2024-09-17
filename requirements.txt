@@ -10,7 +10,7 @@ requests==2.31.0
 httpx==0.24.0  # Optional if you want to use async HTTP requests
 
 # Asynchronous Processing
-aiohttp==3.8.5  # For async HTTP requests, if using it instead of requests
+aiohttp==3.10.2  # For async HTTP requests, if using it instead of requests
 
 # Configuration Parsing (YAML support)
 PyYAML==6.0
