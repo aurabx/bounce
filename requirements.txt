@@ -3,7 +3,7 @@ pydicom==2.4.0
 pynetdicom==1.5.7
 
 # Encryption
-cryptography==41.0.3
+cryptography==43.0.1
 
 # HTTP Requests and Transmission
 requests==2.31.0
