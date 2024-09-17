@@ -16,7 +16,7 @@ aiohttp==3.8.5  # For async HTTP requests, if using it instead of requests
 PyYAML==6.0
 
 # Packaging (Optional, but for bundling into executables)
-PyInstaller==5.9.0
+PyInstaller==5.13.1
 
 # Monitoring and Metrics (Optional, for monitoring, use as needed)
 prometheus-client==0.16.0
