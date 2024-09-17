@@ -1,0 +1,15 @@
+[Unit]
+Description=DICOM Server
+After=network.target
+
+[Service]
+ExecStart=/path/to/python /path/to/main.py --port 105 --destination "https://myapi.com/upload" --api_key "my_secure_api_key" --storage "/custom/dicom_storage" --delete-after-send
+Restart=always
+User=nobody
+Group=nogroup
+KillSignal=SIGINT
+TimeoutStopSec=20
+SyslogIdentifier=mydicomserver
+
+[Install]
+WantedBy=multi-user.target

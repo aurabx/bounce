@@ -1,0 +1,28 @@
+# DICOM Handling
+pydicom==2.4.0
+pynetdicom==1.5.7
+
+# Encryption
+cryptography==41.0.3
+
+# HTTP Requests and Transmission
+requests==2.31.0
+httpx==0.24.0  # Optional if you want to use async HTTP requests
+
+# Asynchronous Processing
+aiohttp==3.8.5  # For async HTTP requests, if using it instead of requests
+
+# Configuration Parsing (YAML support)
+PyYAML==6.0
+
+# Packaging (Optional, but for bundling into executables)
+PyInstaller==5.9.0
+
+# Monitoring and Metrics (Optional, for monitoring, use as needed)
+prometheus-client==0.16.0
+
+# Testing (Optional, for unit tests)
+pytest==7.4.0
+pytest-mock==3.11.1
+mock==5.0.2
+
