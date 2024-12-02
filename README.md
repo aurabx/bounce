@@ -1,7 +1,7 @@
 1. Build the UI
 
 ```
-$ nvm run build
+$ npm run build
 ```
 
 2. Run Tauri locally
