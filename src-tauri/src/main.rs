@@ -18,7 +18,7 @@ async fn start_server(port: u16) -> Result<(), String> {
 async fn start_service() -> Result<(), String> {
   // Pass the port to the TCP server logic
 
-  service::service::start()
+  service::server::start()
       .await
       .map_err(|e| format!("Failed to start server: {}", e))?;
   Ok(())

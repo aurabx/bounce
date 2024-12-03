@@ -9,7 +9,7 @@ use crate::{log_error, log_info, service};
 use service::config::Config;
 use service::enums::ABSTRACT_SYNTAXES;
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
-use dicom::core::{DataElement, VR};
+use dicom::core::{DataElement, Tag, VR};
 use dicom::dicom_value;
 use dicom::dictionary_std::tags;
 use dicom::object::{FileMetaTableBuilder, InMemDicomObject, StandardDataDictionary};
@@ -27,11 +27,6 @@ pub struct DICOMServer {
 
 impl DICOMServer {
     pub fn new(config: Config) -> Self {
-        let transmission = Transmission::new(
-            config.transmission.api_endpoint.clone(),
-            config.transmission.api_key.clone()
-        );
-
         Self {
             config: Arc::new(config),
             study_timers: Arc::new(Mutex::new(HashMap::new())),
@@ -88,6 +83,8 @@ impl DICOMServer {
         let mut instance_buffer: Vec<u8> = Vec::with_capacity(1024 * 1024);
         let mut msgid = 1;
         let mut sop_class_uid = "".to_string();
+        let mut study_uid = "".to_string();
+        let mut series_uid = "".to_string();
         let mut sop_instance_uid = "".to_string();
 
         let mut options = dicom_ul::association::ServerAssociationOptions::new()
@@ -192,14 +189,10 @@ impl DICOMServer {
                                                 "could not retrieve Affected SOP Class UID",
                                             )?
                                             .to_string();
-                                        sop_instance_uid = obj
-                                            .element(tags::AFFECTED_SOP_INSTANCE_UID)
-                                            .whatever_context("missing Affected SOP Instance UID")?
-                                            .to_str()
-                                            .whatever_context(
-                                                "could not retrieve Affected SOP Instance UID",
-                                            )?
-                                            .to_string();
+                                        sop_instance_uid = Self::extract_tag(&obj, tags::SOP_INSTANCE_UID)?;
+                                        series_uid = Self::extract_tag(&obj, tags::SERIES_INSTANCE_UID)?;
+                                        study_uid = Self::extract_tag(&obj, tags::STUDY_INSTANCE_UID)?;
+
                                     }
                                     instance_buffer.clear();
                                 } else if data_value.value_type == PDataValueType::Data
@@ -241,6 +234,15 @@ impl DICOMServer {
 
                                     // write the files to the current directory with their SOPInstanceUID as filenames
                                     let mut file_path = out_dir.clone();
+
+                                    file_path.push(
+                                        study_uid.trim_end_matches('\0').to_string(),
+                                    );
+
+                                    file_path.push(
+                                        series_uid.trim_end_matches('\0').to_string(),
+                                    );
+
                                     file_path.push(
                                         sop_instance_uid.trim_end_matches('\0').to_string() + ".dcm",
                                     );
@@ -329,6 +331,17 @@ impl DICOMServer {
         Ok(())
     }
 
+    fn extract_tag(obj: &InMemDicomObject, tag: Tag) -> Result<String, Whatever> {
+        Ok(obj
+            .element(tag)
+            .whatever_context(format!("missing {}", tag.element().to_string()))?
+            .to_str()
+            .whatever_context(
+                format!("could not retrieve {}", tag.element().to_string()),
+            )?
+            .to_string())
+    }
+
     fn create_cstore_response(
         &self,
         message_id: u16,
@@ -410,37 +423,4 @@ impl DICOMServer {
     //     Ok(())
     // }
 
-    async fn schedule_study_push(&self, study_id: String) -> Result<(), Box<dyn std::error::Error>> {
-        let timeout = Duration::from_secs(60);
-        //let transmission = Arc::clone(&self.transmission);
-        //let config_clone = Arc::clone(&self.config);
-        let study_last_received = Arc::clone(&self.study_last_received);
-
-        tokio::spawn(async move {
-            time::sleep(timeout).await;
-
-            let last_received = {
-                study_last_received.lock().await
-                    .get(&study_id).cloned()
-            };
-
-            if let Some(last_time) = last_received {
-                let time_since_last = last_time.elapsed();
-                log_info!("Last file for study {} was {} seconds ago",
-                    study_id, time_since_last.as_secs_f64()
-                );
-            }
-
-            // let study_path = Path::new(&config_clone.storage.base_dir).join(study_id);
-
-            // if let Err(e) = transmission.send_archive(
-            //     &study_path,
-            //     config_clone.delete_after_send.unwrap_or(false)
-            // ).await {
-            //     log_error!("Failed to push study: {}", e);
-            // }
-        });
-
-        Ok(())
-    }
 }

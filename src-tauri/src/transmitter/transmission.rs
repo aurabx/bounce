@@ -9,6 +9,7 @@ use zip::{
 };
 use walkdir::{DirEntry, WalkDir};
 use std::io::{Seek, Write};
+use std::sync::Arc;
 use reqwest::{Client, Body};
 use tokio_util::io::ReaderStream;
 use tokio::{fs, fs::File};
@@ -136,4 +137,39 @@ impl Transmission {
         Ok(())
     }
 
+
+
+    async fn schedule_study_push(&self, study_id: String) -> Result<(), Box<dyn std::error::Error>> {
+        let timeout = Duration::from_secs(60);
+        //let transmission = Arc::clone(&self.transmission);
+        //let config_clone = Arc::clone(&self.config);
+        let study_last_received = Arc::clone(&self.study_last_received);
+
+        tokio::spawn(async move {
+            time::sleep(timeout).await;
+
+            let last_received = {
+                study_last_received.lock().await
+                    .get(&study_id).cloned()
+            };
+
+            if let Some(last_time) = last_received {
+                let time_since_last = last_time.elapsed();
+                log_info!("Last file for study {} was {} seconds ago",
+                    study_id, time_since_last.as_secs_f64()
+                );
+            }
+
+            // let study_path = Path::new(&config_clone.storage.base_dir).join(study_id);
+
+            // if let Err(e) = transmission.send_archive(
+            //     &study_path,
+            //     config_clone.delete_after_send.unwrap_or(false)
+            // ).await {
+            //     log_error!("Failed to push study: {}", e);
+            // }
+        });
+
+        Ok(())
+    }
 }

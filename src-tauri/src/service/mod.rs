@@ -1,4 +1,4 @@
-pub mod service;
+pub mod server;
 pub mod config;
 pub mod dicom_server;
 
