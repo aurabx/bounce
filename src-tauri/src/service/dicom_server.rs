@@ -8,7 +8,6 @@ use tokio::time::Instant;
 use crate::{log_error, log_info, service};
 use service::config::Config;
 use service::enums::ABSTRACT_SYNTAXES;
-use service::transmission::Transmission;
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
 use dicom::core::{DataElement, VR};
 use dicom::dicom_value;
@@ -22,7 +21,6 @@ use snafu::{OptionExt, Report, ResultExt, Whatever};
 #[derive(Clone)]
 pub struct DICOMServer {
     config: Arc<Config>,
-    transmission: Arc<Transmission>,
     study_timers: Arc<Mutex<HashMap<String, Instant>>>,
     study_last_received: Arc<Mutex<HashMap<String, Instant>>>,
 }
@@ -36,7 +34,6 @@ impl DICOMServer {
 
         Self {
             config: Arc::new(config),
-            transmission: Arc::new(transmission),
             study_timers: Arc::new(Mutex::new(HashMap::new())),
             study_last_received: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -120,9 +117,7 @@ impl DICOMServer {
             .whatever_context("could not establish association")?;
 
         log_info!("New association from {}", association.client_ae_title());
-        log_info!(
-        "> Presentation contexts: {:?}",
-        association.presentation_contexts()
+        log_info!("> Presentation contexts: {:?}",association.presentation_contexts()
     );
 
         loop {
