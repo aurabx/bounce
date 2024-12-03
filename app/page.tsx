@@ -16,6 +16,17 @@ export default function Home() {
         }
     };
 
+    const startService = async () => {
+        try {
+            await invoke('start_service'); // Pass the port to Tauri
+            alert(`Dicom server started`);
+            console.info('Dicom server started');
+        } catch (error) {
+            console.error('Error starting server:', error);
+            alert(`Failed to start server: ${error}`);
+        }
+    };
+
     return (
         <main className="flex min-h-screen flex-col items-center justify-center p-6">
             <h1 className="text-3xl font-bold mb-6 text-center">
@@ -35,13 +46,22 @@ export default function Home() {
                         placeholder="Enter port number"
                     />
                 </div>
-                <button
-                    onClick={startServer}
-                    className="w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                >
-                    Start Server
-                </button>
-            </div>
+                <div className="mb-4">
+                    <button
+                        onClick={startServer}
+                        className="w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    >
+                        Start Server
+                    </button>
+                </div>
+
+                    <button
+                        onClick={startService}
+                        className="w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    >
+                        Start Dicom Service
+                    </button>
+                </div>
         </main>
-    );
+);
 }

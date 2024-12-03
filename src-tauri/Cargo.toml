@@ -16,18 +16,22 @@ tauri-build = { version = "1.5.1", features = [] }
 
 [dependencies]
 # App platform
-tauri = { version = "1.5.4", features = [] }
+tauri = { version = "1.8.1", features = [] }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 
 # DICOM library
 dicom = { version = "0.8.0" }
+dicom-ul = { version = "0.8.0", features = ["async"] }
+dicom-transfer-syntax-registry = { version = "0.8.0" }
+dicom-dictionary-std = { version = "0.8.0" }
 
 # HTTP client
-reqwest = { version = "0.11.23", features = ["json", "multipart"] }
+reqwest = { version = "0.12.9", features = ["json", "multipart", "stream"] }
 hyper = { version = "1.1.0", features = ["full"] }
 http = "1.0.0"
+log = "^0.4"
 
 # Logging
 tracing = "0.1.40"
@@ -46,6 +50,9 @@ tar = "0.4.43"
 flate2 = "1.0.35"
 zip = "2.2.1"
 sha2 = "0.10.8"
+tokio-util = "0.7.12"
+walkdir = "2.5.0"
+snafu = "0.8"
 
 [features]
 # this feature is used for production builds or when `devPath` points to the filesystem and the built-in dev server is disabled.

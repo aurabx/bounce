@@ -3,3 +3,4 @@ pub mod config;
 pub mod dicom_server;
 pub mod logger;
 pub mod transmission;
+pub mod enums;

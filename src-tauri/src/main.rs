@@ -13,10 +13,11 @@ async fn start_server(port: u16) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn start_service(port: u16) -> Result<(), String> {
+async fn start_service() -> Result<(), String> {
   // Pass the port to the TCP server logic
 
   service::service::start()
+      .await
       .map_err(|e| format!("Failed to start server: {}", e))?;
   Ok(())
 }
@@ -24,6 +25,7 @@ async fn start_service(port: u16) -> Result<(), String> {
 fn main() {
   tauri::Builder::default()
       .invoke_handler(tauri::generate_handler![start_server])
+      .invoke_handler(tauri::generate_handler![start_service])
       .run(tauri::generate_context!())
       .expect("error while running tauri application");
 }

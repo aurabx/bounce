@@ -7,7 +7,7 @@ pub struct Config {
     pub transmission: TransmissionConfig,
     pub dicom: DicomConfig,
     pub storage: StorageConfig,
-    pub delete_after_send: ()
+    pub delete_after_send: (),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
