@@ -1,8 +1,8 @@
+use crate::logger::setup_logger;
 use crate::{log_info, service};
-use tokio;
 use service::config::Config;
 use service::dicom_server::DICOMServer;
-use crate::logger::setup_logger;
+use tokio;
 
 pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
     // Setup logging

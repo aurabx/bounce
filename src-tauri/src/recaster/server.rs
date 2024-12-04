@@ -1,5 +1,5 @@
+use crate::log_error;
 use bytes::BytesMut;
-use clap::{crate_version, value_parser, Arg, ArgAction, Command};
 use dicom_ul::association::client::get_client_pdu;
 use dicom_ul::pdu::writer::write_pdu;
 use dicom_ul::pdu::Pdu;
@@ -11,8 +11,6 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
 use std::thread::JoinHandle;
 use tracing::error;
-use crate::log_error;
-
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -236,22 +234,29 @@ fn run(
     }
 }
 
-
 pub async fn start() {
     tracing::subscriber::set_global_default(tracing_subscriber::FmtSubscriber::new())
         .whatever_context("Could not set up global tracing subscriber")
         .unwrap_or_else(|e: snafu::Whatever| {
-            eprintln!("[ERROR] {}", Report::from_error(e));
+            eprintln!("[ERROR] {:?}", Report::from_error(e));
         });
 
-    let matches = command().get_matches();
 
-    let destination_host = matches.get_one::<String>("destination-host").unwrap();
-    let destination_port = matches.get_one::<String>("destination-port").unwrap();
-    let listen_port: u16 = *matches.get_one("listen-port").unwrap();
-    let strict: bool = matches.get_flag("strict");
-    let verbose = matches.get_flag("verbose");
-    let max_pdu_length: u32 = *matches.get_one("max-pdu-length").unwrap();
+    // let matches = command().get_matches();
+    //
+    // let destination_host = matches.get_one::<String>("destination-host").unwrap();
+    // let destination_port = matches.get_one::<String>("destination-port").unwrap();
+    // let listen_port: u16 = *matches.get_one("listen-port").unwrap();
+    // let strict: bool = matches.get_flag("strict");
+    // let verbose = matches.get_flag("verbose");
+    // let max_pdu_length: u32 = *matches.get_one("max-pdu-length").unwrap();
+
+    let strict = false;
+    let verbose = true;
+    let max_pdu_length = 16384;
+    let destination_host = "127.0.0.1";
+    let destination_port = "443";
+    let listen_port = 104;
 
     let listen_addr = format!("0.0.0.0:{}", listen_port);
     let destination_addr = format!("{}:{}", destination_host, destination_port);

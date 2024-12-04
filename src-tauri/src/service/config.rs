@@ -1,5 +1,5 @@
-use std::env;
 use serde::{Deserialize, Serialize};
+use std::env;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
@@ -40,7 +40,8 @@ impl Config {
             },
             transmission: TransmissionConfig {
                 api_key: env::var("API_KEY").unwrap_or_else(|_| "default_api_key".to_string()),
-                api_endpoint: env::var("API_ENDPOINT").unwrap_or_else(|_| "https://au.aurabox.app".to_string()),
+                api_endpoint: env::var("API_ENDPOINT")
+                    .unwrap_or_else(|_| "https://au.aurabox.app".to_string()),
             },
             dicom: DicomConfig {
                 port: env::var("DICOM_PORT")
@@ -49,10 +50,10 @@ impl Config {
                 host: env::var("DICOM_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
             },
             storage: StorageConfig {
-                base_dir: env::var("STORAGE_DIR").unwrap_or_else(|_| "/tmp/dicom_storage".to_string()),
+                base_dir: env::var("STORAGE_DIR")
+                    .unwrap_or_else(|_| "/tmp/dicom_storage".to_string()),
             },
             delete_after_send: (),
         }
     }
 }
-

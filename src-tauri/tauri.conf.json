@@ -40,10 +40,10 @@
       }
     }
   },
-  "productName": "aurabox-proxy",
-  "mainBinaryName": "aurabox-proxy",
-  "version": "0.1.0",
-  "identifier": "com.tauri.dev",
+  "productName": "aurabox-bounce",
+  "mainBinaryName": "aurabox-bounce",
+  "version": "0.2.0",
+  "identifier": "com.aurabox.bounce",
   "plugins": {},
   "app": {
     "windows": [
@@ -51,7 +51,7 @@
         "fullscreen": false,
         "height": 600,
         "resizable": true,
-        "title": "aurabox-proxy",
+        "title": "Aurabox Bounce",
         "width": 800,
         "useHttpsScheme": true
       }

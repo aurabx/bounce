@@ -1,5 +1,5 @@
-use tokio::net::TcpListener;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
 
 pub async fn server(address: String) -> Result<(), Box<dyn std::error::Error>> {
     // Bind the server to the specified address

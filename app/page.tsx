@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
-export default function Home() {
+export default function Page() {
     const [port, setPort] = useState<string>('8080'); // Default port
 
     const startServer = async () => {

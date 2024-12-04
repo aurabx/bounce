@@ -1,22 +1,20 @@
-use std::collections::HashMap;
-use std::path::{PathBuf};
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::Mutex;
-use tokio::time;
-use tokio::time::Instant;
 use crate::{log_error, log_info, service};
-use service::config::Config;
-use service::enums::ABSTRACT_SYNTAXES;
-use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
 use dicom::core::{DataElement, Tag, VR};
 use dicom::dicom_value;
 use dicom::dictionary_std::tags;
+use dicom::encoding::TransferSyntaxIndex;
 use dicom::object::{FileMetaTableBuilder, InMemDicomObject, StandardDataDictionary};
 use dicom::transfer_syntax::TransferSyntaxRegistry;
-use dicom::encoding::TransferSyntaxIndex;
 use dicom_ul::{pdu::PDataValueType, Pdu};
+use service::config::Config;
+use service::enums::ABSTRACT_SYNTAXES;
 use snafu::{OptionExt, Report, ResultExt, Whatever};
+use std::collections::HashMap;
+use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
+use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use tokio::time::Instant;
 
 #[derive(Clone)]
 pub struct DICOMServer {
@@ -35,8 +33,7 @@ impl DICOMServer {
     }
 
     pub async fn start(&self) -> Result<(), Box<dyn std::error::Error>> {
-
-        let port= self.config.dicom.port;
+        let port = self.config.dicom.port;
         let out_dir = "./tmp";
         let path = PathBuf::from(&out_dir);
 
@@ -47,10 +44,7 @@ impl DICOMServer {
 
         let listen_addr = SocketAddrV4::new(Ipv4Addr::from(0), port);
         let listener = TcpListener::bind(listen_addr)?;
-        log_info!(
-            "listening on: tcp://{}",
-            listen_addr
-        );
+        log_info!("listening on: tcp://{}", listen_addr);
 
         for stream in listener.incoming() {
             match stream {
@@ -68,10 +62,7 @@ impl DICOMServer {
         Ok(())
     }
 
-
-
     pub fn run_store_sync(&self, scu_stream: TcpStream, out_dir: &PathBuf) -> Result<(), Whatever> {
-
         let verbose = true;
         let strict = false;
         let calling_ae_title = "STORE-SCP";
@@ -114,8 +105,10 @@ impl DICOMServer {
             .whatever_context("could not establish association")?;
 
         log_info!("New association from {}", association.client_ae_title());
-        log_info!("> Presentation contexts: {:?}",association.presentation_contexts()
-    );
+        log_info!(
+            "> Presentation contexts: {:?}",
+            association.presentation_contexts()
+        );
 
         loop {
             match association.receive() {
@@ -131,7 +124,8 @@ impl DICOMServer {
                             }
 
                             for data_value in data {
-                                if data_value.value_type == PDataValueType::Data && !data_value.is_last
+                                if data_value.value_type == PDataValueType::Data
+                                    && !data_value.is_last
                                 {
                                     instance_buffer.append(&mut data_value.data);
                                 } else if data_value.value_type == PDataValueType::Command
@@ -144,8 +138,11 @@ impl DICOMServer {
                                     let data_value = &data_value;
                                     let v = &data_value.data;
 
-                                    let obj = InMemDicomObject::read_dataset_with_ts(v.as_slice(), &ts)
-                                        .whatever_context("failed to read incoming DICOM command")?;
+                                    let obj =
+                                        InMemDicomObject::read_dataset_with_ts(v.as_slice(), &ts)
+                                            .whatever_context(
+                                            "failed to read incoming DICOM command",
+                                        )?;
                                     let command_field = obj
                                         .element(tags::COMMAND_FIELD)
                                         .whatever_context("Missing Command Field")?
@@ -189,10 +186,12 @@ impl DICOMServer {
                                                 "could not retrieve Affected SOP Class UID",
                                             )?
                                             .to_string();
-                                        sop_instance_uid = Self::extract_tag(&obj, tags::SOP_INSTANCE_UID)?;
-                                        series_uid = Self::extract_tag(&obj, tags::SERIES_INSTANCE_UID)?;
-                                        study_uid = Self::extract_tag(&obj, tags::STUDY_INSTANCE_UID)?;
-
+                                        sop_instance_uid =
+                                            Self::extract_tag(&obj, tags::SOP_INSTANCE_UID)?;
+                                        series_uid =
+                                            Self::extract_tag(&obj, tags::SERIES_INSTANCE_UID)?;
+                                        study_uid =
+                                            Self::extract_tag(&obj, tags::STUDY_INSTANCE_UID)?;
                                     }
                                     instance_buffer.clear();
                                 } else if data_value.value_type == PDataValueType::Data
@@ -211,13 +210,15 @@ impl DICOMServer {
                                         instance_buffer.as_slice(),
                                         TransferSyntaxRegistry.get(ts).unwrap(),
                                     )
-                                        .whatever_context("failed to read DICOM data object")?;
+                                    .whatever_context("failed to read DICOM data object")?;
                                     let file_meta = FileMetaTableBuilder::new()
                                         .media_storage_sop_class_uid(
                                             obj.element(tags::SOP_CLASS_UID)
                                                 .whatever_context("missing SOP Class UID")?
                                                 .to_str()
-                                                .whatever_context("could not retrieve SOP Class UID")?,
+                                                .whatever_context(
+                                                    "could not retrieve SOP Class UID",
+                                                )?,
                                         )
                                         .media_storage_sop_instance_uid(
                                             obj.element(tags::SOP_INSTANCE_UID)
@@ -235,16 +236,13 @@ impl DICOMServer {
                                     // write the files to the current directory with their SOPInstanceUID as filenames
                                     let mut file_path = out_dir.clone();
 
-                                    file_path.push(
-                                        study_uid.trim_end_matches('\0').to_string(),
-                                    );
+                                    file_path.push(study_uid.trim_end_matches('\0').to_string());
+
+                                    file_path.push(series_uid.trim_end_matches('\0').to_string());
 
                                     file_path.push(
-                                        series_uid.trim_end_matches('\0').to_string(),
-                                    );
-
-                                    file_path.push(
-                                        sop_instance_uid.trim_end_matches('\0').to_string() + ".dcm",
+                                        sop_instance_uid.trim_end_matches('\0').to_string()
+                                            + ".dcm",
                                     );
                                     file_obj
                                         .write_to_file(&file_path)
@@ -270,15 +268,16 @@ impl DICOMServer {
 
                                     let pdu_response = Pdu::PData {
                                         data: vec![dicom_ul::pdu::PDataValue {
-                                            presentation_context_id: data_value.presentation_context_id,
+                                            presentation_context_id: data_value
+                                                .presentation_context_id,
                                             value_type: PDataValueType::Command,
                                             is_last: true,
                                             data: obj_data,
                                         }],
                                     };
-                                    association
-                                        .send(&pdu_response)
-                                        .whatever_context("failed to send response object to SCU")?;
+                                    association.send(&pdu_response).whatever_context(
+                                        "failed to send response object to SCU",
+                                    )?;
                                 }
                             }
                         }
@@ -286,14 +285,14 @@ impl DICOMServer {
                             buffer.clear();
                             association.send(&Pdu::ReleaseRP).unwrap_or_else(|e| {
                                 log_error!(
-                                "Failed to send association release message to SCU: {}",
-                                snafu::Report::from_error(e)
-                            );
+                                    "Failed to send association release message to SCU: {}",
+                                    snafu::Report::from_error(e)
+                                );
                             });
                             log_info!(
-                            "Released association with {}",
-                            association.client_ae_title()
-                        );
+                                "Released association with {}",
+                                association.client_ae_title()
+                            );
                             break;
                         }
                         Pdu::AbortRQ { source } => {
@@ -320,10 +319,10 @@ impl DICOMServer {
 
         if let Ok(peer_addr) = association.inner_stream().peer_addr() {
             log_info!(
-            "Dropping connection with {} ({})",
-            association.client_ae_title(),
-            peer_addr
-        );
+                "Dropping connection with {} ({})",
+                association.client_ae_title(),
+                peer_addr
+            );
         } else {
             log_info!("Dropping connection with {}", association.client_ae_title());
         }
@@ -336,9 +335,7 @@ impl DICOMServer {
             .element(tag)
             .whatever_context(format!("missing {}", tag.element().to_string()))?
             .to_str()
-            .whatever_context(
-                format!("could not retrieve {}", tag.element().to_string()),
-            )?
+            .whatever_context(format!("could not retrieve {}", tag.element().to_string()))?
             .to_string())
     }
 
@@ -391,7 +388,6 @@ impl DICOMServer {
         ])
     }
 
-
     //
     // async fn handle_store(&self, dataset: DataSet) -> Result<(), Box<dyn std::error::Error>> {
     //     let study_id = dataset.get_string("StudyInstanceUID")
@@ -422,5 +418,4 @@ impl DICOMServer {
     //
     //     Ok(())
     // }
-
 }
