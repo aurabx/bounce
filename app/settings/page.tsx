@@ -2,61 +2,79 @@
 
 import { load } from '@tauri-apps/plugin-store';
 import {useEffect, useState} from 'react'
+import fields from "@/app/lib/fields";
 
 export default function Page() {
 
-    let store;
-    const [apiKey, setApikey] = useState<string>('');
+    const [settings, setSettings] = useState<{ [key: string]: any }>();
 
     const save = async () => {
+        let store =  await load('store.json', { autoSave: false });
 
+        for (const key in settings) {
+            await store.set(key, settings[key])
+        }
+
+        await store.save();
     };
+
+    const setField = (key: string, value: any) => {
+        console.log({
+            [key]: value
+        })
+
+        setSettings({
+            ...settings,
+            [key]: value
+        })
+    }
 
     useEffect(() => {
         const loadStore = async () => {
             let store =  await load('store.json', { autoSave: false });
             let values =  await store.entries();
 
-            // console.log()
+            console.log('values', values)
 
-            for (const key of ['api_key']) {
-                const value = await store.get(key)
-                setApikey(value as string)
+            for (const field of fields) {
+                const value = await store.get(field.config.key)
+                setField(field.config.key, value)
             }
-
-
         }
 
-        loadStore()
+        loadStore().finally()
     }, [])
 
     return (
-        <main className="flex min-h-screen flex-col items-center justify-center p-6">
-            <h1 className="text-3xl font-bold mb-6 text-center">
-                Aurabox Proxy TCP Server
+        <main >
+            <h1 className="text-3xl font-bold mb-6">
+                Settings
             </h1>
-            <div className="bg-white dark:bg-gray-800 shadow-lg rounded-lg p-6 w-full max-w-md">
-                <div className="mb-4">
-                    <label htmlFor="api_key" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                        Api key
-                    </label>
-                    <input
-                        type="text"
-                        id="api_key"
-                        value={apiKey}
-                        onChange={(e) => setApikey(e.target.value)}
-                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                        placeholder="Enter api key"
-                    />
-                </div>
-                <div className="mb-4">
-                    <button
-                        onClick={save}
-                        className="w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                    >
-                        Save
-                    </button>
-                </div>
+            <div className="bg-white dark:bg-gray-800 shadow-lg rounded-lg p-6 w-full max-w-xl">
+                <form>
+                    <div className="space-y-12">
+                        <div
+                            className="grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-3">
+                            {fields.map((field) => {
+                                const FieldComponent: any = field.component;
+
+                                return (<FieldComponent
+                                    key={field.config.key}
+                                    config={field.config}
+                                    settings={settings}
+                                    onChange={(e: any) => setField(field.config.key, e.target.value)}/>)
+                            })}
+                            <div className="mb-4">
+                                <button
+                                    onClick={save}
+                                    className="w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                >
+                                    Save
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </form>
             </div>
         </main>
 );

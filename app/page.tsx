@@ -28,11 +28,11 @@ export default function Page() {
     };
 
     return (
-        <main className="flex min-h-screen flex-col items-center justify-center p-6">
-            <h1 className="text-3xl font-bold mb-6 text-center">
-                Aurabox Proxy TCP Server
+        <main className="">
+            <h1 className="text-3xl font-bold mb-6">
+                Aurabox Bounce
             </h1>
-            <div className="bg-white dark:bg-gray-800 shadow-lg rounded-lg p-6 w-full max-w-md">
+            <div className="bg-white dark:bg-gray-800 shadow-lg rounded-lg p-6 w-full max-w-lg">
                 <div className="mb-4">
                     <label htmlFor="port" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                         Port Number
@@ -59,7 +59,7 @@ export default function Page() {
                         onClick={startService}
                         className="w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-400"
                     >
-                        Start Dicom Service
+                        Start Service
                     </button>
                 </div>
         </main>
