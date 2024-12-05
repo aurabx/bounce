@@ -11,7 +11,9 @@ export default function Page() {
     const [loaded, setLoaded] = useState<boolean>(false);
     const [saved, setSaved] = useState<boolean>(false);
 
-    const save = async () => {
+    const save = async (e: any) => {
+        e.preventDefault();
+
         let store =  await load('store.json', { autoSave: false });
 
         for (const field of fields) {
@@ -49,14 +51,14 @@ export default function Page() {
     }, [])
 
     return (
-        <main >
+        <>
             <h1 className="text-3xl font-bold mb-6">
                 Settings
             </h1>
             {(saved ? <Alert>Saved</Alert> : null)}
-            <div className="bg-white dark:bg-gray-800 shadow-lg rounded-lg p-6 w-full max-w-xl">
+            <div className="bg-white shadow-lg rounded-lg p-6 w-full">
                 <Suspense fallback={<Loading />}>
-                    {(loaded ? <form>
+                    {(loaded ? <form onSubmit={save}>
                         <div className="space-y-12">
                             <div
                                 className="grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-3">
@@ -70,20 +72,20 @@ export default function Page() {
                                         value={settings && settings[field.config.key] ? settings[field.config.key] : undefined}
                                         onChange={(e: any) => setField(field.config.key, e.target.value)}/>)
                                 })}
-                                <div className="mb-4">
-                                    <button
-                                        onClick={save}
-                                        className="w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                                    >
-                                        Save
-                                    </button>
-                                </div>
+                            </div>
+                            <div className="mb-4 flex justify-end">
+                                <button
+                                    type="submit"
+                                    className="inline-flex grow-0 transition ease-in-out text-center border shadow-sm font-medium rounded-md px-4 py-2 text-sm cursor-pointer text-white bg-indigo-400 hover:bg-indigo-500"
+                                >
+                                    Save
+                                </button>
                             </div>
                         </div>
                     </form> : null)}
                 </Suspense>
             </div>
-        </main>
+        </>
     );
 }
 

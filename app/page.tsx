@@ -49,7 +49,7 @@ export default function Page() {
                 <div className="mb-4">
                     <button
                         onClick={startServer}
-                        className="w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        className="flex w-full transition ease-in-out text-center border shadow-sm font-medium rounded-md px-4 py-2 text-sm cursor-pointer text-white bg-indigo-400 hover:bg-indigo-500"
                     >
                         Start Server
                     </button>
@@ -57,7 +57,7 @@ export default function Page() {
 
                     <button
                         onClick={startService}
-                        className="w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        className="flex w-full  transition ease-in-out text-center border shadow-sm font-medium rounded-md px-4 py-2 text-sm cursor-pointer text-white bg-indigo-400 hover:bg-indigo-500"
                     >
                         Start Service
                     </button>

@@ -17,7 +17,7 @@ const fields = [{
     config: {
         label: 'Api Key',
         key: 'api_key',
-        help: 'You can generate an api in the account section of your',
+        help: 'You can generate an api key in the account section of Aurabox',
     },
     component: TextInput
 }];

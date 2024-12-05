@@ -28,7 +28,7 @@ export default function SelectInput(props: {
                     >{label}</option>
                 ))}
             </select>
-            <p className="mt-3 text-sm/6 text-gray-600">{props.config.help}</p>
+            <p className="mt-1 text-sm/6 text-gray-600">{props.config.help}</p>
         </div>
     </div>;
 }
