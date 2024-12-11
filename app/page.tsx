@@ -1,10 +1,32 @@
 'use client';
 
-import { useState } from 'react';
+import {useEffect, useState} from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { logMessage } from "./lib/store"
+import {useSelector} from "react-redux";
+import {useAppDispatch, useAppSelector} from "@/app/lib/hook";
+import { listen } from '@tauri-apps/api/event';
 
 export default function Page() {
     const [port, setPort] = useState<string>('104'); // Default port
+    //const logs = useSelector(selectLogs);
+
+    const logs = useAppSelector((state) => state.main.logs)
+    const dispatch = useAppDispatch()
+
+    let bindEvents = async () => {
+        await listen("log", (event) => {
+            console.log(event)
+            const log = logMessage(event.payload as string);
+            dispatch(log)
+        })
+    }
+
+    useEffect(() => {
+        bindEvents().finally();
+    }, [])
+
+
 
 
     const startService = async () => {
@@ -25,6 +47,8 @@ export default function Page() {
             alert(`Failed to start server: ${error}`);
         }
     };
+
+
 
     return (
         <main className="">

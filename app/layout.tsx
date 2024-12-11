@@ -5,9 +5,6 @@ import './globals.css'
 import MenuItem from "@/app/components/MenuItem";
 import {classNames} from "@/app/helpers";
 import Providers from './components/Providers'
-import {useAppDispatch, useAppSelector} from "@/app/lib/hook";
-import {listen} from "@tauri-apps/api/event";
-import {logMessage} from "@/app/lib/store";
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -21,17 +18,6 @@ export default function RootLayout({
 }: {
   children: React.ReactNode
 }) {
-
-  const logs = useAppSelector((state) => state.main.logs)
-  const dispatch = useAppDispatch()
-
-  let bindEvents = async () => {
-    await listen("log", (event) => {
-      console.log(event)
-      // dispatch()
-      dispatch(() => logMessage(event.payload as string))
-    })
-  }
 
   return (
     <Providers>
