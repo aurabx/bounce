@@ -46,20 +46,22 @@ impl DICOMServer {
         let listener = TcpListener::bind(listen_addr)?;
         log_info!("listening on: tcp://{}", listen_addr);
 
-        for stream in listener.incoming() {
-            match stream {
-                Ok(scu_stream) => {
-                    if let Err(e) = self.run_store_sync(scu_stream, &path) {
+        loop {
+            for stream in listener.incoming() {
+                match stream {
+                    Ok(scu_stream) => {
+                        if let Err(e) = self.run_store_sync(scu_stream, &path) {
+                            log_error!("{}", snafu::Report::from_error(e));
+                        }
+                    }
+                    Err(e) => {
                         log_error!("{}", snafu::Report::from_error(e));
                     }
-                }
-                Err(e) => {
-                    log_error!("{}", snafu::Report::from_error(e));
                 }
             }
         }
 
-        Ok(())
+        // Ok(())
     }
 
     pub fn run_store_sync(&self, scu_stream: TcpStream, out_dir: &PathBuf) -> Result<(), Whatever> {
@@ -143,11 +145,9 @@ impl DICOMServer {
                                             .whatever_context(
                                             "failed to read incoming DICOM command",
                                         )?;
-                                    let command_field = obj
-                                        .element(tags::COMMAND_FIELD)
-                                        .whatever_context("Missing Command Field")?
-                                        .uint16()
-                                        .whatever_context("Command Field is not an integer")?;
+
+                                    let command_field =
+                                        Self::extract_int_tag(&obj, tags::COMMAND_FIELD)?;
 
                                     if command_field == 0x0030 {
                                         // Handle C-ECHO-RQ
@@ -173,25 +173,16 @@ impl DICOMServer {
                                             "failed to send C-ECHO response object to SCU",
                                         )?;
                                     } else {
-                                        msgid = obj
-                                            .element(tags::MESSAGE_ID)
-                                            .whatever_context("Missing Message ID")?
-                                            .to_int()
-                                            .whatever_context("Message ID is not an integer")?;
-                                        sop_class_uid = obj
-                                            .element(tags::AFFECTED_SOP_CLASS_UID)
-                                            .whatever_context("missing Affected SOP Class UID")?
-                                            .to_str()
-                                            .whatever_context(
-                                                "could not retrieve Affected SOP Class UID",
-                                            )?
-                                            .to_string();
+                                        msgid =
+                                            Self::extract_int_tag(&obj, tags::MESSAGE_ID)?;
+                                        sop_class_uid =
+                                            Self::extract_string_tag(&obj, tags::AFFECTED_SOP_CLASS_UID)?;
                                         sop_instance_uid =
-                                            Self::extract_tag(&obj, tags::SOP_INSTANCE_UID)?;
+                                            Self::extract_string_tag(&obj, tags::SOP_INSTANCE_UID)?;
                                         series_uid =
-                                            Self::extract_tag(&obj, tags::SERIES_INSTANCE_UID)?;
+                                            Self::extract_string_tag(&obj, tags::SERIES_INSTANCE_UID)?;
                                         study_uid =
-                                            Self::extract_tag(&obj, tags::STUDY_INSTANCE_UID)?;
+                                            Self::extract_string_tag(&obj, tags::STUDY_INSTANCE_UID)?;
                                     }
                                     instance_buffer.clear();
                                 } else if data_value.value_type == PDataValueType::Data
@@ -212,20 +203,8 @@ impl DICOMServer {
                                     )
                                     .whatever_context("failed to read DICOM data object")?;
                                     let file_meta = FileMetaTableBuilder::new()
-                                        .media_storage_sop_class_uid(
-                                            obj.element(tags::SOP_CLASS_UID)
-                                                .whatever_context("missing SOP Class UID")?
-                                                .to_str()
-                                                .whatever_context(
-                                                    "could not retrieve SOP Class UID",
-                                                )?,
-                                        )
-                                        .media_storage_sop_instance_uid(
-                                            obj.element(tags::SOP_INSTANCE_UID)
-                                                .whatever_context("missing SOP Instance UID")?
-                                                .to_str()
-                                                .whatever_context("missing SOP Instance UID")?,
-                                        )
+                                        .media_storage_sop_class_uid(Self::extract_string_tag(&obj, tags::SOP_CLASS_UID)?)
+                                        .media_storage_sop_instance_uid(Self::extract_string_tag(&obj, tags::SOP_INSTANCE_UID)?)
                                         .transfer_syntax(ts)
                                         .build()
                                         .whatever_context(
@@ -237,9 +216,7 @@ impl DICOMServer {
                                     let mut file_path = out_dir.clone();
 
                                     file_path.push(study_uid.trim_end_matches('\0').to_string());
-
                                     file_path.push(series_uid.trim_end_matches('\0').to_string());
-
                                     file_path.push(
                                         sop_instance_uid.trim_end_matches('\0').to_string()
                                             + ".dcm",
@@ -330,13 +307,22 @@ impl DICOMServer {
         Ok(())
     }
 
-    fn extract_tag(obj: &InMemDicomObject, tag: Tag) -> Result<String, Whatever> {
+    fn extract_string_tag(obj: &InMemDicomObject, tag: Tag) -> Result<String, Whatever> {
         Ok(obj
             .element(tag)
             .whatever_context(format!("missing {}", tag.element().to_string()))?
             .to_str()
             .whatever_context(format!("could not retrieve {}", tag.element().to_string()))?
             .to_string())
+    }
+
+    fn extract_int_tag(obj: &InMemDicomObject, tag: Tag) -> Result<u16, Whatever> {
+        Ok(obj
+            .element(tag)
+            .whatever_context(format!("missing {}", tag.element().to_string()))?
+            .to_int()
+            .whatever_context(format!("could not retrieve {}", tag.element().to_string()))?
+        )
     }
 
     fn create_cstore_response(

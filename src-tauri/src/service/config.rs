@@ -33,6 +33,7 @@ pub struct StorageConfig {
 }
 
 impl Config {
+
     pub fn load() -> Self {
         Config {
             encryption: EncryptionConfig {
@@ -55,5 +56,24 @@ impl Config {
             },
             delete_after_send: (),
         }
+    }
+
+    // Setter methods for each config section
+    pub fn set_encryption_key(&mut self, key: String) {
+        self.encryption.key = key;
+    }
+
+    pub fn set_transmission_config(&mut self, api_key: String, api_endpoint: String) {
+        self.transmission.api_key = api_key;
+        self.transmission.api_endpoint = api_endpoint;
+    }
+
+    pub fn set_dicom_config(&mut self, port: u16, host: String) {
+        self.dicom.port = port;
+        self.dicom.host = host;
+    }
+
+    pub fn set_storage_base_dir(&mut self, base_dir: String) {
+        self.storage.base_dir = base_dir;
     }
 }

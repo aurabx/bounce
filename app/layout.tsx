@@ -1,9 +1,13 @@
-
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
+import React from 'react'
 import './globals.css'
 import MenuItem from "@/app/components/MenuItem";
 import {classNames} from "@/app/helpers";
+import Providers from './components/Providers'
+import {useAppDispatch, useAppSelector} from "@/app/lib/hook";
+import {listen} from "@tauri-apps/api/event";
+import {logMessage} from "@/app/lib/store";
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -12,38 +16,50 @@ export const metadata: Metadata = {
   description: 'Dicom proxy recaster and packager',
 }
 
-
-
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+
+  const logs = useAppSelector((state) => state.main.logs)
+  const dispatch = useAppDispatch()
+
+  let bindEvents = async () => {
+    await listen("log", (event) => {
+      console.log(event)
+      // dispatch()
+      dispatch(() => logMessage(event.payload as string))
+    })
+  }
+
   return (
-    <html lang="en" className="h-full bg-white">
-      <body className={classNames('h-full', 'bg-slate-100', 'bg-none', inter.className)}>
-        <div>
-          <div className="fixed inset-y-0 flex w-48 flex-col bg-white">
-            <div className="flex grow flex-col overflow-y-auto bg-indigo-600 px-6 py-4">
-              <nav className="flex flex-1 flex-col">
-                <ul role="list" className="flex flex-1 flex-col">
-                  <li>
-                    <ul role="list" className="space-y-2">
-                      <MenuItem href="/" label="Dashboard" />
-                      <MenuItem href="/settings" label="Settings" />
-                    </ul>
-                  </li>
-                </ul>
-              </nav>
+    <Providers>
+      <html lang="en" className="h-full bg-white">
+        <body className={classNames('h-full', 'bg-slate-100', 'bg-none', inter.className)}>
+          <div>
+            <div className="fixed inset-y-0 flex w-48 flex-col bg-white">
+              <div className="flex grow flex-col overflow-y-auto bg-indigo-600 px-6 py-4">
+                <nav className="flex flex-1 flex-col">
+                  <ul role="list" className="flex flex-1 flex-col">
+                    <li>
+                      <ul role="list" className="space-y-2">
+                        <MenuItem href="/" label="Dashboard" />
+                        <MenuItem href="/settings" label="Settings" />
+                      </ul>
+                    </li>
+                  </ul>
+                </nav>
+              </div>
+            </div>
+            <div className="pl-48">
+              <main className="py-4">
+                <div className="p-4 max-w-xl">{children}</div>
+              </main>
             </div>
           </div>
-          <div className="pl-48">
-            <main className="py-4">
-              <div className="p-4  max-w-xl">{children}</div>
-            </main>
-          </div>
-        </div>
-      </body>
-    </html>
+        </body>
+      </html>
+    </Providers>
   )
 }

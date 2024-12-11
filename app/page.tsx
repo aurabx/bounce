@@ -4,23 +4,22 @@ import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
 export default function Page() {
-    const [port, setPort] = useState<string>('8080'); // Default port
+    const [port, setPort] = useState<string>('104'); // Default port
 
-    const startServer = async () => {
+
+    const startService = async () => {
         try {
-            await invoke('start_server', { port: parseInt(port) }); // Pass the port to Tauri
-            alert(`TCP Server started on port ${port}`);
+            await invoke('start_service', { port: parseInt(port) }); // Pass the port to Tauri
+            console.info(`Dicom server started on port ${port}`);
         } catch (error) {
             console.error('Error starting server:', error);
             alert(`Failed to start server: ${error}`);
         }
     };
 
-    const startService = async () => {
+    const sendLog = async () => {
         try {
-            await invoke('start_service'); // Pass the port to Tauri
-            alert(`Dicom server started`);
-            console.info('Dicom server started');
+            await invoke('send_log', { log: "Log and things" }); // Pass the port to Tauri
         } catch (error) {
             console.error('Error starting server:', error);
             alert(`Failed to start server: ${error}`);
@@ -48,20 +47,25 @@ export default function Page() {
                 </div>
                 <div className="mb-4">
                     <button
-                        onClick={startServer}
-                        className="flex w-full transition ease-in-out text-center border shadow-sm font-medium rounded-md px-4 py-2 text-sm cursor-pointer text-white bg-indigo-400 hover:bg-indigo-500"
-                    >
-                        Start Server
-                    </button>
-                </div>
-
-                    <button
                         onClick={startService}
                         className="flex w-full  transition ease-in-out text-center border shadow-sm font-medium rounded-md px-4 py-2 text-sm cursor-pointer text-white bg-indigo-400 hover:bg-indigo-500"
                     >
                         Start Service
                     </button>
                 </div>
+                <div className="mb-4">
+                    <button
+                        onClick={sendLog}
+                        className="flex w-full  transition ease-in-out text-center border shadow-sm font-medium rounded-md px-4 py-2 text-sm cursor-pointer text-white bg-indigo-400 hover:bg-indigo-500"
+                    >
+                        Send Log
+                    </button>
+                </div>
+            </div>
+            <div className="bg-white mt-4 shadow-lg rounded-lg p-6 w-full max-w-lg overflow-auto">
+                {JSON.stringify(logs)}
+            </div>
+
         </main>
-);
+    );
 }

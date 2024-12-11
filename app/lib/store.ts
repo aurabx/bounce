@@ -1,0 +1,43 @@
+import { configureStore, createSlice } from '@reduxjs/toolkit'
+import type { PayloadAction } from '@reduxjs/toolkit'
+
+export interface State {
+    logs: string[]
+}
+
+const initialState: State = {
+    logs: [],
+}
+
+export const mainSlice = createSlice({
+    name: 'main',
+    initialState,
+    reducers: {
+        logMessage: (state, action: PayloadAction<string>) => {
+            state.logs.push(action.payload)
+        },
+    },
+})
+
+// Action creators are generated for each case reducer function
+export const { logMessage } = mainSlice.actions
+
+export const makeStore = () => {
+    return configureStore({
+        reducer: {
+            main: mainSlice.reducer
+        },
+    })
+}
+
+
+// Infer the type of makeStore
+export type AppStore = ReturnType<typeof makeStore>
+// Infer the `RootState` and `AppDispatch` types from the store itself
+export type RootState = ReturnType<AppStore['getState']>
+export type AppDispatch = AppStore['dispatch']
+
+// The function below is called a selector and allows us to select a value from
+// the state. Selectors can also be defined inline where they're used instead of
+// in the slice file. For example: `useSelector((state) => state.counter.value)`
+export const selectLogs = (state: RootState) => state.main.logs
