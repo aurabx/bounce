@@ -6,7 +6,8 @@ use serde_json::json;
 use std::collections::HashMap;
 
 mod logger;
-mod service;
+mod config;
+mod receiver;
 
 #[tauri::command]
 async fn start_service(app_handle: tauri::AppHandle, port: u16) -> Result<(), String> {
@@ -26,11 +27,11 @@ async fn start_service(app_handle: tauri::AppHandle, port: u16) -> Result<(), St
     let mut keyed_config = HashMap::new();
     for (key, value) in config {
         keyed_config.insert(key, value);
-
     }
+
     println!("store.entries(): {}", serde_json::to_string(&keyed_config).unwrap().to_string());
 
-    service::server::start(port)
+    receiver::server::start(port)
         .await
         .map_err(|e| format!("Failed to start server: {}", e))?;
     Ok(())

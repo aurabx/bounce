@@ -1,7 +1,7 @@
 use crate::logger::setup_logger;
-use crate::{service};
-use service::config::Config;
-use service::dicom_server::DICOMServer;
+use crate::{receiver, config};
+use config::config::Config;
+use receiver::dicom_server::DICOMServer;
 use tokio;
 
 

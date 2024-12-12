@@ -56,7 +56,7 @@ export default function Page() {
                 Settings
             </h1>
             {(saved ? <Alert>Saved</Alert> : null)}
-            <div className="bg-white shadow-lg rounded-lg p-6 w-full">
+            <div className="bg-white shadow-lg rounded-lg p-6 w-full  max-w-xl">
                 <Suspense fallback={<Loading />}>
                     {(loaded ? <form onSubmit={save}>
                         <div className="space-y-12">

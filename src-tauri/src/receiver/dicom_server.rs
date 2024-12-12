@@ -1,4 +1,4 @@
-use crate::{log_error, log_info, service};
+use crate::{log_error, log_info, receiver, config};
 use dicom::core::{DataElement, Tag, VR};
 use dicom::dicom_value;
 use dicom::dictionary_std::tags;
@@ -6,8 +6,8 @@ use dicom::encoding::TransferSyntaxIndex;
 use dicom::object::{FileMetaTableBuilder, InMemDicomObject, StandardDataDictionary};
 use dicom::transfer_syntax::TransferSyntaxRegistry;
 use dicom_ul::{pdu::PDataValueType, Pdu};
-use service::config::Config;
-use service::enums::ABSTRACT_SYNTAXES;
+use config::config::Config;
+use receiver::enums::ABSTRACT_SYNTAXES;
 use snafu::{OptionExt, Report, ResultExt, Whatever};
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};

@@ -2,36 +2,38 @@
 
 import {Suspense, useEffect, useState} from 'react'
 import { listen } from "@tauri-apps/api/event";
+import {useAppSelector} from "@/app/lib/hook";
 
 export default function Page() {
 
     const [loaded, setLoaded] = useState<boolean>(false);
-    const [log, setLog] = useState<string>('');
 
+    const logs = useAppSelector((state) => state.main.logs)
 
-    let bindEvents = async () => {
-        await listen("log", (event) => {
-
-        })
-    }
-
-    bindEvents()
+    useEffect(() => {
+        setLoaded(true)
+    }, []);
 
     return (
-        <>
+        <div className="h-full flex flex-col">
             <h1 className="text-3xl font-bold mb-6">
                 Logs
             </h1>
-            <div className="bg-white shadow-lg rounded-lg p-6 w-full">
-                <Suspense fallback={<Loading />}>
-                    {(loaded ? <div className="min-h-screen">
-                        <textarea className="min-h-screen">{log}</textarea>
+            <div className="bg-white shadow-lg rounded-lg p-6 w-full flex-grow">
+                <Suspense fallback={<Loading/>}>
+                    {(loaded ? <div className="h-full">
+                        <ul className="overflow-y-scroll">
+                            {logs.map((log, ind) => (
+                                <li key={ind}>{log}</li>
+                            ))}
+                        </ul>
                     </div> : null)}
                 </Suspense>
             </div>
-        </>
+        </div>
     );
 }
+
 
 function Loading() {
     return <h2>🌀 Loading...</h2>;

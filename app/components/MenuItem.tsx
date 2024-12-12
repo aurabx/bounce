@@ -2,7 +2,7 @@
 
 import {classNames} from "@/app/helpers";
 import {usePathname} from "next/navigation";
-
+import Link from 'next/link'
 
 export default function MenuItem({
          href = '',
@@ -14,7 +14,7 @@ export default function MenuItem({
     const pathName = usePathname();
 
     return <li>
-        <a
+        <Link
             href={href}
             className={classNames(
                 pathName === href
@@ -24,6 +24,6 @@ export default function MenuItem({
             )}
         >
             {label}
-        </a>
+        </Link>
     </li>;
 }

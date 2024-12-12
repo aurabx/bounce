@@ -109,6 +109,7 @@ impl Transmission {
             Ok(())
         }
 
+
     async fn compress_study(&self, study_path: &Path) -> Result<PathBuf> {
         let archive_path = study_path.with_extension("zip");
 
