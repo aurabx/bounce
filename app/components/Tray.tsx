@@ -1,5 +1,4 @@
 "use client";
-// import { emit } from "@tauri-apps/api/event";
 import { Menu, MenuItem, PredefinedMenuItem } from "@tauri-apps/api/menu";
 import { defaultWindowIcon } from "@tauri-apps/api/app";
 import { TrayIcon, type TrayIconOptions } from "@tauri-apps/api/tray";
@@ -32,7 +31,7 @@ const Tray = () => {
 
         const menu = await getTrayMenu();
 
-        const iconPath = "icons/icon.png";
+        const iconPath = "icons/icon.ico";
         // const icon = await defaultWindowIcon() ?? undefined;
         const icon = await resolveResource(iconPath) ?? undefined;
 

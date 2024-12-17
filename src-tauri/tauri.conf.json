@@ -32,7 +32,7 @@
       "providerShortName": null,
       "signingIdentity": null
     },
-    "resources": [],
+    "resources": ["icons/icon.ico", "icons/**/*"],
     "shortDescription": "",
     "linux": {
       "deb": {
