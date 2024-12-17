@@ -1,19 +1,19 @@
 'use client';
 
-import {useEffect, useState} from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { logMessage } from "./lib/store"
-import {useSelector} from "react-redux";
-import {useAppDispatch, useAppSelector} from "@/app/lib/hook";
-import { listen } from '@tauri-apps/api/event';
+import {load} from "@tauri-apps/plugin-store";
+
 
 export default function Page() {
-    const [port, setPort] = useState<string>('104'); // Default port
 
-    const startService = async () => {
+
+    const receiverStart = async () => {
+        let store =  await load('store.json', { autoSave: false });
+
         try {
-            await invoke('start_service', { port: parseInt(port) }); // Pass the port to Tauri
-            console.info(`Dicom server started on port ${port}`);
+            await invoke('receiver_start', {log: "Something"}); // Pass the port to Tauri
+            //await invoke('start_service', {message: "Something"}); // Pass the port to Tauri
+            console.info(`Dicom server started on port ${await store.get('port')}`);
         } catch (error) {
             console.error('Error starting server:', error);
             alert(`Failed to start server: ${error}`);
@@ -30,7 +30,6 @@ export default function Page() {
     };
 
 
-
     return (
         <main className="">
             <h1 className="text-3xl font-bold mb-6">
@@ -38,21 +37,8 @@ export default function Page() {
             </h1>
             <div className="bg-white dark:bg-gray-800 shadow-lg rounded-lg p-6 w-full max-w-lg">
                 <div className="mb-4">
-                    <label htmlFor="port" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                        Port Number
-                    </label>
-                    <input
-                        type="number"
-                        id="port"
-                        value={port}
-                        onChange={(e) => setPort(e.target.value)}
-                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                        placeholder="Enter port number"
-                    />
-                </div>
-                <div className="mb-4">
                     <button
-                        onClick={startService}
+                        onClick={receiverStart}
                         className="flex w-full  transition ease-in-out text-center border shadow-sm font-medium rounded-md px-4 py-2 text-sm cursor-pointer text-white bg-indigo-400 hover:bg-indigo-500"
                     >
                         Start Service

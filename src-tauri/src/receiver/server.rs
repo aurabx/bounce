@@ -1,19 +1,12 @@
 use crate::logger::setup_logger;
-use crate::{receiver, config};
-use config::config::Config;
+use crate::{receiver, store};
 use receiver::dicom_server::DICOMServer;
+use store::config::Config;
 use tokio;
 
-
-pub async fn start(port: u16) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn start(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     // Setup logging
     setup_logger();
-
-    // Load configuration
-    let mut config = Config::load();
-
-    let host = "127.0.0.1";
-    config.set_dicom_config(port, host.to_string());
 
     // Create DICOM server
     let dicom_server = DICOMServer::new(config);

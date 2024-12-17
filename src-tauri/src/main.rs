@@ -1,45 +1,17 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-use tauri::{Emitter, Manager};
-use tauri_plugin_store::{Store, StoreBuilder};
-use tauri_plugin_store::StoreExt;
-use serde_json::json;
-use std::collections::HashMap;
-
 mod logger;
-mod config;
 mod receiver;
+mod store;
+mod lib;
 
-#[tauri::command]
-async fn start_service(app_handle: tauri::AppHandle, port: u16) -> Result<(), String> {
-
-    let store = app_handle.store("store.json")
-        .map_err(|e| format!("Failed to load store: {}", e))?;
-
-    let api_key = store.get("api_key")
-        .ok_or_else(|| "API key not found in store".to_string())?
-        .as_str()
-        .ok_or_else(|| "API key is not a string".to_string())?
-        .to_string();
-
-
-    println!("api_key in command: {}", api_key);
-    let config = store.entries();
-    let mut keyed_config = HashMap::new();
-    for (key, value) in config {
-        keyed_config.insert(key, value);
-    }
-
-    println!("store.entries(): {}", serde_json::to_string(&keyed_config).unwrap().to_string());
-
-    receiver::server::start(port)
-        .await
-        .map_err(|e| format!("Failed to start server: {}", e))?;
-    Ok(())
-}
+use store::config::Config;
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::TrayIconBuilder;
+use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_store::StoreExt;
 
 #[tauri::command]
 fn send_log(app: tauri::AppHandle, log: String) -> Result<(), String> {
-
     println!("log: {}", log);
 
     app.emit("log", log).unwrap();
@@ -47,26 +19,45 @@ fn send_log(app: tauri::AppHandle, log: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+async fn receiver_start(app: tauri::AppHandle, log: String) -> Result<(), String> {
+    println!("receiver_start: {}", log);
+
+    let store = app
+        .store("store.json")
+        .map_err(|e| format!("Failed to load store: {}", e))?;
+
+    let config = Config::load(store);
+
+    app.emit("receiver_start", log).unwrap();
+
+    receiver::server::start(config)
+        .await
+        .map_err(|e| format!("Failed to start server: {}", e))?;
+
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_store::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![start_service])
-        .invoke_handler(tauri::generate_handler![send_log])
         .setup(|app| {
-            // This loads the store from disk
             let store = app.store("store.json")?;
-            let struct_app_handle = app.handle().clone();
 
-            // Note that values must be serde_json::Value instances,
-            // otherwise, they will not be compatible with the JavaScript bindings.
-            // store.set("a".to_string(), json!("b"));
+            // Retrieve API key (with error handling)
+            let value = store
+                .get("api_key")
+                .expect("Failed to get api_key from store");
 
-            let value = store.get("api_key").expect("Failed to get api_key from store");
             println!("api_key: {}", value);
 
+            //lib::tray_icon::setup(app);
 
             Ok(())
         })
+        .invoke_handler(tauri::generate_handler![receiver_start, send_log])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

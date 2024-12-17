@@ -31,7 +31,7 @@ impl Transmission {
         }
     }
 
-    pub async fn send_archive(
+    pub async fn send_study(
         &self,
         study_path: &Path,
         delete_after_send: bool

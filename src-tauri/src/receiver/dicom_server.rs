@@ -1,4 +1,4 @@
-use crate::{log_error, log_info, receiver, config};
+use crate::{log_error, log_info, receiver, store};
 use dicom::core::{DataElement, Tag, VR};
 use dicom::dicom_value;
 use dicom::dictionary_std::tags;
@@ -6,34 +6,27 @@ use dicom::encoding::TransferSyntaxIndex;
 use dicom::object::{FileMetaTableBuilder, InMemDicomObject, StandardDataDictionary};
 use dicom::transfer_syntax::TransferSyntaxRegistry;
 use dicom_ul::{pdu::PDataValueType, Pdu};
-use config::config::Config;
 use receiver::enums::ABSTRACT_SYNTAXES;
 use snafu::{OptionExt, Report, ResultExt, Whatever};
-use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::Mutex;
-use tokio::time::Instant;
+use store::config::Config;
 
 #[derive(Clone)]
 pub struct DICOMServer {
     config: Arc<Config>,
-    study_timers: Arc<Mutex<HashMap<String, Instant>>>,
-    study_last_received: Arc<Mutex<HashMap<String, Instant>>>,
 }
 
 impl DICOMServer {
     pub fn new(config: Config) -> Self {
         Self {
             config: Arc::new(config),
-            study_timers: Arc::new(Mutex::new(HashMap::new())),
-            study_last_received: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
     pub async fn start(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let port = self.config.dicom.port;
+        let port = self.config.port;
         let out_dir = "./tmp";
         let path = PathBuf::from(&out_dir);
 
@@ -173,16 +166,21 @@ impl DICOMServer {
                                             "failed to send C-ECHO response object to SCU",
                                         )?;
                                     } else {
-                                        msgid =
-                                            Self::extract_int_tag(&obj, tags::MESSAGE_ID)?;
-                                        sop_class_uid =
-                                            Self::extract_string_tag(&obj, tags::AFFECTED_SOP_CLASS_UID)?;
+                                        msgid = Self::extract_int_tag(&obj, tags::MESSAGE_ID)?;
+                                        sop_class_uid = Self::extract_string_tag(
+                                            &obj,
+                                            tags::AFFECTED_SOP_CLASS_UID,
+                                        )?;
                                         sop_instance_uid =
                                             Self::extract_string_tag(&obj, tags::SOP_INSTANCE_UID)?;
-                                        series_uid =
-                                            Self::extract_string_tag(&obj, tags::SERIES_INSTANCE_UID)?;
-                                        study_uid =
-                                            Self::extract_string_tag(&obj, tags::STUDY_INSTANCE_UID)?;
+                                        series_uid = Self::extract_string_tag(
+                                            &obj,
+                                            tags::SERIES_INSTANCE_UID,
+                                        )?;
+                                        study_uid = Self::extract_string_tag(
+                                            &obj,
+                                            tags::STUDY_INSTANCE_UID,
+                                        )?;
                                     }
                                     instance_buffer.clear();
                                 } else if data_value.value_type == PDataValueType::Data
@@ -203,8 +201,14 @@ impl DICOMServer {
                                     )
                                     .whatever_context("failed to read DICOM data object")?;
                                     let file_meta = FileMetaTableBuilder::new()
-                                        .media_storage_sop_class_uid(Self::extract_string_tag(&obj, tags::SOP_CLASS_UID)?)
-                                        .media_storage_sop_instance_uid(Self::extract_string_tag(&obj, tags::SOP_INSTANCE_UID)?)
+                                        .media_storage_sop_class_uid(Self::extract_string_tag(
+                                            &obj,
+                                            tags::SOP_CLASS_UID,
+                                        )?)
+                                        .media_storage_sop_instance_uid(Self::extract_string_tag(
+                                            &obj,
+                                            tags::SOP_INSTANCE_UID,
+                                        )?)
                                         .transfer_syntax(ts)
                                         .build()
                                         .whatever_context(
@@ -321,8 +325,7 @@ impl DICOMServer {
             .element(tag)
             .whatever_context(format!("missing {}", tag.element().to_string()))?
             .to_int()
-            .whatever_context(format!("could not retrieve {}", tag.element().to_string()))?
-        )
+            .whatever_context(format!("could not retrieve {}", tag.element().to_string()))?)
     }
 
     fn create_cstore_response(

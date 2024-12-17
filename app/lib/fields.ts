@@ -20,6 +20,13 @@ const fields = [{
         help: 'You can generate an api key in the account section of Aurabox',
     },
     component: TextInput
+},{
+    config: {
+        label: 'Port',
+        key: 'port',
+        help: 'Port where this is going to run',
+    },
+    component: TextInput
 }];
 
 

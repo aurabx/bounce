@@ -14,6 +14,8 @@ export default function EventHandler({ children, }: { children: React.ReactNode 
             const log = logMessage(event.payload as string);
             dispatch(log)
         })
+
+
     }
 
     useEffect(() => {

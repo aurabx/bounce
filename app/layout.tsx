@@ -6,6 +6,7 @@ import MenuItem from "@/app/components/MenuItem";
 import {classNames} from "@/app/helpers";
 import Providers from './components/Providers'
 import EventHandler from "@/app/components/EventHandler";
+import Tray from "@/app/components/Tray";
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -50,6 +51,7 @@ export default function RootLayout({
         </body>
         </html>
       </EventHandler>
+      <Tray />
     </Providers>
   )
 }
