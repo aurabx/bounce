@@ -1,7 +1,6 @@
 'use client';
 
 import {Suspense, useEffect, useState} from 'react'
-import { listen } from "@tauri-apps/api/event";
 import {useAppSelector} from "@/app/lib/hook";
 
 export default function Page() {
@@ -22,7 +21,7 @@ export default function Page() {
             <div className="bg-white shadow-lg rounded-lg p-6 w-full flex-grow">
                 <Suspense fallback={<Loading/>}>
                     {(loaded ? <div className="h-full">
-                        <ul className="overflow-y-scroll">
+                        <ul className="overflow-y-scroll font-mono bg-stone-50 shadow-inner min-h-full p-1">
                             {logs.map((log, ind) => (
                                 <li key={ind}>{log}</li>
                             ))}

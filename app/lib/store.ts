@@ -3,10 +3,12 @@ import type { PayloadAction } from '@reduxjs/toolkit'
 
 export interface State {
     logs: string[]
+    running: boolean
 }
 
 const initialState: State = {
     logs: [],
+    running: false,
 }
 
 export const mainSlice = createSlice({
@@ -16,11 +18,16 @@ export const mainSlice = createSlice({
         logMessage: (state, action: PayloadAction<string>) => {
             state.logs.push(action.payload)
         },
+        setRunning(state, action: PayloadAction<boolean>){
+            console.log(state.running)
+            state.running = action.payload;
+            console.log(state.running)
+        },
     },
 })
 
 // Action creators are generated for each case reducer function
-export const { logMessage } = mainSlice.actions
+export const { logMessage, setRunning } = mainSlice.actions
 
 export const makeStore = () => {
     return configureStore({
@@ -41,3 +48,4 @@ export type AppDispatch = AppStore['dispatch']
 // the state. Selectors can also be defined inline where they're used instead of
 // in the slice file. For example: `useSelector((state) => state.counter.value)`
 export const selectLogs = (state: RootState) => state.main.logs
+export const selectRunning = (state: RootState) => state.main.running

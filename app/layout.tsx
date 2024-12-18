@@ -7,6 +7,7 @@ import {classNames} from "@/app/helpers";
 import Providers from './components/Providers'
 import EventHandler from "@/app/components/EventHandler";
 import Tray from "@/app/components/Tray";
+import CurrentStatus from "@/app/components/CurrentStatus";
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -14,6 +15,7 @@ export const metadata: Metadata = {
   title: 'Aurabox Bounce',
   description: 'Dicom proxy recaster and packager',
 }
+
 
 export default function RootLayout({
   children,
@@ -30,7 +32,7 @@ export default function RootLayout({
           <div className="fixed inset-y-0 flex w-48 flex-col bg-white">
             <div className="flex grow flex-col overflow-y-auto bg-indigo-600 px-6 py-4">
               <nav className="flex flex-1 flex-col">
-                <ul role="list" className="flex flex-1 flex-col">
+                <ul role="list" className="flex flex-col">
                   <li>
                     <ul role="list" className="space-y-2">
                       <MenuItem href="/" label="Dashboard"/>
@@ -39,7 +41,9 @@ export default function RootLayout({
                     </ul>
                   </li>
                 </ul>
+                <CurrentStatus />
               </nav>
+
             </div>
           </div>
           <div className="pl-48 h-full">

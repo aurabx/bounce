@@ -6,6 +6,8 @@ import { exit, relaunch } from "@tauri-apps/plugin-process";
 // import { open } from "@tauri-apps/plugin-shell";
 import {useEffect, useState} from "react";
 import {resolveResource} from "@tauri-apps/api/path";
+import {useAppSelector} from "@/app/lib/hook";
+import {receiverStart, receiverStop} from "@/app/lib/server";
 
 const TRAY_ID = 'bounce';
 
@@ -13,7 +15,7 @@ const appName = 'Bounce';
 const appVersion = '1.0.1';
 
 const Tray = () => {
-    const [listening, setListening] = useState<boolean>(true);
+    const running = useAppSelector((state) => state.main.running)
 
     useEffect(() => {
         createTrayIcon().finally();
@@ -52,10 +54,10 @@ const Tray = () => {
 
         const items = await Promise.all([
             MenuItem.new({
-                text: listening
+                text: running
                     ? 'Stop'
                     : 'Start',
-                action: () => setListening(!listening),
+                action: () => running ? receiverStop() : receiverStart(),
             }),
             PredefinedMenuItem.new({ item: "Separator" }),
             MenuItem.new({
