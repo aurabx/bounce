@@ -2,10 +2,11 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import {receiverStart, receiverStop} from "@/app/lib/server";
+import {useAppSelector} from "@/app/lib/hook";
 
 
 export default function Page() {
-
+    const running = useAppSelector((state) => state.main.running)
 
     const sendLog = async () => {
         try {
@@ -25,10 +26,10 @@ export default function Page() {
             <div className="bg-white dark:bg-gray-800 shadow-lg rounded-lg p-6 w-full">
                 <div className="mb-4">
                     <button
-                        onClick={receiverStart}
+                        onClick={running ? receiverStop : receiverStart}
                         className="flex w-full  transition ease-in-out text-center border shadow-sm font-medium rounded-md px-4 py-2 text-sm cursor-pointer text-white bg-indigo-400 hover:bg-indigo-500"
                     >
-                        Start Service
+                        {running ? 'Stop Service' : 'Start Service'}
                     </button>
                 </div>
                 <div className="mb-4">
@@ -36,7 +37,7 @@ export default function Page() {
                         onClick={sendLog}
                         className="flex w-full  transition ease-in-out text-center border shadow-sm font-medium rounded-md px-4 py-2 text-sm cursor-pointer text-white bg-indigo-400 hover:bg-indigo-500"
                     >
-                        Send Log
+                    Send Log
                     </button>
                 </div>
             </div>

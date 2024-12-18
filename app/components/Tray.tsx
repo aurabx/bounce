@@ -21,6 +21,22 @@ const Tray = () => {
         createTrayIcon().finally();
     }, []);
 
+    const updateTrayMenu = async () => {
+        const tray = await getTrayById();
+
+        if (!tray) return;
+
+        const menu = await getTrayMenu();
+
+        await tray.setMenu(menu);
+    };
+
+
+    useEffect(() => {
+        updateTrayMenu();
+    }, [running]);
+
+
     const getTrayById = () => {
         return TrayIcon.getById(TRAY_ID);
     };
@@ -49,7 +65,6 @@ const Tray = () => {
         return TrayIcon.new(options);
     };
 
-    // 获取托盘菜单
     const getTrayMenu = async () => {
 
         const items = await Promise.all([
@@ -77,16 +92,7 @@ const Tray = () => {
         return Menu.new({ items });
     };
 
-    // 更新托盘菜单
-    const updateTrayMenu = async () => {
-        const tray = await getTrayById();
 
-        if (!tray) return;
-
-        const menu = await getTrayMenu();
-
-        tray.setMenu(menu);
-    };
 
     return <></>;
 };
