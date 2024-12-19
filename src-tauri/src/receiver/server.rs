@@ -21,10 +21,8 @@ pub async fn start(config: Config, app: AppHandle) -> Result<(), Box<dyn std::er
     // Setup logging
     setup_logger();
 
-
     // Create DICOM server
     let dicom_server = DICOMServer::new(config);
-
 
     // Handle OS signals for graceful shutdown
     // get this out of unsafe
@@ -47,7 +45,6 @@ pub(crate) async fn stop(app: AppHandle) -> Result<(), Box<dyn std::error::Error
 
     // let state = app.state::<ServerState>();
     // let sender_state = Arc::new(state);
-
 
     app.emit("running", false).unwrap();
 

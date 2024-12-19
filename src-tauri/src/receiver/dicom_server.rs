@@ -100,10 +100,11 @@ impl DICOMServer {
             .whatever_context("could not establish association")?;
 
         log_info!("New association from {}", association.client_ae_title());
-        log_info!(
-            "> Presentation contexts: {:?}",
-            association.presentation_contexts()
-        );
+
+        // log_info!(
+        //     "> Presentation contexts: {:?}",
+        //     association.presentation_contexts()
+        // );
 
         loop {
             match association.receive() {
@@ -139,8 +140,20 @@ impl DICOMServer {
                                             "failed to read incoming DICOM command",
                                         )?;
 
+
                                     let command_field =
                                         Self::extract_int_tag(&obj, tags::COMMAND_FIELD)?;
+
+                                    println!("Tags: {:?}", &obj.tags().collect::<Vec<_>>());
+                                    println!("COMMAND_GROUP_LENGTH: {:?}", &obj.element(tags::COMMAND_GROUP_LENGTH).unwrap().to_str().unwrap().to_string());
+                                    println!("AFFECTED_SOP_CLASS_UID: {:?}", &obj.element(tags::AFFECTED_SOP_CLASS_UID).unwrap().to_str().unwrap().to_string());
+                                    println!("COMMAND_FIELD: {:?}", &obj.element(tags::COMMAND_FIELD).unwrap().to_str().unwrap().to_string());
+                                    println!("MESSAGE_ID: {:?}", &obj.element(tags::MESSAGE_ID).unwrap().to_str().unwrap().to_string());
+                                    println!("PRIORITY: {:?}", &obj.element(tags::PRIORITY).unwrap().to_str().unwrap().to_string());
+                                    println!("COMMAND_DATA_SET_TYPE: {:?}", &obj.element(tags::COMMAND_DATA_SET_TYPE).unwrap().to_str().unwrap().to_string());
+                                    println!("AFFECTED_SOP_INSTANCE_UID: {:?}", &obj.element(tags::AFFECTED_SOP_INSTANCE_UID).unwrap().to_str().unwrap().to_string());
+
+
 
                                     if command_field == 0x0030 {
                                         // Handle C-ECHO-RQ
@@ -172,15 +185,15 @@ impl DICOMServer {
                                             tags::AFFECTED_SOP_CLASS_UID,
                                         )?;
                                         sop_instance_uid =
-                                            Self::extract_string_tag(&obj, tags::SOP_INSTANCE_UID)?;
-                                        series_uid = Self::extract_string_tag(
-                                            &obj,
-                                            tags::SERIES_INSTANCE_UID,
-                                        )?;
-                                        study_uid = Self::extract_string_tag(
-                                            &obj,
-                                            tags::STUDY_INSTANCE_UID,
-                                        )?;
+                                            Self::extract_string_tag(&obj, tags::AFFECTED_SOP_INSTANCE_UID)?;
+                                        // series_uid = Self::extract_string_tag(
+                                        //     &obj,
+                                        //     tags::SERIES_INSTANCE_UID,
+                                        // )?;
+                                        // study_uid = Self::extract_string_tag(
+                                        //     &obj,
+                                        //     tags::STUDY_INSTANCE_UID,
+                                        // )?;
                                     }
                                     instance_buffer.clear();
                                 } else if data_value.value_type == PDataValueType::Data
@@ -201,14 +214,14 @@ impl DICOMServer {
                                     )
                                     .whatever_context("failed to read DICOM data object")?;
                                     let file_meta = FileMetaTableBuilder::new()
-                                        .media_storage_sop_class_uid(Self::extract_string_tag(
-                                            &obj,
-                                            tags::SOP_CLASS_UID,
-                                        )?)
-                                        .media_storage_sop_instance_uid(Self::extract_string_tag(
-                                            &obj,
-                                            tags::SOP_INSTANCE_UID,
-                                        )?)
+                                        // .media_storage_sop_class_uid(Self::extract_string_tag(
+                                        //     &obj,
+                                        //     tags::SOP_CLASS_UID,
+                                        // )?)
+                                        // .media_storage_sop_instance_uid(Self::extract_string_tag(
+                                        //     &obj,
+                                        //     tags::STUDY_INSTANCE_UID,
+                                        // )?)
                                         .transfer_syntax(ts)
                                         .build()
                                         .whatever_context(
@@ -219,8 +232,8 @@ impl DICOMServer {
                                     // write the files to the current directory with their SOPInstanceUID as filenames
                                     let mut file_path = out_dir.clone();
 
-                                    file_path.push(study_uid.trim_end_matches('\0').to_string());
-                                    file_path.push(series_uid.trim_end_matches('\0').to_string());
+                                    // file_path.push(study_uid.trim_end_matches('\0').to_string());
+                                    // file_path.push(series_uid.trim_end_matches('\0').to_string());
                                     file_path.push(
                                         sop_instance_uid.trim_end_matches('\0').to_string()
                                             + ".dcm",
@@ -314,7 +327,7 @@ impl DICOMServer {
     fn extract_string_tag(obj: &InMemDicomObject, tag: Tag) -> Result<String, Whatever> {
         Ok(obj
             .element(tag)
-            .whatever_context(format!("missing {}", tag.element().to_string()))?
+            .whatever_context(format!("missing string tag {}", tag.element().to_string()))?
             .to_str()
             .whatever_context(format!("could not retrieve {}", tag.element().to_string()))?
             .to_string())
@@ -323,7 +336,7 @@ impl DICOMServer {
     fn extract_int_tag(obj: &InMemDicomObject, tag: Tag) -> Result<u16, Whatever> {
         Ok(obj
             .element(tag)
-            .whatever_context(format!("missing {}", tag.element().to_string()))?
+            .whatever_context(format!("missing int tag {}", tag.element().to_string()))?
             .to_int()
             .whatever_context(format!("could not retrieve {}", tag.element().to_string()))?)
     }
