@@ -22,7 +22,7 @@ pub async fn start(config: Config, app: AppHandle) -> Result<(), Box<dyn std::er
     setup_logger();
 
     // Create DICOM server
-    let dicom_server = DICOMServer::new(config);
+    let dicom_server = DICOMServer::new(config, app.clone());
 
     // Handle OS signals for graceful shutdown
     // get this out of unsafe

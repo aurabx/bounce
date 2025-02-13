@@ -42,7 +42,6 @@ serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 
 # Miscellaneous utilities
-thiserror = "1.0.56"
 anyhow = "1.0.79"
 ring = "0.17.7"
 clap = { version = "4.5.21", features = ["derive"] }
@@ -53,7 +52,6 @@ sha2 = "0.10.8"
 tokio-util = "0.7.12"
 walkdir = "2.5.0"
 snafu = "0.8"
-bytes = "1.8.0"
 tauri-plugin-store = "2"
 tauri-plugin-process = "2"
 tauri-plugin-shell = "2"

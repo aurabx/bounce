@@ -10,18 +10,26 @@ use receiver::enums::ABSTRACT_SYNTAXES;
 use snafu::{OptionExt, Report, ResultExt, Whatever};
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
 use std::path::PathBuf;
-use std::sync::Arc;
 use store::config::Config;
+use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
+use std::fs;
+use tauri::{AppHandle, Emitter};
+use tokio::time::{self, Duration, Instant};
 
 #[derive(Clone)]
 pub struct DICOMServer {
     config: Arc<Config>,
+    app_handle: AppHandle,
+    study_last_received: Arc<Mutex<HashMap<String, Instant>>>,
 }
 
 impl DICOMServer {
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: Config, app_handle: AppHandle) -> Self {
         Self {
             config: Arc::new(config),
+            app_handle,
+            study_last_received: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -152,8 +160,7 @@ impl DICOMServer {
                                     println!("PRIORITY: {:?}", &obj.element(tags::PRIORITY).unwrap().to_str().unwrap().to_string());
                                     println!("COMMAND_DATA_SET_TYPE: {:?}", &obj.element(tags::COMMAND_DATA_SET_TYPE).unwrap().to_str().unwrap().to_string());
                                     println!("AFFECTED_SOP_INSTANCE_UID: {:?}", &obj.element(tags::AFFECTED_SOP_INSTANCE_UID).unwrap().to_str().unwrap().to_string());
-
-
+                                    //println!("STUDY_INSTANCE_UID: {:?}", &obj.element(tags::STUDY_INSTANCE_UID).unwrap().to_str().unwrap().to_string());
 
                                     if command_field == 0x0030 {
                                         // Handle C-ECHO-RQ
@@ -213,6 +220,21 @@ impl DICOMServer {
                                         TransferSyntaxRegistry.get(ts).unwrap(),
                                     )
                                     .whatever_context("failed to read DICOM data object")?;
+
+                                    // Extract StudyInstanceUID
+                                    study_uid = Self::extract_string_tag(&obj, tags::STUDY_INSTANCE_UID)?;
+                                    println!("Received StudyInstanceUID: {}", study_uid);
+
+                                    series_uid = Self::extract_string_tag(&obj, tags::SERIES_INSTANCE_UID)?;
+                                    println!("Received SeriesInstanceUID: {}", series_uid);
+
+                                    let message = format!("Received Study: {}", study_uid);
+
+                                    // Send message to JavaScript
+                                    self.app_handle.emit("log", message).unwrap_or_else(|e| {
+                                        println!("Failed to emit log event: {}", e);
+                                    });
+
                                     let file_meta = FileMetaTableBuilder::new()
                                         // .media_storage_sop_class_uid(Self::extract_string_tag(
                                         //     &obj,
@@ -232,8 +254,20 @@ impl DICOMServer {
                                     // write the files to the current directory with their SOPInstanceUID as filenames
                                     let mut file_path = out_dir.clone();
 
-                                    // file_path.push(study_uid.trim_end_matches('\0').to_string());
+                                    file_path.push(study_uid.trim_end_matches('\0').to_string());
+                                    file_path.push(series_uid.trim_end_matches('\0').to_string());
+
+                                    let study_dir = file_path.clone();
+
+                                    if !study_dir.exists() {
+                                        fs::create_dir_all(&study_dir).whatever_context(format!(
+                                            "Failed to create study directory: {}",
+                                            study_dir.display()
+                                        ))?;
+                                    }
+
                                     // file_path.push(series_uid.trim_end_matches('\0').to_string());
+
                                     file_path.push(
                                         sop_instance_uid.trim_end_matches('\0').to_string()
                                             + ".dcm",

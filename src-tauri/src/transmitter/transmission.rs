@@ -36,6 +36,7 @@ impl Transmission {
         study_path: &Path,
         delete_after_send: bool
     ) -> Result<()> {
+        println!("Preparing to send study: {:?}", study_path);
 
         let archive_path = self.compress_study(study_path).await?;
 
@@ -54,6 +55,7 @@ impl Transmission {
             .await?;
 
         if response.status().is_success() {
+            println!("Study sent successfully: {:?}", archive_path);
             if delete_after_send {
                 self.delete_local_study_files(study_path).await?;
             }

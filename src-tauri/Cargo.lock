@@ -133,7 +133,6 @@ name = "app"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bytes",
  "clap",
  "dicom",
  "dicom-dictionary-std",
@@ -155,7 +154,6 @@ dependencies = [
  "tauri-plugin-process",
  "tauri-plugin-shell",
  "tauri-plugin-store",
- "thiserror 1.0.69",
  "tokio",
  "tokio-util",
  "tracing",
