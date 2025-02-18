@@ -2,11 +2,9 @@
 mod logger;
 mod receiver;
 mod store;
-mod lib;
+mod transmitter;
 
 use store::config::Config;
-use tauri::menu::{Menu, MenuItem};
-use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_store::StoreExt;
 use tokio::sync::oneshot::Sender;

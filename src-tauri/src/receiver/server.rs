@@ -1,19 +1,15 @@
-use std::ptr::null;
 use tauri::{AppHandle, Emitter, Manager};
 use crate::logger::setup_logger;
 use crate::{receiver, store};
 use receiver::dicom_server::DICOMServer;
 use store::config::Config;
 use tokio;
-use std::sync::{Arc, Mutex};
-use tokio::{sync::oneshot, task::JoinHandle};
-use tokio::sync::oneshot::Sender;
 
 
 
-struct ServerState {
-    stop_sender: Sender<&'static str>,
-}
+// struct ServerState {
+//     stop_sender: Sender<&'static str>,
+// }
 
 
 pub async fn start(config: Config, app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {

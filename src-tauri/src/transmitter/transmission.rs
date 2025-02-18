@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -9,25 +10,29 @@ use zip::{
 };
 use walkdir::{DirEntry, WalkDir};
 use std::io::{Seek, Write};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use reqwest::{Client, Body};
 use tokio_util::io::ReaderStream;
-use tokio::{fs, fs::File};
+use tokio::{fs, fs::File, time};
 use tokio::io::AsyncReadExt;
+use tokio::task::JoinHandle;
+use tokio::time::{sleep, Instant};
 use zip::result::ZipError;
+use crate::log_info;
+use crate::store::config::Config;
 
 pub struct Transmission {
     client: Client,
-    api_endpoint: String,
-    api_key: String,
+    config: Arc<Config>,
+    study_last_received: Arc<Mutex<HashMap<String, Instant>>>,
 }
 
 impl Transmission {
-    pub fn new(api_endpoint: String, api_key: String) -> Self {
+    pub fn new(config: Config) -> Self {
         Self {
             client: Client::new(),
-            api_endpoint,
-            api_key,
+            config: Arc::new(config),
+            study_last_received: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -46,8 +51,8 @@ impl Transmission {
         let stream = ReaderStream::new(file);
         let body_stream = Body::wrap_stream(stream);
 
-        let response = self.client.post(&self.api_endpoint)
-            .header("Authorization", format!("Bearer {}", self.api_key))
+        let response = self.client.post(&self.config.api_endpoint)
+            .header("Authorization", format!("Bearer {}", &self.config.api_key))
             .header("Content-Type", "application/octet-stream")
             .timeout(Duration::from_secs(30))
             .body(body_stream)
@@ -142,35 +147,36 @@ impl Transmission {
 
 
 
-    async fn schedule_study_push(&self, study_id: String) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn schedule_study_push(&self, study_uid: String) -> Result<(), Box<dyn std::error::Error>> {
+        let current_study_uid = study_uid.clone();
         let timeout = Duration::from_secs(60);
-        //let transmission = Arc::clone(&self.transmission);
-        //let config_clone = Arc::clone(&self.config);
-        let study_last_received = Arc::clone(&self.study_last_received);
+        let out_dir = "./tmp";
+        let path = PathBuf::from(&out_dir);
+        let mut file_path = path.clone();
+        file_path.push(current_study_uid.trim_end_matches('\0').to_string());
+
+        self.study_last_received.lock().unwrap().insert(study_uid.clone(), Instant::now());
+
+        let study_path = file_path.clone();
+
+
+        log_info!("study_path in schedule_study_push {}", study_path.display());
+
+        let last_received = {
+            let lock = self.study_last_received.lock().unwrap();
+            lock.get(&study_uid).cloned() // Clone the value, not the reference
+        };
 
         tokio::spawn(async move {
             time::sleep(timeout).await;
 
-            let last_received = {
-                study_last_received.lock().await
-                    .get(&study_id).cloned()
-            };
-
             if let Some(last_time) = last_received {
                 let time_since_last = last_time.elapsed();
                 log_info!("Last file for study {} was {} seconds ago",
-                    study_id, time_since_last.as_secs_f64()
+                    &study_uid, time_since_last.as_secs_f64()
                 );
             }
 
-            // let study_path = Path::new(&config_clone.storage.base_dir).join(study_id);
-
-            // if let Err(e) = transmission.send_archive(
-            //     &study_path,
-            //     config_clone.delete_after_send.unwrap_or(false)
-            // ).await {
-            //     log_error!("Failed to push study: {}", e);
-            // }
         });
 
         Ok(())

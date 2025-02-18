@@ -1,4 +1,4 @@
-use crate::{log_error, log_info, receiver, store};
+use crate::{log_error, log_info, receiver, store, transmitter};
 use dicom::core::{DataElement, Tag, VR};
 use dicom::dicom_value;
 use dicom::dictionary_std::tags;
@@ -17,19 +17,21 @@ use std::fs;
 use tauri::{AppHandle, Emitter};
 use tokio::time::{self, Duration, Instant};
 
+use transmitter::transmission::Transmission;
+
 #[derive(Clone)]
 pub struct DICOMServer {
     config: Arc<Config>,
     app_handle: AppHandle,
-    study_last_received: Arc<Mutex<HashMap<String, Instant>>>,
+    transmission: Arc<Transmission>,
 }
 
 impl DICOMServer {
     pub fn new(config: Config, app_handle: AppHandle) -> Self {
         Self {
-            config: Arc::new(config),
+            config: Arc::new(config.clone()),
             app_handle,
-            study_last_received: Arc::new(Mutex::new(HashMap::new())),
+            transmission: Arc::new(Transmission::new(config.clone())),
         }
     }
 
@@ -38,7 +40,7 @@ impl DICOMServer {
         let out_dir = "./tmp";
         let path = PathBuf::from(&out_dir);
 
-        std::fs::create_dir_all(&out_dir).unwrap_or_else(|e| {
+        fs::create_dir_all(&out_dir).unwrap_or_else(|e| {
             log_error!("Could not create output directory: {}", e);
             std::process::exit(-2);
         });
@@ -51,7 +53,7 @@ impl DICOMServer {
             for stream in listener.incoming() {
                 match stream {
                     Ok(scu_stream) => {
-                        if let Err(e) = self.run_store_sync(scu_stream, &path) {
+                        if let Err(e) = self.run_store_sync(scu_stream, &path).await {
                             log_error!("{}", snafu::Report::from_error(e));
                         }
                     }
@@ -65,7 +67,7 @@ impl DICOMServer {
         // Ok(())
     }
 
-    pub fn run_store_sync(&self, scu_stream: TcpStream, out_dir: &PathBuf) -> Result<(), Whatever> {
+    pub async fn run_store_sync(&self, scu_stream: TcpStream, out_dir: &PathBuf) -> Result<(), Whatever> {
         let verbose = true;
         let strict = false;
         let calling_ae_title = "STORE-SCP";
@@ -160,7 +162,6 @@ impl DICOMServer {
                                     println!("PRIORITY: {:?}", &obj.element(tags::PRIORITY).unwrap().to_str().unwrap().to_string());
                                     println!("COMMAND_DATA_SET_TYPE: {:?}", &obj.element(tags::COMMAND_DATA_SET_TYPE).unwrap().to_str().unwrap().to_string());
                                     println!("AFFECTED_SOP_INSTANCE_UID: {:?}", &obj.element(tags::AFFECTED_SOP_INSTANCE_UID).unwrap().to_str().unwrap().to_string());
-                                    //println!("STUDY_INSTANCE_UID: {:?}", &obj.element(tags::STUDY_INSTANCE_UID).unwrap().to_str().unwrap().to_string());
 
                                     if command_field == 0x0030 {
                                         // Handle C-ECHO-RQ
@@ -236,14 +237,6 @@ impl DICOMServer {
                                     });
 
                                     let file_meta = FileMetaTableBuilder::new()
-                                        // .media_storage_sop_class_uid(Self::extract_string_tag(
-                                        //     &obj,
-                                        //     tags::SOP_CLASS_UID,
-                                        // )?)
-                                        // .media_storage_sop_instance_uid(Self::extract_string_tag(
-                                        //     &obj,
-                                        //     tags::STUDY_INSTANCE_UID,
-                                        // )?)
                                         .transfer_syntax(ts)
                                         .build()
                                         .whatever_context(
@@ -275,7 +268,11 @@ impl DICOMServer {
                                     file_obj
                                         .write_to_file(&file_path)
                                         .whatever_context("could not save DICOM object to file")?;
+
                                     log_info!("Stored {}", file_path.display());
+
+                                    self.transmission.schedule_study_push(study_uid)
+                                        .await.expect("Schedule study push error");
 
                                     // send C-STORE-RSP object
                                     // commands are always in implict VR LE
