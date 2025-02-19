@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::{log_error, log_info, receiver, store, transmitter};
 use dicom::core::{DataElement, Tag, VR};
 use dicom::dicom_value;
@@ -14,15 +15,15 @@ use store::config::Config;
 use std::sync::{Arc};
 use std::fs;
 use tauri::{AppHandle, Emitter};
-use tokio::time::{Duration, Instant};
-
+use tokio::sync::{oneshot, Mutex};
+use tokio::time::{sleep, Duration, Instant};
 use transmitter::transmission::Transmission;
 
 #[derive(Clone)]
 pub struct DICOMServer {
     config: Arc<Config>,
     app_handle: AppHandle,
-    transmission: Arc<Transmission>,
+    transmission: Transmission,
 }
 
 impl DICOMServer {
@@ -30,7 +31,7 @@ impl DICOMServer {
         Self {
             config: Arc::new(config.clone()),
             app_handle,
-            transmission: Arc::new(Transmission::new(config.clone())),
+            transmission: Transmission::new(config.clone()),
         }
     }
 
@@ -69,7 +70,6 @@ impl DICOMServer {
 
         Ok(())
     }
-
 
     pub async fn run_store_sync(&self, scu_stream: TcpStream, out_dir: &PathBuf) -> Result<(), Whatever> {
         let verbose = true;
@@ -114,11 +114,6 @@ impl DICOMServer {
             .whatever_context("could not establish association")?;
 
         log_info!("New association from {}", association.client_ae_title());
-
-        // log_info!(
-        //     "> Presentation contexts: {:?}",
-        //     association.presentation_contexts()
-        // );
 
         loop {
             match association.receive() {
@@ -198,14 +193,6 @@ impl DICOMServer {
                                         )?;
                                         sop_instance_uid =
                                             Self::extract_string_tag(&obj, tags::AFFECTED_SOP_INSTANCE_UID)?;
-                                        // series_uid = Self::extract_string_tag(
-                                        //     &obj,
-                                        //     tags::SERIES_INSTANCE_UID,
-                                        // )?;
-                                        // study_uid = Self::extract_string_tag(
-                                        //     &obj,
-                                        //     tags::STUDY_INSTANCE_UID,
-                                        // )?;
                                     }
                                     instance_buffer.clear();
                                 } else if data_value.value_type == PDataValueType::Data
@@ -274,7 +261,7 @@ impl DICOMServer {
                                     log_info!("Stored {}", file_path.display());
 
                                     self.transmission.schedule_study_push(study_uid)
-                                        .await;
+                                        .await.expect("Failed to queue study with schedule_study_push");
 
                                     // send C-STORE-RSP object
                                     // commands are always in implict VR LE
@@ -343,6 +330,8 @@ impl DICOMServer {
                 }
             }
         }
+
+        sleep(Duration::from_secs(20)).await;
 
         if let Ok(peer_addr) = association.inner_stream().peer_addr() {
             log_info!(

@@ -1,6 +1,4 @@
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use anyhow::{Context, Result};
 use zip::{
@@ -10,24 +8,27 @@ use zip::{
 };
 use walkdir::{DirEntry, WalkDir};
 use std::io::{Seek, Write};
-use std::sync::{Arc};
 use reqwest::{Client, Body};
 use tokio_util::io::ReaderStream;
 use tokio::{fs, fs::File};
 use tokio::io::AsyncReadExt;
-use tokio::time::{sleep, Instant};
-use tokio::sync::{Mutex, oneshot};
-use zip::result::ZipError;
 
+use std::{collections::HashMap, sync::Arc};
+use tokio::sync::{Mutex, oneshot};
+use tokio::time::{sleep, Duration, Instant};
+
+use zip::result::ZipError;
+use crate::log_info;
 use crate::store::config::Config;
 
+#[derive(Debug)]
 struct ScheduledStudy {
     last_received: Instant,
     // We send a signal to the task whenever we want to reset the countdown.
     cancel_tx: oneshot::Sender<()>,
 }
 
-
+#[derive(Clone, Debug)]
 pub struct Transmission {
     client: Client,
     config: Arc<Config>,
@@ -42,8 +43,6 @@ impl Transmission {
             scheduled_studies: Arc::new(Mutex::new(HashMap::new())),
         }
     }
-
-
 
     /// Schedule pushing the study in 10 seconds—debouncing repeated calls.
     /// If another call comes in for the same study before the 10s ends,
@@ -77,12 +76,15 @@ impl Transmission {
                 // Wait for 10 seconds
                 _ = sleep(Duration::from_secs(5)) => {
                     // 10 seconds have passed with no new call for this UID
-                    println!("Time's up—pushing study {}", study_uid);
+                    log_info!("Time's up—pushing study {}", study_uid);
                     // do the actual push logic here, e.g. `self_clone.send_study(...).await`
+                    sleep(Duration::from_secs(60)).await;
+
+                    log_info!("pretended this might take 60 secs to complete {}", study_uid);
                 },
                 // OR we get a cancellation signal because schedule_study_push was called again
                 _ = rx => {
-                    println!("Study {} was reset/canceled before 10s elapsed.", study_uid);
+                    log_info!("Study {} was reset/canceled before 10s elapsed.", study_uid);
                     return;
                 }
             }
@@ -127,7 +129,7 @@ impl Transmission {
             .await?;
 
         if response.status().is_success() {
-            println!("Study sent successfully: {:?}", archive_path);
+            log_info!("Study sent successfully: {:?}", archive_path);
             if delete_after_send {
                 self.delete_local_study_files(study_path).await?;
             }
@@ -165,7 +167,7 @@ impl Transmission {
                 // Write file or directory explicitly
                 // Some unzip tools unzip files with directory paths correctly, some do not!
                 if path.is_file() {
-                    println!("adding file {path:?} as {name:?} ...");
+                    log_info!("adding file {path:?} as {name:?} ...");
                     zip.start_file(path_as_string, options)?;
                     let mut f = File::open(path).await?;
 
@@ -175,7 +177,7 @@ impl Transmission {
                 } else if !name.as_os_str().is_empty() {
                     // Only if not root! Avoids path spec / warning
                     // and mapname conversion failed error on unzip
-                    println!("adding dir {path_as_string:?} as {name:?} ...");
+                    log_info!("adding dir {path_as_string:?} as {name:?} ...");
                     zip.add_directory(path_as_string, options)?;
                 }
             }
