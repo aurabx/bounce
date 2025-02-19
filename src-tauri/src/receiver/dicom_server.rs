@@ -274,7 +274,7 @@ impl DICOMServer {
                                     log_info!("Stored {}", file_path.display());
 
                                     self.transmission.schedule_study_push(study_uid)
-                                        .await.expect("Schedule study push error");
+                                        .await;
 
                                     // send C-STORE-RSP object
                                     // commands are always in implict VR LE
