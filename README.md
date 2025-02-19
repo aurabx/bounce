@@ -1,3 +1,18 @@
+# Dev
+
+1. Install and run
+```shell
+npm install
+npx tauri dev
+```
+
+2. Sending via dcmtk's storescu locally
+```
+storescu 0.0.0.0 8080 --scan-directories /path/to/files
+```
+
+# Build
+
 1. Build the UI
 
 ```
@@ -15,5 +30,4 @@ $ next dev
 ```
 npm install
 npm run tauri dev
-
 ```

@@ -11,11 +11,10 @@ use snafu::{OptionExt, Report, ResultExt, Whatever};
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
 use std::path::PathBuf;
 use store::config::Config;
-use std::sync::{Arc, Mutex};
-use std::collections::HashMap;
+use std::sync::{Arc};
 use std::fs;
 use tauri::{AppHandle, Emitter};
-use tokio::time::{self, Duration, Instant};
+use tokio::time::{Duration, Instant};
 
 use transmitter::transmission::Transmission;
 
@@ -45,15 +44,19 @@ impl DICOMServer {
             std::process::exit(-2);
         });
 
+        // --- Use the tokio version of TcpListener, and await bind:
         let listen_addr = SocketAddrV4::new(Ipv4Addr::from(0), port);
         let listener = TcpListener::bind(listen_addr)?;
         log_info!("listening on: tcp://{}", listen_addr);
 
-        loop {
+        let self_clone = self.clone();
+        let current_path = path.clone();
+
+        tokio::spawn(async move {
             for stream in listener.incoming() {
                 match stream {
                     Ok(scu_stream) => {
-                        if let Err(e) = self.run_store_sync(scu_stream, &path).await {
+                        if let Err(e) = self_clone.run_store_sync(scu_stream, &current_path).await {
                             log_error!("{}", snafu::Report::from_error(e));
                         }
                     }
@@ -62,10 +65,11 @@ impl DICOMServer {
                     }
                 }
             }
-        }
+        });
 
-        // Ok(())
+        Ok(())
     }
+
 
     pub async fn run_store_sync(&self, scu_stream: TcpStream, out_dir: &PathBuf) -> Result<(), Whatever> {
         let verbose = true;
@@ -259,8 +263,6 @@ impl DICOMServer {
                                         ))?;
                                     }
 
-                                    // file_path.push(series_uid.trim_end_matches('\0').to_string());
-
                                     file_path.push(
                                         sop_instance_uid.trim_end_matches('\0').to_string()
                                             + ".dcm",
@@ -421,34 +423,4 @@ impl DICOMServer {
         ])
     }
 
-    //
-    // async fn handle_store(&self, dataset: DataSet) -> Result<(), Box<dyn std::error::Error>> {
-    //     let study_id = dataset.get_string("StudyInstanceUID")
-    //         .unwrap_or_else(|_| "unknown_study".to_string());
-    //     let series_id = dataset.get_string("SeriesInstanceUID")
-    //         .unwrap_or_else(|_| "unknown_series".to_string());
-    //     let sop_instance = dataset.get_string("SOPInstanceUID")
-    //         .unwrap_or_else(|_| "unknown_sop".to_string());
-    //
-    //     let study_path = Path::new(&self.config.storage.base_dir)
-    //         .join(&study_id)
-    //         .join(&series_id);
-    //
-    //     std::fs::create_dir_all(&study_path)?;
-    //
-    //     let file_path = study_path.join(format!("{}.dcm", sop_instance));
-    //
-    //     // Save DICOM file
-    //     // Actual implementation would use dicom crate's serialization
-    //     std::fs::write(&file_path, b"placeholder_dicom_data")?;
-    //
-    //     // Update last received time for the study
-    //     let mut last_received = self.study_last_received.lock().await;
-    //     last_received.insert(study_id.clone(), Instant::now());
-    //
-    //     // Schedule study push
-    //     self.schedule_study_push(study_id.clone()).await?;
-    //
-    //     Ok(())
-    // }
 }

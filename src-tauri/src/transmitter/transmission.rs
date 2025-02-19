@@ -10,21 +10,27 @@ use zip::{
 };
 use walkdir::{DirEntry, WalkDir};
 use std::io::{Seek, Write};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc};
 use reqwest::{Client, Body};
 use tokio_util::io::ReaderStream;
-use tokio::{fs, fs::File, time};
+use tokio::{fs, fs::File};
 use tokio::io::AsyncReadExt;
-use tokio::task::JoinHandle;
 use tokio::time::{sleep, Instant};
 use zip::result::ZipError;
-use crate::log_info;
+use tokio::sync::{Mutex};
 use crate::store::config::Config;
+use tokio::sync::oneshot;
+
+struct ScheduledStudy {
+    last_received: Instant,
+    // We send a signal to the task whenever we want to reset the countdown.
+    cancel_tx: oneshot::Sender<()>,
+}
 
 pub struct Transmission {
     client: Client,
     config: Arc<Config>,
-    study_last_received: Arc<Mutex<HashMap<String, Instant>>>,
+    scheduled_studies: Arc<Mutex<HashMap<String, ScheduledStudy>>>,
 }
 
 impl Transmission {
@@ -32,15 +38,80 @@ impl Transmission {
         Self {
             client: Client::new(),
             config: Arc::new(config),
-            study_last_received: Arc::new(Mutex::new(HashMap::new())),
+            scheduled_studies: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    /// Schedule pushing the study in 10 seconds—debouncing repeated calls.
+    /// If another call comes in for the same study before the 10s ends,
+    /// we cancel and restart the countdown.
+    pub async fn schedule_study_push(&self, study_uid: String) -> anyhow::Result<()> {
+        let mut map = self.scheduled_studies.lock().await;
+
+        // If we already have a scheduled task for this study, cancel it.
+        if let Some(existing) = map.remove(&study_uid) {
+            // Tell the old task to cancel. It will exit immediately.
+
+            println!("Found existing study {}", study_uid);
+            let _ = existing.cancel_tx.send(());
+        }
+
+        // Make a new one-shot channel for the fresh task
+        let (tx, rx) = oneshot::channel();
+        let scheduled_study = ScheduledStudy {
+            last_received: Instant::now(),
+            cancel_tx: tx,
+        };
+
+        // Store it, so we can cancel later if needed.
+        map.insert(study_uid.clone(), scheduled_study);
+
+        println!("Total studies {}", map.len());
+
+        // Clone things needed in the spawned task
+        let scheduled_studies = self.scheduled_studies.clone();
+        let config = self.config.clone();
+        let self_clone = self.clone();
+
+        tokio::spawn(async move {
+            tokio::select! {
+                // Sleep for 10 seconds...
+                _ = sleep(Duration::from_secs(10)) => {
+                    println!("Time's up—pushing study {}", study_uid);
+                    // Here is where you'd do the actual push, e.g.
+                    // if let Err(e) = self_clone.send_study(study_uid.clone(), true).await {
+                    //     println!("error running send_study for {}", study_uid);
+                    // }
+
+                },
+                // OR we get a cancel signal from a newer schedule_study_push call
+                _ = rx => {
+                    println!("Study {} was reset/canceled before 10s elapsed.", study_uid);
+                    return;
+                }
+            }
+
+            // Whichever branch we took, we're done with this push—remove from the map
+            let mut map = scheduled_studies.lock().await;
+            map.remove(&study_uid);
+        });
+
+        Ok(())
     }
 
     pub async fn send_study(
         &self,
-        study_path: &Path,
+        study_uid: String,
         delete_after_send: bool
     ) -> Result<()> {
+
+        // Actually push the study (you’ll have to adapt to your code)
+        let out_dir = PathBuf::from("./tmp");
+        let mut file_path = out_dir.clone();
+        file_path.push(study_uid.trim_end_matches('\0').to_string());
+
+        let study_path = file_path.as_path();
+
         println!("Preparing to send study: {:?}", study_path);
 
         let archive_path = self.compress_study(study_path).await?;
@@ -147,38 +218,5 @@ impl Transmission {
 
 
 
-    pub async fn schedule_study_push(&self, study_uid: String) -> Result<(), Box<dyn std::error::Error>> {
-        let current_study_uid = study_uid.clone();
-        let timeout = Duration::from_secs(60);
-        let out_dir = "./tmp";
-        let path = PathBuf::from(&out_dir);
-        let mut file_path = path.clone();
-        file_path.push(current_study_uid.trim_end_matches('\0').to_string());
 
-        self.study_last_received.lock().unwrap().insert(study_uid.clone(), Instant::now());
-
-        let study_path = file_path.clone();
-
-
-        log_info!("study_path in schedule_study_push {}", study_path.display());
-
-        let last_received = {
-            let lock = self.study_last_received.lock().unwrap();
-            lock.get(&study_uid).cloned() // Clone the value, not the reference
-        };
-
-        tokio::spawn(async move {
-            time::sleep(timeout).await;
-
-            if let Some(last_time) = last_received {
-                let time_since_last = last_time.elapsed();
-                log_info!("Last file for study {} was {} seconds ago",
-                    &study_uid, time_since_last.as_secs_f64()
-                );
-            }
-
-        });
-
-        Ok(())
-    }
 }
