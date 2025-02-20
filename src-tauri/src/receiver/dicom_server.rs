@@ -18,25 +18,28 @@ use tauri::{AppHandle, Emitter};
 use tokio::sync::{oneshot, Mutex};
 use tokio::time::{sleep, Duration, Instant};
 use transmitter::transmission::Transmission;
+use crate::receiver::server::{TransmissionCommand, TransmissionManager};
 
 #[derive(Clone)]
 pub struct DICOMServer {
     config: Arc<Config>,
     app_handle: AppHandle,
-    transmission: Transmission,
+    transmission_manager: Arc<TransmissionManager>,
 }
 
 impl DICOMServer {
-    pub fn new(config: Config, app_handle: AppHandle) -> Self {
+    pub fn new(config: Config, app_handle: AppHandle, transmission_manager: TransmissionManager) -> Self {
         Self {
             config: Arc::new(config.clone()),
             app_handle,
-            transmission: Transmission::new(config.clone()),
+            transmission_manager: Arc::new(transmission_manager),
         }
     }
 
+
     pub async fn start(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let port = self.config.port;
+        let server = Arc::new(self.clone());
+        let port = server.config.port;
         let out_dir = "./tmp";
         let path = PathBuf::from(&out_dir);
 
@@ -45,24 +48,25 @@ impl DICOMServer {
             std::process::exit(-2);
         });
 
-        // --- Use the tokio version of TcpListener, and await bind:
+        // Bind the listener
         let listen_addr = SocketAddrV4::new(Ipv4Addr::from(0), port);
         let listener = TcpListener::bind(listen_addr)?;
         log_info!("listening on: tcp://{}", listen_addr);
 
-        let self_clone = self.clone();
         let current_path = path.clone();
 
-        tokio::spawn(async move {
-            for stream in listener.incoming() {
-                match stream {
-                    Ok(scu_stream) => {
-                        if let Err(e) = self_clone.run_store_sync(scu_stream, &current_path).await {
-                            log_error!("{}", snafu::Report::from_error(e));
+        tokio::spawn({
+            async move {
+                for stream in listener.incoming() {
+                    match stream {
+                        Ok(scu_stream) => {
+                            if let Err(e) = server.run_store_sync(scu_stream, &current_path).await {
+                                log_error!("{}", Report::from_error(e));
+                            }
                         }
-                    }
-                    Err(e) => {
-                        log_error!("{}", snafu::Report::from_error(e));
+                        Err(e) => {
+                            log_error!("{}", Report::from_error(e));
+                        }
                     }
                 }
             }
@@ -70,6 +74,8 @@ impl DICOMServer {
 
         Ok(())
     }
+
+
 
     pub async fn run_store_sync(&self, scu_stream: TcpStream, out_dir: &PathBuf) -> Result<(), Whatever> {
         let verbose = true;
@@ -260,8 +266,9 @@ impl DICOMServer {
 
                                     log_info!("Stored {}", file_path.display());
 
-                                    self.transmission.schedule_study_push(study_uid)
-                                        .await.expect("Failed to queue study with schedule_study_push");
+                                    self.transmission_manager.send_command(TransmissionCommand::ScheduleStudy {
+                                        study_uid
+                                    }).await;
 
                                     // send C-STORE-RSP object
                                     // commands are always in implict VR LE

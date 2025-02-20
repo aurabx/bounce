@@ -78,9 +78,12 @@ impl Transmission {
                     // 10 seconds have passed with no new call for this UID
                     log_info!("Time's up—pushing study {}", study_uid);
                     // do the actual push logic here, e.g. `self_clone.send_study(...).await`
-                    sleep(Duration::from_secs(60)).await;
+                    let study_uid = study_uid.clone();
 
-                    log_info!("pretended this might take 60 secs to complete {}", study_uid);
+                    tokio::spawn(async move {
+                        sleep(Duration::from_secs(30)).await;
+                        log_info!("pretended this might take 60 secs to complete {}", study_uid);
+                    });
                 },
                 // OR we get a cancellation signal because schedule_study_push was called again
                 _ = rx => {
@@ -88,6 +91,7 @@ impl Transmission {
                     return;
                 }
             }
+
 
             // Either we pushed or canceled, so remove this entry from the map
             let mut map = scheduled_studies.lock().await;

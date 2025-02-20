@@ -1,24 +1,20 @@
 use tauri::{AppHandle, Emitter, Manager};
 use crate::logger::setup_logger;
-use crate::{receiver, store};
+use crate::{receiver};
 use receiver::dicom_server::DICOMServer;
-use store::config::Config;
 use tokio;
-
-
-
-// struct ServerState {
-//     stop_sender: Sender<&'static str>,
-// }
-
+use crate::store::config::Config;
+use crate::transmitter::manager::TransmissionManager;
 
 pub async fn start(config: Config, app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
     // Setup logging
     setup_logger();
 
+    let transmission_manager = TransmissionManager::new(config.clone());
+
     // Create DICOM server
-    let dicom_server = DICOMServer::new(config, app.clone());
+    let dicom_server = DICOMServer::new(config, app.clone(), transmission_manager);
 
     // Handle OS signals for graceful shutdown
     // get this out of unsafe
@@ -32,7 +28,6 @@ pub async fn start(config: Config, app: AppHandle) -> Result<(), Box<dyn std::er
             app.emit("running", false).unwrap();
         }
     });
-
 
     Ok(())
 }
@@ -55,3 +50,4 @@ pub(crate) async fn stop(app: AppHandle) -> Result<(), Box<dyn std::error::Error
 
     Ok(())
 }
+
