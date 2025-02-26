@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use zip::{
     write::ZipWriter,
     write::SimpleFileOptions,
@@ -8,17 +8,22 @@ use zip::{
 };
 use walkdir::{DirEntry, WalkDir};
 use std::io::{Seek, Write};
-use reqwest::{Client, Body};
+use reqwest::{Client, Body, multipart};
 use tokio_util::io::ReaderStream;
 use tokio::{fs, fs::File};
 use tokio::io::AsyncReadExt;
-
+use serde_json::Value;
 use std::{collections::HashMap, sync::Arc};
+use serde_json::json;
 use tokio::sync::{Mutex, oneshot};
 use tokio::time::{sleep, Duration, Instant};
 use zip::result::ZipError;
 use crate::log_info;
 use crate::store::config::Config;
+use chrono::{Utc, Duration as ChronoDuration};
+use hmac::{Hmac, Mac};
+use sha1::Sha1; // For Transloadit's spec, they require SHA1-based HMAC
+use hex;
 
 #[derive(Debug)]
 pub struct ScheduledStudy {
@@ -130,33 +135,51 @@ impl Transmission {
 
         let study_path = file_path.as_path();
 
-        println!("Preparing to send study: {:?}", study_path);
+        log_info!("Preparing to send study: {:?}", study_path);
 
         let archive_path = self.compress_study(study_path).await?;
+        log_info!("Preparing to send study zip: {:?}", archive_path);
 
-        // Send archive
-        let file = File::open(&archive_path).await?;
-        // let file_size = file.metadata()?.len();
-        let stream = ReaderStream::new(file);
-        let body_stream = Body::wrap_stream(stream);
+        // === Create an Assembly on Transloadit, get the TUS URL back
+        let tus_url = self.create_transloadit_assembly().await?;
+        log_info!("Got TUS URL: {}", tus_url);
 
-        let response = self.client.post(&self.config.get_api_endpoint())
-            .header("Authorization", format!("Bearer {}", &self.config.api_key))
-            .header("Content-Type", "application/octet-stream")
-            .timeout(Duration::from_secs(30))
-            .body(body_stream)
-            .send()
-            .await?;
+        // === Upload via TUS
+        self.upload_via_tus(&tus_url, &archive_path).await?;
+        log_info!("Study sent successfully via TUS to {}", tus_url);
 
-        if response.status().is_success() {
-            log_info!("Study sent successfully: {:?}", archive_path);
-            if delete_after_send {
-                self.delete_local_study_files(study_path).await?;
-            }
-            Ok(())
-        } else {
-            Err(anyhow::anyhow!("Failed to send archive. Status: {}", response.status()))
+        // Optionally, delete local study if requested
+        if delete_after_send {
+            self.delete_local_study_files(study_path).await?;
         }
+
+        Ok(())
+
+        // // Send archive
+        // let file = File::open(&archive_path).await?;
+        // // let file_size = file.metadata()?.len();
+        // let stream = ReaderStream::new(file);
+        // let body_stream = Body::wrap_stream(stream);
+        //
+        // log_info!("Endpoint: {:?}", &self.config.get_api_endpoint());
+        //
+        // let response = self.client.post(&self.config.get_api_endpoint())
+        //     .header("Authorization", format!("Bearer {}", &self.config.api_key))
+        //     .header("Content-Type", "application/octet-stream")
+        //     .timeout(Duration::from_secs(30))
+        //     .body(body_stream)
+        //     .send()
+        //     .await?;
+        //
+        // if response.status().is_success() {
+        //     log_info!("Study sent successfully: {:?}", archive_path);
+        //     if delete_after_send {
+        //         self.delete_local_study_files(study_path).await?;
+        //     }
+        //     Ok(())
+        // } else {
+        //     Err(anyhow::anyhow!("Failed to send archive. Status: {}", response.status()))
+        // }
     }
 
 
@@ -236,7 +259,179 @@ impl Transmission {
         Ok(())
     }
 
+    async fn generate_transloadit_signature(&self, params: &Value, transloadit_secret: &str) -> Result<String, Box<dyn std::error::Error>> {
+        // Convert the entire JSON object into a single JSON string
+        let params_string = serde_json::to_string(params)?;
 
+        // Transloadit's HMAC is calculated over the string: "params=JSON"
+        // let payload = format!("params={}", params_string);
+        let payload = params_string;
+
+        // Create an HMAC-SHA1 instance and feed the payload into it
+        let mut mac = Hmac::<Sha1>::new_from_slice(transloadit_secret.as_bytes())?;
+        mac.update(payload.as_bytes());
+
+        // Finalize to get the raw HMAC bytes, then hex-encode them
+        let signature = hex::encode(mac.finalize().into_bytes());
+
+        // Return both the JSON-encoded params and the hex-encoded signature
+        Ok(signature)
+    }
+
+    /// Create a Transloadit Assembly and return its TUS upload URL.
+    async fn create_transloadit_assembly(&self) -> Result<String> {
+        // Typically Transloadit requires an expires date/time in your auth block.
+        // For simplicity, set it 1 hour from now. Adjust as needed:
+        let expires_time = (Utc::now() + ChronoDuration::minutes(60))
+            .format("%Y/%m/%d %H:%M:%S+00:00")
+            .to_string();
+
+        let assembly_params = json!({
+            "auth": {
+                "key": "e25578f954cc41a697855b8dca8b8331",    
+                "expires": expires_time,
+            },
+            "template_id": "75895752cf8f4e6eac1afa86c170465c",
+            "notify_url": "",
+        });
+
+        let transloadit_secret = "TRANSLOADIT_SECRET";
+
+        let signature = self.generate_transloadit_signature(&assembly_params, transloadit_secret)
+            .await
+            .unwrap().to_string();
+
+        log_info!("signature {:#?}", &signature);
+
+        let form = multipart::Form::new()
+            .text("params", assembly_params.to_string())
+            .text("signature", signature)
+            .text("mode" , "normal")
+            .text("num_expected_upload_files", "1");
+
+        // The Transloadit docs say you can send:
+        // POST to https://api2.transloadit.com/assemblies
+        // with a JSON body that has "params" as a JSON-encoded string, or
+        // that you can pass it as top-level JSON. This snippet uses
+        // top-level "params" JSON for convenience:
+        let resp = self.client
+            .post("https://api2.transloadit.com/assemblies")
+            // .header("Content-Type", "multipart/form-data")
+            // .json(&assembly_params)
+            .multipart(form)
+            .send()
+            .await
+            .context("Failed POST to Transloadit /assemblies")?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+
+            log_info!("Could not create Transloadit assembly {}", resp.status());
+
+            let resp_json: serde_json::Value = resp.json().await?;
+            log_info!("{:#?}", resp_json);
+
+            return Err(anyhow!(
+                "Could not create Transloadit assembly: status={:?}",
+                status
+            ));
+        }
+
+        // The Transloadit response includes "tus_url" - parse it out:
+        let resp_json: serde_json::Value = resp.json().await
+            .context("Failed to parse create-assembly JSON")?;
+
+        log_info!("{:#?}", resp_json);
+
+        let tus_url = resp_json["tus_url"]
+            .as_str()
+            .ok_or_else(|| anyhow!("No tus_url in Transloadit assembly response"))?
+            .to_owned();
+
+        Ok(tus_url)
+    }
+
+    /// A simple TUS upload example.
+    /// In a real TUS workflow, you might handle chunking, resume, or partial patches,
+    /// but here we just do a single-chunk approach or a small streaming approach.
+    async fn upload_via_tus(&self, tus_url: &str, file_path: &Path) -> Result<()> {
+        let file_size = fs::metadata(file_path)
+            .await
+            .context("Could not get metadata for file")?
+            .len();
+
+        let file_name = file_path.file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("file.dcm.zip");
+
+        // This is how TUS expects the filename to be passed—Base64-encoded in Upload-Metadata
+        let encoded_filename = base64::encode(file_name);
+
+        // === 1) Create the TUS file on the server (POST ...)
+        let create_req = self.client
+            .post(tus_url) // Transloadit’s TUS endpoint from assembly
+            .header("Tus-Resumable", "1.0.0")
+            .header("Upload-Length", file_size.to_string())
+            .header("Upload-Metadata", format!("filename {}", encoded_filename))
+            .send()
+            .await
+            .context("Failed TUS file creation (POST)")?;
+
+        if !create_req.status().is_success() {
+            let status = create_req.status();
+            let body = create_req.text().await.ok();
+
+            log_info!(
+                "TUS creation failed. Status: {}, Body: {:?}",
+                status,
+                body
+            );
+
+            return Err(anyhow!(
+                "TUS creation failed. Status: {}, Body: {:?}",
+                status,
+                body
+            ));
+        }
+
+        // TUS server responds with a `Location` header: the unique upload URL for this file
+        let location_header = create_req
+            .headers()
+            .get("Location")
+            .ok_or_else(|| anyhow!("No Location header from TUS create request"))?;
+
+        let upload_url = location_header
+            .to_str()
+            .context("Cannot parse TUS Location header as string")?
+            .to_owned();
+
+        // === 2) PATCH the file data (the actual upload)
+        // For large files, you might want to chunk this in a loop.
+        // For smaller files, we can read all into memory or do a stream approach with partial patching.
+        let file_data = fs::read(file_path)
+            .await
+            .context("Could not read archive to memory")?;
+
+        let patch_resp = self.client
+            .patch(&upload_url)
+            .header("Tus-Resumable", "1.0.0")
+            .header("Upload-Offset", 0.to_string())
+            .header("Content-Type", "application/offset+octet-stream")
+            .body(file_data)
+            .send()
+            .await
+            .context("Failed TUS PATCH request")?;
+
+        if !patch_resp.status().is_success() {
+            return Err(anyhow!(
+                "TUS upload patch failed. Status: {}, Body: {:?}",
+                patch_resp.status(),
+                patch_resp.text().await.ok()
+            ));
+        }
+
+        Ok(())
+    }
 
 
 }

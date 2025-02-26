@@ -58,6 +58,7 @@ impl Config {
     }
 
     pub fn get_api_endpoint(&self) -> String {
-        self.region.clone() + ".aurabox.app"
+        "https://webhook.site/7fcc2fb1-a457-4c2f-a9c4-40f5863f7a95".to_string()
+        // self.region.clone() + ".aurabox.app"
     }
 }

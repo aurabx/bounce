@@ -133,12 +133,16 @@ name = "app"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.21.7",
+ "chrono",
  "clap",
  "dicom",
  "dicom-dictionary-std",
  "dicom-transfer-syntax-registry",
  "dicom-ul",
  "flate2",
+ "hex",
+ "hmac",
  "http",
  "hyper",
  "log",
@@ -146,6 +150,7 @@ dependencies = [
  "ring",
  "serde",
  "serde_json",
+ "sha1",
  "sha2",
  "snafu",
  "tar",
@@ -539,8 +544,10 @@ checksum = "7e36cc9d416881d2e24f9a963be5fb1cd90966419ac844274161d10488b3e825"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
+ "js-sys",
  "num-traits",
  "serde",
+ "wasm-bindgen",
  "windows-targets 0.52.6",
 ]
 
