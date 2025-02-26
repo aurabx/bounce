@@ -1,17 +1,15 @@
-use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter};
 use crate::logger::setup_logger;
-use crate::{receiver, AppState};
+use crate::{receiver};
 use receiver::dicom_server::DICOMServer;
 use tokio;
 use crate::store::config::Config;
-use crate::transmitter::manager::TransmissionManager;
 
 pub async fn start(config: Config, app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
     // Setup logging
     setup_logger();
-    
+
 
     // Create DICOM server
     let dicom_server = DICOMServer::new(config, app.clone());

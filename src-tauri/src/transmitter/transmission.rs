@@ -14,12 +14,9 @@ use tokio::{fs, fs::File};
 use tokio::io::AsyncReadExt;
 
 use std::{collections::HashMap, sync::Arc};
-use tauri::{AppHandle};
 use tokio::sync::{Mutex, oneshot};
 use tokio::time::{sleep, Duration, Instant};
-
 use zip::result::ZipError;
-use crate::lib::task_manager::TaskManager;
 use crate::log_info;
 use crate::store::config::Config;
 
@@ -73,24 +70,25 @@ impl Transmission {
         // Clone what we need for the spawned task
         let scheduled_studies = Arc::clone(&self.scheduled_studies);
         let study_uid_clone = study_uid.clone();
+        let self_clone=  self.clone();
 
         // Spawn the debounce countdown in a background task
         tauri::async_runtime::spawn(async move {
             tokio::select! {
                 // Wait for 10 seconds
-                _ = sleep(Duration::from_secs(5)) => {
+                _ = sleep(Duration::from_secs(10)) => {
                     // 5 seconds have passed with no new call for this UID
                     log_info!("Time's up -> pushing study {}", study_uid_clone);
+
                     // do the actual push logic here, e.g. `self_clone.send_study(...).await`
-                    // let study_uid = study_uid.clone();
+                    let study_uid = study_uid.clone();
 
-                    tauri::async_runtime::spawn(async move {
-                        sleep(Duration::from_secs(30)).await;
-                        log_info!("moved run {}", study_uid_clone);
-                    });
+                    // tauri::async_runtime::spawn(async move {
+                    //     sleep(Duration::from_secs(30)).await;
+                    //     log_info!("moved run {}", study_uid_clone);
+                    // });
 
-
-                    // self.send_study(study_uid_clone, false).await.unwrap();
+                    let _ = self_clone.send_study(study_uid, false).await;
                     // sleep(Duration::from_secs(30)).await;
                     // log_info!("pretended this might take 30 secs to complete {}", study_uid_clone);
                 },
@@ -106,6 +104,15 @@ impl Transmission {
             let mut map = scheduled_studies.lock().await;
             map.remove(&study_uid);
         });
+
+        Ok(())
+    }
+
+    pub async fn send_study_simple(
+        &self,
+        study_uid: String,
+    ) -> Result<()> {
+        log_info!("send_study_simple {} called.", study_uid);
 
         Ok(())
     }
@@ -133,7 +140,7 @@ impl Transmission {
         let stream = ReaderStream::new(file);
         let body_stream = Body::wrap_stream(stream);
 
-        let response = self.client.post(&self.config.api_endpoint)
+        let response = self.client.post(&self.config.get_api_endpoint())
             .header("Authorization", format!("Bearer {}", &self.config.api_key))
             .header("Content-Type", "application/octet-stream")
             .timeout(Duration::from_secs(30))
@@ -153,55 +160,55 @@ impl Transmission {
     }
 
 
-    pub async fn zip_folder<T>(
+    pub async fn zip_folder<T, I>(
         &self,
-        it: &mut dyn Iterator<Item = DirEntry>,
-            prefix: &Path,
-            writer: T
-        ) -> anyhow::Result<()>
-        where
-            T: Write + Seek,
-        {
-            let mut zip = ZipWriter::new(writer);
-            let options = SimpleFileOptions::default()
-                .compression_method(CompressionMethod::Deflated)
-                .unix_permissions(0o755);
+        it: I,
+        prefix: &Path,
+        writer: T
+    ) -> anyhow::Result<()>
+    where
+        T: Write + Seek,
+        I: Iterator<Item = DirEntry> + Send,
+    {
+        let mut zip = ZipWriter::new(writer);
+        let options = SimpleFileOptions::default()
+            .compression_method(CompressionMethod::Deflated)
+            .unix_permissions(0o755);
 
-            let prefix = Path::new(prefix);
-            let mut buffer = Vec::new();
-            for entry in it {
-                let path = entry.path();
-                let name = path.strip_prefix(prefix).unwrap();
-                let path_as_string = name
-                    .to_str()
-                    .map(str::to_owned)
-                    .with_context(|| format!("{name:?} Is a Non UTF-8 Path"))?;
+        let prefix = Path::new(prefix);
+        let mut buffer = Vec::new();
+        for entry in it {
+            let path = entry.path();
+            let name = path.strip_prefix(prefix).unwrap();
+            let path_as_string = name
+                .to_str()
+                .map(str::to_owned)
+                .with_context(|| format!("{name:?} Is a Non UTF-8 Path"))?;
 
-                // Write file or directory explicitly
-                // Some unzip tools unzip files with directory paths correctly, some do not!
-                if path.is_file() {
-                    log_info!("adding file {path:?} as {name:?} ...");
-                    zip.start_file(path_as_string, options)?;
-                    let mut f = File::open(path).await?;
+            // Write file or directory explicitly
+            // Some unzip tools unzip files with directory paths correctly, some do not!
+            if path.is_file() {
+                log_info!("adding file {path:?} as {name:?} ...");
+                zip.start_file(path_as_string, options)?;
+                let mut f = File::open(path).await?;
 
-                    f.read_to_end(&mut buffer).await?;
-                    zip.write_all(&buffer)?;
-                    buffer.clear();
-                } else if !name.as_os_str().is_empty() {
-                    // Only if not root! Avoids path spec / warning
-                    // and mapname conversion failed error on unzip
-                    log_info!("adding dir {path_as_string:?} as {name:?} ...");
-                    zip.add_directory(path_as_string, options)?;
-                }
+                f.read_to_end(&mut buffer).await?;
+                zip.write_all(&buffer)?;
+                buffer.clear();
+            } else if !name.as_os_str().is_empty() {
+                // Only if not root! Avoids path spec / warning
+                // and mapname conversion failed error on unzip
+                log_info!("adding dir {path_as_string:?} as {name:?} ...");
+                zip.add_directory(path_as_string, options)?;
             }
-            zip.finish()?;
-            Ok(())
         }
+        zip.finish()?;
+        Ok(())
+    }
 
 
     async fn compress_study(&self, study_path: &Path) -> Result<PathBuf> {
         let archive_path = study_path.with_extension("zip");
-
 
         if !Path::new(study_path).is_dir() {
             return Err(ZipError::FileNotFound.into());
@@ -211,12 +218,14 @@ impl Transmission {
         let file = std::fs::File::create(path)?;
 
         let walkdir = WalkDir::new(study_path);
-        let it = walkdir.into_iter();
+        let it = walkdir.into_iter().filter_map(|e| e.ok());
 
-        self.zip_folder(&mut it.filter_map(|e| e.ok()), study_path, file).await?;
+        // Pass the iterator by value instead of a mutable reference
+        self.zip_folder(it, study_path, file).await?;
+
+        log_info!("zip path {archive_path:?}");
 
         Ok(archive_path)
-
     }
 
     async fn delete_local_study_files(&self, study_path: &Path) -> Result<()> {

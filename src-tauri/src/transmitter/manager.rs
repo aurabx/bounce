@@ -1,8 +1,5 @@
 use std::sync::Arc;
-use tauri::{App, AppHandle};
 use tokio::sync::{mpsc, Mutex};
-use tokio::sync::oneshot::Receiver;
-use crate::lib::task_manager::TaskManager;
 use crate::log_info;
 use crate::store::config::Config;
 use crate::transmitter::transmission::Transmission;
@@ -36,11 +33,11 @@ impl TransmissionManager {
         while let Some(command) = receiver.recv().await {
             let transmission = transmission.clone();
             tokio::spawn(async move {
-                let mut transmission = transmission.lock().await;
+                let transmission = transmission.lock().await;
 
                 match command {
                     TransmissionCommand::SendStudy { study_uid, delete_after_send } => {
-                        log_info!("SendStudy: {:?}", study_uid);
+                        log_info!("SendStudy: {:?} {:?}", study_uid, delete_after_send);
                     }
                     TransmissionCommand::ScheduleStudy { study_uid } => {
                         log_info!("ScheduleStudy sending...");
@@ -55,9 +52,7 @@ impl TransmissionManager {
 
     /// Send a command to the transmission background task
     pub async fn send_command(&self, command: TransmissionCommand) {
-
         log_info!("send_command received");
-
         let _ = self.sender.send(command).await;
     }
 }

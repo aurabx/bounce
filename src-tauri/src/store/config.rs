@@ -8,7 +8,7 @@ use tauri_plugin_store::Store;
 pub struct Config {
     pub base_dir: String,
     pub api_key: String,
-    pub api_endpoint: String,
+    pub region: String,
     pub port: u16,
     pub host: String,
 }
@@ -38,8 +38,8 @@ impl Config {
                 Some(value) => value.as_str().unwrap().parse().unwrap(),
             },
 
-            api_endpoint: match store.get("api_endpoint") {
-                None => "API Endpoint not found in store".to_string(),
+            region: match store.get("region") {
+                None => "Region not found in store".to_string(),
                 Some(value) => value.as_str().unwrap().parse().unwrap(),
             },
 
@@ -55,5 +55,9 @@ impl Config {
 
             base_dir: env::var("STORAGE_DIR").unwrap_or_else(|_| "/tmp/dicom_storage".to_string()),
         }
+    }
+
+    pub fn get_api_endpoint(&self) -> String {
+        self.region.clone() + ".aurabox.app"
     }
 }
