@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-use crate::{log_error, log_info, receiver, store, transmitter};
+use crate::{log_error, log_info, receiver, store, transmitter, AppState};
 use dicom::core::{DataElement, Tag, VR};
 use dicom::dicom_value;
 use dicom::dictionary_std::tags;
@@ -14,25 +13,21 @@ use std::path::PathBuf;
 use store::config::Config;
 use std::sync::{Arc};
 use std::fs;
-use tauri::{AppHandle, Emitter};
-use tokio::sync::{oneshot, Mutex};
-use tokio::time::{sleep, Duration, Instant};
-use transmitter::transmission::Transmission;
-use crate::receiver::server::{TransmissionCommand, TransmissionManager};
+use tauri::{AppHandle, Emitter, Manager};
+use tokio::time::{sleep, Duration};
+use transmitter::manager::{TransmissionManager, TransmissionCommand};
 
 #[derive(Clone)]
 pub struct DICOMServer {
     config: Arc<Config>,
     app_handle: AppHandle,
-    transmission_manager: Arc<TransmissionManager>,
 }
 
 impl DICOMServer {
-    pub fn new(config: Config, app_handle: AppHandle, transmission_manager: TransmissionManager) -> Self {
+    pub fn new(config: Config, app_handle: AppHandle) -> Self {
         Self {
             config: Arc::new(config.clone()),
-            app_handle,
-            transmission_manager: Arc::new(transmission_manager),
+            app_handle
         }
     }
 
@@ -266,9 +261,17 @@ impl DICOMServer {
 
                                     log_info!("Stored {}", file_path.display());
 
-                                    self.transmission_manager.send_command(TransmissionCommand::ScheduleStudy {
+                                    self.app_handle.emit("study-received", study_uid.clone())
+                                        .unwrap_or_else(|e| {
+                                            println!("Failed to emit study-received event: {}", e);
+                                        });
+
+                                    let state = self.app_handle.state::<AppState>();
+
+                                    state.tx_manager.send_command(TransmissionCommand::ScheduleStudy {
                                         study_uid
                                     }).await;
+
 
                                     // send C-STORE-RSP object
                                     // commands are always in implict VR LE
@@ -337,8 +340,6 @@ impl DICOMServer {
                 }
             }
         }
-
-        sleep(Duration::from_secs(20)).await;
 
         if let Ok(peer_addr) = association.inner_stream().peer_addr() {
             log_info!(

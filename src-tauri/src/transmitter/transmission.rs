@@ -14,21 +14,23 @@ use tokio::{fs, fs::File};
 use tokio::io::AsyncReadExt;
 
 use std::{collections::HashMap, sync::Arc};
+use tauri::{AppHandle};
 use tokio::sync::{Mutex, oneshot};
 use tokio::time::{sleep, Duration, Instant};
 
 use zip::result::ZipError;
+use crate::lib::task_manager::TaskManager;
 use crate::log_info;
 use crate::store::config::Config;
 
 #[derive(Debug)]
-struct ScheduledStudy {
+pub struct ScheduledStudy {
     last_received: Instant,
     // We send a signal to the task whenever we want to reset the countdown.
     cancel_tx: oneshot::Sender<()>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub struct Transmission {
     client: Client,
     config: Arc<Config>,
@@ -43,6 +45,7 @@ impl Transmission {
             scheduled_studies: Arc::new(Mutex::new(HashMap::new())),
         }
     }
+
 
     /// Schedule pushing the study in 10 seconds—debouncing repeated calls.
     /// If another call comes in for the same study before the 10s ends,
@@ -69,25 +72,31 @@ impl Transmission {
 
         // Clone what we need for the spawned task
         let scheduled_studies = Arc::clone(&self.scheduled_studies);
+        let study_uid_clone = study_uid.clone();
 
         // Spawn the debounce countdown in a background task
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             tokio::select! {
                 // Wait for 10 seconds
                 _ = sleep(Duration::from_secs(5)) => {
-                    // 10 seconds have passed with no new call for this UID
-                    log_info!("Time's up—pushing study {}", study_uid);
+                    // 5 seconds have passed with no new call for this UID
+                    log_info!("Time's up -> pushing study {}", study_uid_clone);
                     // do the actual push logic here, e.g. `self_clone.send_study(...).await`
-                    let study_uid = study_uid.clone();
+                    // let study_uid = study_uid.clone();
 
-                    tokio::spawn(async move {
+                    tauri::async_runtime::spawn(async move {
                         sleep(Duration::from_secs(30)).await;
-                        log_info!("pretended this might take 60 secs to complete {}", study_uid);
+                        log_info!("moved run {}", study_uid_clone);
                     });
+
+
+                    // self.send_study(study_uid_clone, false).await.unwrap();
+                    // sleep(Duration::from_secs(30)).await;
+                    // log_info!("pretended this might take 30 secs to complete {}", study_uid_clone);
                 },
                 // OR we get a cancellation signal because schedule_study_push was called again
                 _ = rx => {
-                    log_info!("Study {} was reset/canceled before 10s elapsed.", study_uid);
+                    log_info!("Study {} was reset/canceled before 10s elapsed.", study_uid_clone);
                     return;
                 }
             }

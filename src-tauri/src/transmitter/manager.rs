@@ -1,9 +1,13 @@
 use std::sync::Arc;
+use tauri::{App, AppHandle};
 use tokio::sync::{mpsc, Mutex};
+use tokio::sync::oneshot::Receiver;
+use crate::lib::task_manager::TaskManager;
+use crate::log_info;
 use crate::store::config::Config;
 use crate::transmitter::transmission::Transmission;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct TransmissionManager {
     sender: mpsc::Sender<TransmissionCommand>,
 }
@@ -14,17 +18,17 @@ impl TransmissionManager {
         let transmission = Arc::new(Mutex::new(Transmission::new(config)));
 
         // Start background task
-        tokio::spawn(Self::run_background_task(rx, transmission));
+        let _ =  tauri::async_runtime::spawn({
+            Self::run_background_task(rx, transmission)
+        });
 
-        Self { sender: tx }
+
+        Self {
+            sender: tx
+        }
     }
 
-    /// Send a command to the transmission background task
-    pub async fn send_command(&self, command: TransmissionCommand) {
-        let _ = self.sender.send(command).await;
-    }
-
-    /// Background task to handle sending studies
+    /// Background task to process commands
     async fn run_background_task(
         mut receiver: mpsc::Receiver<TransmissionCommand>,
         transmission: Arc<Mutex<Transmission>>,
@@ -33,13 +37,13 @@ impl TransmissionManager {
             let transmission = transmission.clone();
             tokio::spawn(async move {
                 let mut transmission = transmission.lock().await;
+
                 match command {
                     TransmissionCommand::SendStudy { study_uid, delete_after_send } => {
-                        if let Err(e) = transmission.send_study(study_uid, delete_after_send).await {
-                            println!("Error sending study: {:?}", e);
-                        }
+                        log_info!("SendStudy: {:?}", study_uid);
                     }
                     TransmissionCommand::ScheduleStudy { study_uid } => {
+                        log_info!("ScheduleStudy sending...");
                         if let Err(e) = transmission.schedule_study_push(study_uid).await {
                             println!("Error sending study: {:?}", e);
                         }
@@ -47,6 +51,14 @@ impl TransmissionManager {
                 }
             });
         }
+    }
+
+    /// Send a command to the transmission background task
+    pub async fn send_command(&self, command: TransmissionCommand) {
+
+        log_info!("send_command received");
+
+        let _ = self.sender.send(command).await;
     }
 }
 
