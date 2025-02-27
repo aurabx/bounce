@@ -50,7 +50,7 @@ impl Transmission {
             aura_api: Arc::new(AuraApi::new(config.clone()))
         }
     }
-    
+
     /// Schedule pushing the study in 10 seconds—debouncing repeated calls.
     /// If another call comes in for the same study before the 10s ends,
     /// we cancel and restart the countdown.
@@ -287,22 +287,7 @@ impl Transmission {
         let expires_time = (Utc::now() + ChronoDuration::minutes(60))
             .format("%Y/%m/%d %H:%M:%S+00:00")
             .to_string();
-
-        // let assembly_params = json!({
-        //     "auth": {
-        //         "key": "e25578f954cc41a697855b8dca8b8331",
-        //         "expires": expires_time,
-        //     },
-        //     "template_id": "75895752cf8f4e6eac1afa86c170465c",
-        //     "notify_url": "",
-        // });
-        // 
-        // let transloadit_secret = "NONE";
-        // 
-        // let signature = self.generate_transloadit_signature(&assembly_params, transloadit_secret)
-        //     .await
-        //     .unwrap().to_string();
-        // 
+        
         let signature_result = self.aura_api.generate_signature().await?;
         let signature = signature_result.get("signature").unwrap().as_str().unwrap().to_string();
 
