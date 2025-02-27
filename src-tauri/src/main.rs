@@ -3,6 +3,8 @@ mod logger;
 mod receiver;
 mod store;
 mod transmitter;
+mod aura;
+
 use store::config::Config;
 use tauri::{AppHandle, Emitter, Listener, Manager};
 use tauri_plugin_store::StoreExt;

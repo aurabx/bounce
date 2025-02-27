@@ -1,25 +1,26 @@
 use std::path::{Path, PathBuf};
-
 use anyhow::{anyhow, Context, Result};
 use zip::{
     write::ZipWriter,
     write::SimpleFileOptions,
     CompressionMethod
 };
+use base64::engine::general_purpose::STANDARD as BASE64;
 use walkdir::{DirEntry, WalkDir};
 use std::io::{Seek, Write};
 use reqwest::{Client, Body, multipart};
-use tokio_util::io::ReaderStream;
 use tokio::{fs, fs::File};
 use tokio::io::AsyncReadExt;
 use serde_json::Value;
 use std::{collections::HashMap, sync::Arc};
+use base64::Engine;
 use serde_json::json;
 use tokio::sync::{Mutex, oneshot};
 use tokio::time::{sleep, Duration, Instant};
 use zip::result::ZipError;
 use crate::log_info;
 use crate::store::config::Config;
+use crate::aura::aura_api::AuraApi;
 use chrono::{Utc, Duration as ChronoDuration};
 use hmac::{Hmac, Mac};
 use sha1::Sha1; // For Transloadit's spec, they require SHA1-based HMAC
@@ -37,18 +38,19 @@ pub struct Transmission {
     client: Client,
     config: Arc<Config>,
     scheduled_studies: Arc<Mutex<HashMap<String, ScheduledStudy>>>,
+    aura_api: Arc<AuraApi>,
 }
 
 impl Transmission {
     pub fn new(config: Config) -> Self {
         Self {
             client: Client::new(),
-            config: Arc::new(config),
+            config: Arc::new(config.clone()),
             scheduled_studies: Arc::new(Mutex::new(HashMap::new())),
+            aura_api: Arc::new(AuraApi::new(config.clone()))
         }
     }
-
-
+    
     /// Schedule pushing the study in 10 seconds—debouncing repeated calls.
     /// If another call comes in for the same study before the 10s ends,
     /// we cancel and restart the countdown.
@@ -141,12 +143,12 @@ impl Transmission {
         log_info!("Preparing to send study zip: {:?}", archive_path);
 
         // === Create an Assembly on Transloadit, get the TUS URL back
-        let tus_url = self.create_transloadit_assembly().await?;
-        log_info!("Got TUS URL: {}", tus_url);
+        let assembly = self.create_transloadit_assembly().await?;
+        log_info!("Got TUS URL: {}", assembly.get("tus_url").unwrap());
 
         // === Upload via TUS
-        self.upload_via_tus(&tus_url, &archive_path).await?;
-        log_info!("Study sent successfully via TUS to {}", tus_url);
+        self.upload_via_tus(&assembly, &archive_path).await?;
+        log_info!("Study sent successfully via TUS to {}", assembly.get("tus_url").unwrap());
 
         // Optionally, delete local study if requested
         if delete_after_send {
@@ -279,32 +281,36 @@ impl Transmission {
     }
 
     /// Create a Transloadit Assembly and return its TUS upload URL.
-    async fn create_transloadit_assembly(&self) -> Result<String> {
+    async fn create_transloadit_assembly(&self) -> Result<Value> {
         // Typically Transloadit requires an expires date/time in your auth block.
         // For simplicity, set it 1 hour from now. Adjust as needed:
         let expires_time = (Utc::now() + ChronoDuration::minutes(60))
             .format("%Y/%m/%d %H:%M:%S+00:00")
             .to_string();
 
-        let assembly_params = json!({
-            "auth": {
-                "key": "e25578f954cc41a697855b8dca8b8331",    
-                "expires": expires_time,
-            },
-            "template_id": "75895752cf8f4e6eac1afa86c170465c",
-            "notify_url": "",
-        });
-
-        let transloadit_secret = "TRANSLOADIT_SECRET";
-
-        let signature = self.generate_transloadit_signature(&assembly_params, transloadit_secret)
-            .await
-            .unwrap().to_string();
+        // let assembly_params = json!({
+        //     "auth": {
+        //         "key": "e25578f954cc41a697855b8dca8b8331",
+        //         "expires": expires_time,
+        //     },
+        //     "template_id": "75895752cf8f4e6eac1afa86c170465c",
+        //     "notify_url": "",
+        // });
+        // 
+        // let transloadit_secret = "NONE";
+        // 
+        // let signature = self.generate_transloadit_signature(&assembly_params, transloadit_secret)
+        //     .await
+        //     .unwrap().to_string();
+        // 
+        let signature_result = self.aura_api.generate_signature().await?;
+        let signature = signature_result.get("signature").unwrap().as_str().unwrap().to_string();
 
         log_info!("signature {:#?}", &signature);
+        log_info!("params {:#?}", signature_result.get("params").unwrap().as_str().unwrap().to_string());
 
         let form = multipart::Form::new()
-            .text("params", assembly_params.to_string())
+            .text("params", signature_result.get("params").unwrap().as_str().unwrap().to_string())
             .text("signature", signature)
             .text("mode" , "normal")
             .text("num_expected_upload_files", "1");
@@ -328,7 +334,7 @@ impl Transmission {
 
             log_info!("Could not create Transloadit assembly {}", resp.status());
 
-            let resp_json: serde_json::Value = resp.json().await?;
+            let resp_json: Value = resp.json().await?;
             log_info!("{:#?}", resp_json);
 
             return Err(anyhow!(
@@ -338,23 +344,35 @@ impl Transmission {
         }
 
         // The Transloadit response includes "tus_url" - parse it out:
-        let resp_json: serde_json::Value = resp.json().await
+        let resp_json: Value = resp.json().await
             .context("Failed to parse create-assembly JSON")?;
 
         log_info!("{:#?}", resp_json);
 
-        let tus_url = resp_json["tus_url"]
-            .as_str()
-            .ok_or_else(|| anyhow!("No tus_url in Transloadit assembly response"))?
-            .to_owned();
+        if let Some(tus_url) = resp_json.get("tus_url") {
+            // `tus_url` exists, do something with it
+            println!("tus_url exists: {:?}", tus_url);
+        } else {
+            // `tus_url` does not exist
+            log_info!("Missing tus_url in Transloadit assembly response");
 
-        Ok(tus_url)
+            return Err(anyhow!(
+                "Missing tus_url in Transloadit assembly response"
+            ));
+        }
+
+        // let tus_url = resp_json["tus_url"]
+        //     .as_str()
+        //     .ok_or_else(|| anyhow!("No tus_url in Transloadit assembly response"))?
+        //     .to_owned();
+
+        Ok(resp_json)
     }
 
     /// A simple TUS upload example.
     /// In a real TUS workflow, you might handle chunking, resume, or partial patches,
     /// but here we just do a single-chunk approach or a small streaming approach.
-    async fn upload_via_tus(&self, tus_url: &str, file_path: &Path) -> Result<()> {
+    async fn upload_via_tus(&self, assembly: &Value, file_path: &Path) -> Result<()> {
         let file_size = fs::metadata(file_path)
             .await
             .context("Could not get metadata for file")?
@@ -364,15 +382,37 @@ impl Transmission {
             .and_then(|s| s.to_str())
             .unwrap_or("file.dcm.zip");
 
-        // This is how TUS expects the filename to be passed—Base64-encoded in Upload-Metadata
-        let encoded_filename = base64::encode(file_name);
+        let tus_url = assembly.get("tus_url").unwrap().as_str().unwrap();
+        let assembly_url = assembly.get("assembly_url").unwrap().as_str().unwrap();
+
+        let metadata_fields = vec![
+            ("name", file_name),
+            ("type", "application/zip"),
+            ("assembly_url", assembly_url),
+            ("filename", file_name),
+            ("fieldname", "file"),
+            ("filetype", "application/zip"),
+        ];
+
+        // 5) Convert them into "key <base64-of-value>" lines, then join with commas
+        let encoded_metadata: Vec<String> = metadata_fields
+            .into_iter()
+            .map(|(k, v)| format!("{} {}", k, BASE64.encode(v)))
+            .collect();
+
+        let upload_metadata = encoded_metadata.join(",");
+
+        log_info!(
+            "upload_metadata {:?}",
+            upload_metadata,
+        );
 
         // === 1) Create the TUS file on the server (POST ...)
         let create_req = self.client
             .post(tus_url) // Transloadit’s TUS endpoint from assembly
             .header("Tus-Resumable", "1.0.0")
             .header("Upload-Length", file_size.to_string())
-            .header("Upload-Metadata", format!("filename {}", encoded_filename))
+            .header("Upload-Metadata", upload_metadata)
             .send()
             .await
             .context("Failed TUS file creation (POST)")?;
