@@ -25,6 +25,7 @@ use chrono::{Utc, Duration as ChronoDuration};
 use hmac::{Hmac, Mac};
 use sha1::Sha1; // For Transloadit's spec, they require SHA1-based HMAC
 use hex;
+use uuid::Uuid;
 
 #[derive(Debug)]
 pub struct ScheduledStudy {
@@ -129,6 +130,8 @@ impl Transmission {
         study_uid: String,
         delete_after_send: bool
     ) -> Result<()> {
+
+        let upload_id = Uuid::new_v4();
 
         // Actually push the study (you’ll have to adapt to your code)
         let out_dir = PathBuf::from("./tmp");
@@ -281,7 +284,7 @@ impl Transmission {
     }
 
     /// Create a Transloadit Assembly and return its TUS upload URL.
-    async fn create_transloadit_assembly(&self) -> Result<Value> {
+    async fn create_transloadit_assembly(&self, upload_id: Uuid) -> Result<Value> {
         // Typically Transloadit requires an expires date/time in your auth block.
         // For simplicity, set it 1 hour from now. Adjust as needed:
         let expires_time = (Utc::now() + ChronoDuration::minutes(60))
@@ -296,8 +299,9 @@ impl Transmission {
 
         let form = multipart::Form::new()
             .text("params", signature_result.get("params").unwrap().as_str().unwrap().to_string())
-            .text("signature", signature)
-            .text("mode" , "normal")
+            .text("signature", signature.clone())
+            .text("mode" , "supplier")
+            .text("upload_id" , upload_id.to_string())
             .text("num_expected_upload_files", "1");
 
         // The Transloadit docs say you can send:
@@ -329,7 +333,7 @@ impl Transmission {
         }
 
         // The Transloadit response includes "tus_url" - parse it out:
-        let resp_json: Value = resp.json().await
+        let mut resp_json: Value = resp.json().await
             .context("Failed to parse create-assembly JSON")?;
 
         log_info!("{:#?}", resp_json);
@@ -350,6 +354,12 @@ impl Transmission {
         //     .as_str()
         //     .ok_or_else(|| anyhow!("No tus_url in Transloadit assembly response"))?
         //     .to_owned();
+
+        if let Some(obj) = resp_json.as_object_mut() {
+            obj.insert("signature".parse()?, signature.to_string().parse()?);
+        } else {
+            eprintln!("resp_json is not an object and cannot have key-value pairs added.");
+        }
 
         Ok(resp_json)
     }

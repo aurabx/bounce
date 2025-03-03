@@ -10,7 +10,7 @@ use dicom_ul::{pdu::PDataValueType, Pdu};
 use receiver::enums::ABSTRACT_SYNTAXES;
 use snafu::{OptionExt, Report, ResultExt, Whatever};
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use store::config::Config;
 use std::sync::{Arc};
 use std::fs;
@@ -273,20 +273,21 @@ impl DICOMServer {
                                         .whatever_context(
                                             "failed to build DICOM meta file information",
                                         )?;
-                                    let file_obj = obj.with_exact_meta(file_meta);
+
 
                                     // write the files to the current directory with their SOPInstanceUID as filenames
                                     let mut file_path = out_dir.clone();
 
                                     file_path.push(study_uid.trim_end_matches('\0').to_string());
-                                    file_path.push(series_uid.trim_end_matches('\0').to_string());
-
                                     let study_dir = file_path.clone();
 
-                                    if !study_dir.exists() {
-                                        fs::create_dir_all(&study_dir).whatever_context(format!(
+                                    file_path.push(series_uid.trim_end_matches('\0').to_string());
+                                    let series_dir = file_path.clone();
+
+                                    if !series_dir.exists() {
+                                        fs::create_dir_all(&series_dir).whatever_context(format!(
                                             "Failed to create study directory: {}",
-                                            study_dir.display()
+                                            series_dir.display()
                                         ))?;
                                     }
 
@@ -294,23 +295,28 @@ impl DICOMServer {
                                         sop_instance_uid.trim_end_matches('\0').to_string()
                                             + ".dcm",
                                     );
+
+                                    log_info!("Stored {}", file_path.display());
+
+                                    if let Err(err) = self.update_study_metadata_json(study_dir.as_path(), &obj).await {
+                                        log_error!("Failed to update study metadata: {}", err);
+                                    }
+
+                                    let file_obj = obj.with_exact_meta(file_meta);
+
                                     file_obj
                                         .write_to_file(&file_path)
                                         .whatever_context("could not save DICOM object to file")?;
-
-                                    log_info!("Stored {}", file_path.display());
 
                                     self.app_handle.emit("study-received", study_uid.clone())
                                         .unwrap_or_else(|e| {
                                             println!("Failed to emit study-received event: {}", e);
                                         });
 
-                                    let state = self.app_handle.state::<AppState>();
-
-                                    state.tx_manager.send_command(TransmissionCommand::ScheduleStudy {
-                                        study_uid
-                                    }).await;
-
+                                    // let state = self.app_handle.state::<AppState>();
+                                    // state.tx_manager.send_command(TransmissionCommand::ScheduleStudy {
+                                    //     study_uid
+                                    // }).await;
 
                                     // send C-STORE-RSP object
                                     // commands are always in implict VR LE
@@ -481,8 +487,8 @@ impl DICOMServer {
     }
 
 
-    /// Update the study metadata JSON file
-    pub async fn update_study_metadata_json(&self, study_path: &std::path::Path, obj: &InMemDicomObject) -> Result<(), Box<dyn std::error::Error>> {
+    /// Update the study metadata JSON file with study_uid as the key
+    pub async fn update_study_metadata_json(&self, study_path: &Path, obj: &InMemDicomObject) -> Result<(), Box<dyn std::error::Error>> {
         // Extract required tags for study and series info
         let study_uid = Self::extract_string_tag(obj, tags::STUDY_INSTANCE_UID)?;
         let series_uid = Self::extract_string_tag(obj, tags::SERIES_INSTANCE_UID)?;
@@ -490,8 +496,8 @@ impl DICOMServer {
         // Path to the JSON metadata file
         let json_path = study_path.join("study_metadata.json");
 
-        // Create or load existing study info
-        let mut study_info = if json_path.exists() {
+        // Create new HashMap for studies if no file exists or load existing
+        let mut studies_map: HashMap<String, StudyInfo> = if json_path.exists() {
             // Read and parse existing JSON file
             let json_content = fs::read_to_string(&json_path)
                 .map_err(|e| format!("Failed to read study metadata file: {}", e))?;
@@ -499,23 +505,57 @@ impl DICOMServer {
             let json_value: Value = serde_json::from_str(&json_content)
                 .map_err(|e| format!("Failed to parse study metadata JSON: {}", e))?;
 
-            // Extract the first study object from the array
-            if let Some(studies) = json_value.get("studies").and_then(|s| s.as_array()) {
-                if let Some(study) = studies.first() {
-                    serde_json::from_value(study.clone())
-                        .map_err(|e| format!("Failed to deserialize study info: {}", e))?
-                } else {
-                    // Create new study info if array is empty
-                    self.create_new_study_info(obj, &study_uid)?
+            // Extract the studies object
+            if let Some(studies) = json_value.get("studies").and_then(|s| s.as_object()) {
+                // Convert to our HashMap
+                let mut map = HashMap::new();
+                for (study_id, study_value) in studies {
+                    match serde_json::from_value::<StudyInfo>(study_value.clone()) {
+                        Ok(study_info) => {
+                            map.insert(study_id.clone(), study_info);
+                        },
+                        Err(e) => {
+                            log_error!("Failed to deserialize study info for {}: {}", study_id, e);
+                            // Continue with other studies
+                        }
+                    }
                 }
+                map
             } else {
-                // Create new study info if no studies array
-                self.create_new_study_info(obj, &study_uid)?
+                HashMap::new()
             }
         } else {
-            // Create new study info if no file exists
-            self.create_new_study_info(obj, &study_uid)?
+            HashMap::new()
         };
+
+        // Get or create the study info
+        let study_info = studies_map.entry(study_uid.clone()).or_insert_with(|| {
+            // Create new study info
+            self.create_new_study_info(obj, &study_uid).unwrap_or_else(|e| {
+                log_error!("Error creating study info: {}", e);
+                // Return a default study info with only the UID
+                StudyInfo {
+                    study_uid: study_uid.clone(),
+                    study_description: None,
+                    institution_name: None,
+                    institution_address: None,
+                    patient_id: None,
+                    other_patient_ids: None,
+                    accession_no: None,
+                    patient_name: None,
+                    issuer_of_patient_id: None,
+                    patient_birth_date: None,
+                    patient_sex: None,
+                    referring_physician_name: None,
+                    study_date: None,
+                    study_time: None,
+                    tz_offset: None,
+                    series: HashMap::new(),
+                    images: 0,
+                    series_count: 0,
+                }
+            })
+        });
 
         // Update or add series info
         let series_info = SeriesInfo {
@@ -545,9 +585,9 @@ impl DICOMServer {
         }
         study_info.images = image_count;
 
-        // Create the final JSON object with the studies array
+        // Create the final JSON object with the studies map
         let json_obj = json!({
-            "studies": [study_info]
+            "studies": studies_map
         });
 
         // Write the JSON to file
@@ -558,7 +598,6 @@ impl DICOMServer {
 
         Ok(())
     }
-
     /// Create a new StudyInfo object from a DICOM object
     fn create_new_study_info(&self, obj: &InMemDicomObject, study_uid: &str) -> Result<StudyInfo, Box<dyn std::error::Error>> {
         Ok(StudyInfo {
