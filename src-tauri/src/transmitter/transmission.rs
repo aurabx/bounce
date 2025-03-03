@@ -146,12 +146,22 @@ impl Transmission {
         log_info!("Preparing to send study zip: {:?}", archive_path);
 
         // === Create an Assembly on Transloadit, get the TUS URL back
-        let assembly = self.create_transloadit_assembly().await?;
+        let assembly = self.create_transloadit_assembly(&upload_id).await?;
         log_info!("Got TUS URL: {}", assembly.get("tus_url").unwrap());
 
         // === Upload via TUS
         self.upload_via_tus(&assembly, &archive_path).await?;
         log_info!("Study sent successfully via TUS to {}", assembly.get("tus_url").unwrap());
+
+
+        self.aura_api.upload_start(
+            study_uid,
+            assembly.get("signature").unwrap().to_string(),
+            upload_id.to_string()
+        ).await.expect("Error sending upload start api message");
+        
+        log_info!("Send upload start");
+
 
         // Optionally, delete local study if requested
         if delete_after_send {
