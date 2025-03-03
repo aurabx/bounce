@@ -287,7 +287,7 @@ impl Transmission {
         let expires_time = (Utc::now() + ChronoDuration::minutes(60))
             .format("%Y/%m/%d %H:%M:%S+00:00")
             .to_string();
-        
+
         let signature_result = self.aura_api.generate_signature().await?;
         let signature = signature_result.get("signature").unwrap().as_str().unwrap().to_string();
 

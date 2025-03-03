@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::{log_error, log_info, receiver, store, transmitter, AppState};
 use dicom::core::{DataElement, Tag, VR};
 use dicom::dicom_value;
@@ -13,6 +14,8 @@ use std::path::PathBuf;
 use store::config::Config;
 use std::sync::{Arc};
 use std::fs;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::time::{Duration};
 use transmitter::manager::{TransmissionCommand};
@@ -23,6 +26,43 @@ pub struct DICOMServer {
     app_handle: AppHandle,
 }
 
+
+/// Represents a DICOM series in the JSON format
+#[derive(Debug, Serialize, Deserialize)]
+struct SeriesInfo {
+    study_instance_uid: String,
+    series_instance_uid: String,
+    modality: Option<String>,
+    series_description: Option<String>,
+    body_part_examined: Option<String>,
+    series_date: Option<String>,
+    series_time: Option<String>,
+}
+
+/// Represents a DICOM study in the JSON format
+#[derive(Debug, Serialize, Deserialize)]
+struct StudyInfo {
+    study_uid: String,
+    study_description: Option<String>,
+    institution_name: Option<String>,
+    institution_address: Option<String>,
+    patient_id: Option<String>,
+    other_patient_ids: Option<String>,
+    accession_no: Option<String>,
+    patient_name: Option<String>,
+    issuer_of_patient_id: Option<String>,
+    patient_birth_date: Option<String>,
+    patient_sex: Option<String>,
+    referring_physician_name: Option<String>,
+    study_date: Option<String>,
+    study_time: Option<String>,
+    tz_offset: Option<String>,
+    series: HashMap<String, SeriesInfo>,
+    images: usize,
+    series_count: usize,
+}
+
+
 impl DICOMServer {
     pub fn new(config: Config, app_handle: AppHandle) -> Self {
         Self {
@@ -30,7 +70,6 @@ impl DICOMServer {
             app_handle
         }
     }
-
 
     pub async fn start(&self) -> Result<(), Box<dyn std::error::Error>> {
         let server = Arc::new(self.clone());
@@ -299,6 +338,7 @@ impl DICOMServer {
                                             data: obj_data,
                                         }],
                                     };
+
                                     association.send(&pdu_response).whatever_context(
                                         "failed to send response object to SCU",
                                     )?;
@@ -371,6 +411,26 @@ impl DICOMServer {
             .whatever_context(format!("could not retrieve {}", tag.element().to_string()))?)
     }
 
+    /// Extract string tag from DICOM object, returning None if tag is missing or empty
+    fn extract_string_tag_optional(obj: &InMemDicomObject, tag: dicom::core::Tag) -> Option<String> {
+        match obj.element(tag) {
+            Ok(element) => {
+                match element.to_str() {
+                    Ok(s) => {
+                        let s = s.trim_end_matches('\0').to_string();
+                        if s.is_empty() {
+                            None
+                        } else {
+                            Some(s)
+                        }
+                    }
+                    Err(_) => None,
+                }
+            }
+            Err(_) => None,
+        }
+    }
+
     fn create_cstore_response(
         &self,
         message_id: u16,
@@ -418,6 +478,109 @@ impl DICOMServer {
             ),
             DataElement::new(tags::STATUS, VR::US, dicom_value!(U16, [0x0000])),
         ])
+    }
+
+
+    /// Update the study metadata JSON file
+    pub async fn update_study_metadata_json(&self, study_path: &std::path::Path, obj: &InMemDicomObject) -> Result<(), Box<dyn std::error::Error>> {
+        // Extract required tags for study and series info
+        let study_uid = Self::extract_string_tag(obj, tags::STUDY_INSTANCE_UID)?;
+        let series_uid = Self::extract_string_tag(obj, tags::SERIES_INSTANCE_UID)?;
+
+        // Path to the JSON metadata file
+        let json_path = study_path.join("study_metadata.json");
+
+        // Create or load existing study info
+        let mut study_info = if json_path.exists() {
+            // Read and parse existing JSON file
+            let json_content = fs::read_to_string(&json_path)
+                .map_err(|e| format!("Failed to read study metadata file: {}", e))?;
+
+            let json_value: Value = serde_json::from_str(&json_content)
+                .map_err(|e| format!("Failed to parse study metadata JSON: {}", e))?;
+
+            // Extract the first study object from the array
+            if let Some(studies) = json_value.get("studies").and_then(|s| s.as_array()) {
+                if let Some(study) = studies.first() {
+                    serde_json::from_value(study.clone())
+                        .map_err(|e| format!("Failed to deserialize study info: {}", e))?
+                } else {
+                    // Create new study info if array is empty
+                    self.create_new_study_info(obj, &study_uid)?
+                }
+            } else {
+                // Create new study info if no studies array
+                self.create_new_study_info(obj, &study_uid)?
+            }
+        } else {
+            // Create new study info if no file exists
+            self.create_new_study_info(obj, &study_uid)?
+        };
+
+        // Update or add series info
+        let series_info = SeriesInfo {
+            study_instance_uid: study_uid.clone(),
+            series_instance_uid: series_uid.clone(),
+            modality: Self::extract_string_tag_optional(obj, tags::MODALITY),
+            series_description: Self::extract_string_tag_optional(obj, tags::SERIES_DESCRIPTION),
+            body_part_examined: Self::extract_string_tag_optional(obj, tags::BODY_PART_EXAMINED),
+            series_date: Self::extract_string_tag_optional(obj, tags::SERIES_DATE),
+            series_time: Self::extract_string_tag_optional(obj, tags::SERIES_TIME),
+        };
+
+        // Add or update the series info
+        study_info.series.insert(series_uid, series_info);
+
+        // Update counts
+        study_info.series_count = study_info.series.len();
+
+        // Count images (one approach is to count DCM files in the study directory)
+        let mut image_count = 0;
+        for entry in walkdir::WalkDir::new(study_path)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().map_or(false, |ext| ext == "dcm"))
+        {
+            image_count += 1;
+        }
+        study_info.images = image_count;
+
+        // Create the final JSON object with the studies array
+        let json_obj = json!({
+            "studies": [study_info]
+        });
+
+        // Write the JSON to file
+        fs::write(&json_path, serde_json::to_string_pretty(&json_obj)?)
+            .map_err(|e| format!("Failed to write study metadata file: {}", e))?;
+
+        log_info!("Updated study metadata JSON: {}", json_path.display());
+
+        Ok(())
+    }
+
+    /// Create a new StudyInfo object from a DICOM object
+    fn create_new_study_info(&self, obj: &InMemDicomObject, study_uid: &str) -> Result<StudyInfo, Box<dyn std::error::Error>> {
+        Ok(StudyInfo {
+            study_uid: study_uid.to_string(),
+            study_description: Self::extract_string_tag_optional(obj, tags::STUDY_DESCRIPTION),
+            institution_name: Self::extract_string_tag_optional(obj, tags::INSTITUTION_NAME),
+            institution_address: Self::extract_string_tag_optional(obj, tags::INSTITUTION_ADDRESS),
+            patient_id: Self::extract_string_tag_optional(obj, tags::PATIENT_ID),
+            other_patient_ids: Self::extract_string_tag_optional(obj, tags::OTHER_PATIENT_NAMES),
+            accession_no: Self::extract_string_tag_optional(obj, tags::ACCESSION_NUMBER),
+            patient_name: Self::extract_string_tag_optional(obj, tags::PATIENT_NAME),
+            issuer_of_patient_id: Self::extract_string_tag_optional(obj, tags::ISSUER_OF_PATIENT_ID),
+            patient_birth_date: Self::extract_string_tag_optional(obj, tags::PATIENT_BIRTH_DATE),
+            patient_sex: Self::extract_string_tag_optional(obj, tags::PATIENT_SEX),
+            referring_physician_name: Self::extract_string_tag_optional(obj, tags::REFERRING_PHYSICIAN_NAME),
+            study_date: Self::extract_string_tag_optional(obj, tags::STUDY_DATE),
+            study_time: Self::extract_string_tag_optional(obj, tags::STUDY_TIME),
+            tz_offset: None, // TZ offset isn't directly in standard DICOM tags
+            series: HashMap::new(),
+            images: 0,
+            series_count: 0,
+        })
     }
 
 }
