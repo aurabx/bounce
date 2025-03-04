@@ -1,8 +1,8 @@
 
 
 export default function TextInput(props: {
-    config: { help: string; label: string; key: string },
-    settings: { [p: string]: any } | undefined,
+    config: { help?: string | null; label: string; key: string },
+    settings?: { [p: string]: any } | undefined | null,
     value: any,
     onChange: (e: any) => void
 }) {

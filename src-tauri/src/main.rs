@@ -8,6 +8,7 @@ mod aura;
 use store::config::Config;
 use tauri::{AppHandle, Emitter, Listener, Manager};
 use tauri_plugin_store::StoreExt;
+use crate::aura::aura_api::AuraApi;
 use crate::transmitter::manager::{TransmissionManager};
 
 #[derive(Clone)]
@@ -19,6 +20,34 @@ struct AppState {
 fn send_log(app: tauri::AppHandle, log: String) -> Result<(), String> {
     println!("log: {}", log);
     app.emit("log", log).unwrap();
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn start_upload(
+    app: tauri::AppHandle,
+    study_uid: String,
+    signature: String,
+    upload_id: String
+) -> Result<(), String> {
+    println!(
+        "start_upload (study_uid: {}), (signature: {}), (signature: {})",
+        study_uid, signature, upload_id
+    );
+
+    let store = app
+        .store("store.json")
+        .map_err(|e| format!("Failed to load store: {}", e))?;
+
+    let config = Config::load(store);
+    let aura_api = AuraApi::new(config);
+
+    aura_api.upload_start(
+        study_uid,
+        signature,
+        upload_id
+    ).await.expect("upload_start panic");
 
     Ok(())
 }
@@ -92,7 +121,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             receiver_start,
             receiver_stop,
-            send_log
+            send_log,
+            start_upload
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

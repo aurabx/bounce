@@ -38,6 +38,7 @@ export default function RootLayout({
                       <MenuItem href="/" label="Dashboard"/>
                       <MenuItem href="/logs" label="Logs"/>
                       <MenuItem href="/settings" label="Settings"/>
+                      <MenuItem href="/tools" label="Tools"/>
                     </ul>
                   </li>
                 </ul>

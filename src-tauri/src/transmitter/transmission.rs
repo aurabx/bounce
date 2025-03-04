@@ -8,28 +8,23 @@ use zip::{
 use base64::engine::general_purpose::STANDARD as BASE64;
 use walkdir::{DirEntry, WalkDir};
 use std::io::{Seek, Write};
-use reqwest::{Client, Body, multipart};
+use reqwest::{Client, multipart};
 use tokio::{fs, fs::File};
 use tokio::io::AsyncReadExt;
 use serde_json::Value;
 use std::{collections::HashMap, sync::Arc};
 use base64::Engine;
-use serde_json::json;
 use tokio::sync::{Mutex, oneshot};
-use tokio::time::{sleep, Duration, Instant};
+use tokio::time::{sleep, Duration};
 use zip::result::ZipError;
 use crate::log_info;
 use crate::store::config::Config;
 use crate::aura::aura_api::AuraApi;
-use chrono::{Utc, Duration as ChronoDuration};
-use hmac::{Hmac, Mac};
-use sha1::Sha1; // For Transloadit's spec, they require SHA1-based HMAC
-use hex;
 use uuid::Uuid;
 
 #[derive(Debug)]
 pub struct ScheduledStudy {
-    last_received: Instant,
+    // last_received: Instant,
     // We send a signal to the task whenever we want to reset the countdown.
     cancel_tx: oneshot::Sender<()>,
 }
@@ -37,7 +32,6 @@ pub struct ScheduledStudy {
 #[derive(Debug, Clone)]
 pub struct Transmission {
     client: Client,
-    config: Arc<Config>,
     scheduled_studies: Arc<Mutex<HashMap<String, ScheduledStudy>>>,
     aura_api: Arc<AuraApi>,
 }
@@ -46,7 +40,6 @@ impl Transmission {
     pub fn new(config: Config) -> Self {
         Self {
             client: Client::new(),
-            config: Arc::new(config.clone()),
             scheduled_studies: Arc::new(Mutex::new(HashMap::new())),
             aura_api: Arc::new(AuraApi::new(config.clone()))
         }
@@ -68,7 +61,7 @@ impl Transmission {
         // Create a fresh oneshot channel so we can signal cancellation
         let (tx, rx) = oneshot::channel();
         let scheduled_study = ScheduledStudy {
-            last_received: Instant::now(),
+            // last_received: Instant::now(),
             cancel_tx: tx,
         };
 
@@ -116,14 +109,6 @@ impl Transmission {
         Ok(())
     }
 
-    pub async fn send_study_simple(
-        &self,
-        study_uid: String,
-    ) -> Result<()> {
-        log_info!("send_study_simple {} called.", study_uid);
-
-        Ok(())
-    }
 
     pub async fn send_study(
         &self,
@@ -274,32 +259,9 @@ impl Transmission {
         Ok(())
     }
 
-    async fn generate_transloadit_signature(&self, params: &Value, transloadit_secret: &str) -> Result<String, Box<dyn std::error::Error>> {
-        // Convert the entire JSON object into a single JSON string
-        let params_string = serde_json::to_string(params)?;
-
-        // Transloadit's HMAC is calculated over the string: "params=JSON"
-        // let payload = format!("params={}", params_string);
-        let payload = params_string;
-
-        // Create an HMAC-SHA1 instance and feed the payload into it
-        let mut mac = Hmac::<Sha1>::new_from_slice(transloadit_secret.as_bytes())?;
-        mac.update(payload.as_bytes());
-
-        // Finalize to get the raw HMAC bytes, then hex-encode them
-        let signature = hex::encode(mac.finalize().into_bytes());
-
-        // Return both the JSON-encoded params and the hex-encoded signature
-        Ok(signature)
-    }
 
     /// Create a Transloadit Assembly and return its TUS upload URL.
-    async fn create_transloadit_assembly(&self, upload_id: Uuid) -> Result<Value> {
-        // Typically Transloadit requires an expires date/time in your auth block.
-        // For simplicity, set it 1 hour from now. Adjust as needed:
-        let expires_time = (Utc::now() + ChronoDuration::minutes(60))
-            .format("%Y/%m/%d %H:%M:%S+00:00")
-            .to_string();
+    async fn create_transloadit_assembly(&self, upload_id: &Uuid) -> Result<Value> {
 
         let signature_result = self.aura_api.generate_signature().await?;
         let signature = signature_result.get("signature").unwrap().as_str().unwrap().to_string();
@@ -360,13 +322,8 @@ impl Transmission {
             ));
         }
 
-        // let tus_url = resp_json["tus_url"]
-        //     .as_str()
-        //     .ok_or_else(|| anyhow!("No tus_url in Transloadit assembly response"))?
-        //     .to_owned();
-
         if let Some(obj) = resp_json.as_object_mut() {
-            obj.insert("signature".parse()?, signature.to_string().parse()?);
+            obj.insert("signature".to_string(), Value::String(signature.to_string()));
         } else {
             eprintln!("resp_json is not an object and cannot have key-value pairs added.");
         }

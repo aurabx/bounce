@@ -36,9 +36,9 @@ impl TransmissionManager {
                 let transmission = transmission.lock().await;
 
                 match command {
-                    TransmissionCommand::SendStudy { study_uid, delete_after_send } => {
-                        log_info!("SendStudy: {:?} {:?}", study_uid, delete_after_send);
-                    }
+                    // TransmissionCommand::SendStudy { study_uid, delete_after_send } => {
+                    //     log_info!("SendStudy: {:?} {:?}", study_uid, delete_after_send);
+                    // }
                     TransmissionCommand::ScheduleStudy { study_uid } => {
                         log_info!("ScheduleStudy sending...");
                         if let Err(e) = transmission.schedule_study_push(study_uid).await {
@@ -58,7 +58,8 @@ impl TransmissionManager {
 }
 
 /// Commands that the Transmission background task will process
+#[allow(dead_code)]
 pub enum TransmissionCommand {
-    SendStudy { study_uid: String, delete_after_send: bool },
+    // SendStudy { study_uid: String, delete_after_send: bool },
     ScheduleStudy { study_uid: String },
 }

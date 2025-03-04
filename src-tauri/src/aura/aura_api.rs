@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use reqwest::Client;
 use serde_json::{json, Value};
-use tauri::AppHandle;
 use crate::store::config::Config;
 
 #[derive(Clone, Debug)]
@@ -39,11 +38,10 @@ impl AuraApi {
     }
 
 
-
     pub async fn upload_start(
-        &self, 
-        study_uid: String, 
-        signature: String, 
+        &self,
+        study_uid: String,
+        signature: String,
         upload_id: String
     ) -> anyhow::Result<Value> {
         let out_dir = PathBuf::from("./tmp");
@@ -51,15 +49,13 @@ impl AuraApi {
         file_path.push(study_uid.trim_end_matches('\0').to_string());
 
         let study_path = file_path.as_path();
-        let json_path = study_path.join("study_metadata.json");
+        let json_path = study_path.join("metadata.json");
 
-        let json_content = fs::read_to_string(&json_path)
-            .map_err(|e| format!("Failed to read study metadata file: {}", e))?;
+        let json_content = fs::read_to_string(&json_path)?;
 
-        let json_value: Value = serde_json::from_str(&json_content)
-            .map_err(|e| format!("Failed to parse study metadata JSON: {}", e))?;
+        let json_value: Value = serde_json::from_str::<Value>(&json_content)?;
 
-        let url = format!("{}/api/upload/signature", &self.config.get_api_endpoint());
+        let url = format!("{}/api/bounce/upload/start", &self.config.get_api_endpoint());
 
         let response = self.client
             .post(&url)
@@ -70,13 +66,40 @@ impl AuraApi {
                 "upload_id" : upload_id,
             }))
             .header("Content-Type", "application/json")
+            .header("Accepts", "application/json")
             .header("Authorization", format!("Bearer {}", &self.config.api_key))
             .send()
             .await?;
 
+        // Check HTTP status code first
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await?;
+
+            // Try to parse error as JSON if possible
+            let error_detail = match serde_json::from_str::<Value>(&body) {
+                Ok(json_error) => json_error,
+                Err(_) => json!({"raw_error": body}),
+            };
+
+            println!(
+                "API request failed with status {}: {:?}",
+                status,
+                error_detail
+            );
+
+            return Err(anyhow::anyhow!(
+                "API request failed with status {}: {:?}",
+                status,
+                error_detail
+            ));
+        }
+
 
         let body = response.text().await?;
-        let result: Value = serde_json::from_str(&body)?;
+        let result: Value = serde_json::from_str(&body).map_err(|e| {
+            anyhow::anyhow!("Failed to parse API response: {}. Raw response: {}", e, body)
+        })?;
 
         Ok(result)
     }
