@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use serde_json::{json, Value};
+use serde_json::value::Index;
 use tauri_plugin_store::Store;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -112,20 +113,14 @@ impl Config {
                                         if let Some(studies_obj) = studies_data.as_object() {
                                             for (_, study_info) in studies_obj {
 
-                                                let study_uid = study_info.get("study_uid")
-                                                    .and_then(|v| v.as_str())
-                                                    .unwrap_or("unknown");
-
-                                                let study_description = study_info.get("study_description")
-                                                    .and_then(|v| v.as_str())
-                                                    .unwrap_or("No description");
-
                                                 // Create a study object with extracted information
                                                 let study = json!({
-                                                "study_uid": study_uid,
-                                                "study_description": study_description,
-                                                "path": entry_path.to_string_lossy()
-                                            });
+                                                    "study_uid": Self::extract_field(study_info, "study_uid"),
+                                                    "study_description": Self::extract_field(study_info, "study_description"),
+                                                    "study_date": Self::extract_field(study_info, "study_date"),
+                                                    "study_time": Self::extract_field(study_info, "study_time"),
+                                                    "path": entry_path.to_string_lossy()
+                                                });
 
                                                 // Add the study to our array
                                                 studies.as_array_mut().unwrap().push(study);
@@ -147,5 +142,12 @@ impl Config {
             ("studies".to_string(), studies),
             ("count".to_string(), Value::from(count))
         ]))
+    }
+
+    fn extract_field(study_info: &Value, index: &str) -> String {
+        study_info.get(index.clone())
+            .and_then(|v| v.unwrap().to_string())
+            .unwrap_or(format!("No {}", index))
+
     }
 }

@@ -26,8 +26,10 @@ export default function Page() {
         });
     }, []);
 
-    const sendStudy = (study: Study) => {
-        return undefined;
+    const sendStudy = async (study: Study) => {
+        await invoke('send_study', {
+            studyUid: study.study_uid,
+        });
     };
 
 
@@ -52,16 +54,16 @@ export default function Page() {
                                             </p>
                                         </div>
                                         <div className="mt-1 flex flex-col items-start gap-x-2 text-xs/5 text-gray-500">
-                                            <p className="whitespace-nowrap">
+                                            <p className="whitespace-nowrap truncate w-full">
                                                 Study Instance UID: {study.study_uid}
                                             </p>
-                                            <p className="truncate">Created at: {study.study_date}</p>
+                                            <p className="truncate w-full">Created at: {study.study_date}</p>
                                         </div>
                                     </div>
                                     <div className="flex flex-none items-center gap-x-4">
                                         <a
                                             href="#"
-                                            onClick={sendStudy(study)}
+                                            onClick={() => sendStudy(study)}
                                             className="hidden rounded-md bg-white px-2.5 py-1.5 text-sm font-semibold text-gray-900 ring-1 shadow-xs ring-gray-300 ring-inset hover:bg-gray-50 sm:block"
                                         >
                                             Send study <span className="sr-only">, {study.study_description}</span>

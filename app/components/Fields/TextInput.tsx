@@ -5,7 +5,7 @@ export default function TextInput(props: {
     settings?: { [p: string]: any } | undefined | null,
     value: any,
     onChange: (e: any) => void
-    onSuffixClick: (e: any) => void
+    onSuffixClick?: (e: any) => void
 }) {
     return <div className="sm:col-span-3">
         <label htmlFor={props.config.key}
@@ -23,7 +23,7 @@ export default function TextInput(props: {
                 />
                 {props.config.suffix_button ? <button
                     onClick={props.onSuffixClick}
-                    className="flex items-center gap-x-2 px-2 py-1 text-sm/6 text-gray-900 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    className="flex items-center gap-x-2 px-2 py-1 text-sm/6 text-indigo-500 bg-white border-indigo-500 border rounded-md hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                     {props.config.suffix_button}
                 </button> : null}
             </div>

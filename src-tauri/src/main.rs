@@ -150,6 +150,7 @@ fn main() {
             receiver_start,
             receiver_stop,
             send_log,
+            send_study,
             api_start_upload,
             current_studies
         ])
