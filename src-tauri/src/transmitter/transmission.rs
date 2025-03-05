@@ -142,8 +142,7 @@ impl Transmission {
         // === Upload via TUS
         self.upload_via_tus(&assembly, &archive_path).await?;
         log_info!("Study sent successfully via TUS to {}", assembly.get("tus_url").unwrap());
-
-
+        
         self.aura_api.upload_start(
             study_uid,
             assembly.get("signature").unwrap().to_string(),

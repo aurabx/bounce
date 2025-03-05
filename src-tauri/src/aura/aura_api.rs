@@ -46,7 +46,7 @@ impl AuraApi {
         signature: String,
         upload_id: String
     ) -> anyhow::Result<Value> {
-        let out_dir = PathBuf::from("./tmp");
+        let out_dir = PathBuf::from(&self.config.base_dir);
         let mut file_path = out_dir.clone();
         file_path.push(study_uid.trim_end_matches('\0').to_string());
 
@@ -72,7 +72,6 @@ impl AuraApi {
             .header("Authorization", format!("Bearer {}", &self.config.api_key))
             .send()
             .await?;
-
 
         Self::handle_response(response).await
     }

@@ -54,7 +54,7 @@ impl Config {
                 Some(value) => value.as_str().unwrap().parse().unwrap(),
             },
 
-            mode: match store.get("host") {
+            mode: match store.get("mode") {
                 None => "production".to_string(),
                 Some(value) => value.as_str().unwrap().parse().unwrap(),
             },
