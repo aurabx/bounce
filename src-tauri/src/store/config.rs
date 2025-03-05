@@ -146,7 +146,8 @@ impl Config {
 
     fn extract_field(study_info: &Value, index: &str) -> String {
         study_info.get(index.clone())
-            .and_then(|v| v.unwrap().to_string())
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
             .unwrap_or(format!("No {}", index))
 
     }
