@@ -17,7 +17,7 @@ export default function Page() {
         let store =  await load('store.json', { autoSave: false });
 
         for (const field of fields) {
-            await store.set(field.config.key, settings ? settings[field.config.key] : null)
+            await store.set(field.config.key, settings?.[field.config.key] ? settings?.[field.config.key] : null)
         }
 
         await store.save();

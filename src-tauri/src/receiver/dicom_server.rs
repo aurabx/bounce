@@ -80,45 +80,6 @@ impl DICOMServer {
         }
     }
 
-    pub async fn start_old(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let server = Arc::new(self.clone());
-        let port = server.config.port;
-        let out_dir = server.config.base_dir.clone();
-        let path = PathBuf::from(&out_dir);
-
-        fs::create_dir_all(&out_dir).unwrap_or_else(|e| {
-            log_error!("Could not create output directory: {}", e);
-            std::process::exit(-2);
-        });
-
-        // Bind the listener
-        let listen_addr = SocketAddrV4::new(Ipv4Addr::from(0), port);
-        let listener = TcpListener::bind(listen_addr)?;
-        log_info!("listening on: tcp://{}", listen_addr);
-
-        let current_path = path.clone();
-
-        tokio::spawn({
-            async move {
-                for stream in listener.incoming() {
-                    match stream {
-                        Ok(scu_stream) => {
-                            if let Err(e) = server.run_store_sync(scu_stream, &current_path).await {
-                                log_error!("{}", Report::from_error(e));
-                            }
-                        }
-                        Err(e) => {
-                            log_error!("{}", Report::from_error(e));
-                        }
-                    }
-                }
-            }
-        });
-
-        Ok(())
-    }
-
-
 
     pub async fn run_store_sync(&self, scu_stream: TcpStream, out_dir: &PathBuf) -> Result<(), Whatever> {
         let verbose = true;

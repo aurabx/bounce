@@ -1,7 +1,8 @@
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
-use reqwest::Client;
+use anyhow::Error;
+use reqwest::{Client, Response};
 use serde_json::{json, Value};
 use crate::store::config::Config;
 
@@ -23,6 +24,11 @@ impl AuraApi {
     pub async fn generate_signature(&self) -> anyhow::Result<Value> {
         let url = format!("{}/api/bounce/signature", &self.config.get_api_endpoint());
 
+        println!(
+            "generate_signature (url: {})",
+            url
+        );
+
         let response = self.client
             .get(&url)
             .header("Content-Type", "application/json")
@@ -30,11 +36,7 @@ impl AuraApi {
             .send()
             .await?;
 
-
-        let body = response.text().await?;
-        let result: Value = serde_json::from_str(&body)?;
-
-        Ok(result)
+        Self::handle_response(response).await
     }
 
 
@@ -71,6 +73,11 @@ impl AuraApi {
             .send()
             .await?;
 
+
+        Self::handle_response(response).await
+    }
+
+    async fn handle_response(response: Response) -> Result<Value, Error> {
         // Check HTTP status code first
         if !response.status().is_success() {
             let status = response.status();

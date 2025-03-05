@@ -1,15 +1,13 @@
 [package]
 name = "app"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "Bounce"
+authors = ["Aurabox"]
 license = ""
 repository = ""
 default-run = "app"
 edition = "2021"
 rust-version = "1.60"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -29,13 +27,11 @@ dicom-dictionary-std = { version = "0.8.0" }
 
 # HTTP client
 reqwest = { version = "0.12.9", features = ["json", "multipart", "stream"] }
-hyper = { version = "1.1.0", features = ["full"] }
-http = "1.0.0"
-log = "^0.4"
 
 # Logging
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
+tracing-appender = "0.2"
 
 # Serialization
 serde_json = "1.0"
@@ -43,24 +39,15 @@ serde = { version = "1.0", features = ["derive"] }
 
 # Miscellaneous utilities
 anyhow = "1.0.79"
-ring = "0.17.7"
-clap = { version = "4.5.21", features = ["derive"] }
-tar = "0.4.43"
-flate2 = "1.0.35"
 zip = "2.2.1"
-sha2 = "0.10.8"
-tokio-util = "0.7.12"
 walkdir = "2.5.0"
 snafu = "0.8"
 tauri-plugin-store = "2"
 tauri-plugin-process = "2"
 tauri-plugin-shell = "2"
-chrono = "0.4.39"
 base64 = "0.22.1"
-hex = "0.4.3"
-hmac = "0.12.1"
-sha1 = "0.10.6"
 uuid = { version = "1.15.1", features = ['v4'] }
+
 
 [features]
 # this feature is used for production builds or when `devPath` points to the filesystem and the built-in dev server is disabled.

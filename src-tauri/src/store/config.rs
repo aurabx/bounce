@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use serde_json::{json, Value};
-use serde_json::value::Index;
 use tauri_plugin_store::Store;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -23,16 +22,16 @@ impl Config {
             keyed_config.insert(key, value);
         }
 
-        let api_key = store
-            .get("api_key")
-            .expect("No API key found in store")
-            .to_string();
+        // let api_key = store
+        //     .get("api_key")
+        //     .expect("No API key found in store")
+        //     .to_string();
 
-        println!("api_key in command: {}", api_key);
-        println!(
-            "store.entries(): {}",
-            serde_json::to_string(&keyed_config).unwrap().to_string()
-        );
+        // println!("api_key in command: {}", api_key);
+        // println!(
+        //     "store.entries(): {}",
+        //     serde_json::to_string(&keyed_config).unwrap().to_string()
+        // );
 
         Config {
             api_key: match store.get("api_key") {
@@ -73,10 +72,10 @@ impl Config {
         let region = region.as_str();
 
         match self.mode.as_str() {
-            "staging" => "api.staging.aurabox.app".to_string(),
-            "development" => "dev-54ta5gq-pghszvpk65pns.au.platformsh.site".to_string(),
-            "local" => "aura.lndo.site".to_string(),
-            _ => format!("{:?}.aurabox.app", region),
+            "staging" => "https://staging.aurabox.app".to_string(),
+            "development" => "https://dev-54ta5gq-pghszvpk65pns.au.platformsh.site".to_string(),
+            "local" => "https://aura.lndo.site".to_string(),
+            _ => format!("https://{}.aurabox.app", region),
         }
     }
 
@@ -145,7 +144,7 @@ impl Config {
     }
 
     fn extract_field(study_info: &Value, index: &str) -> String {
-        study_info.get(index.clone())
+        study_info.get(index)
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
             .unwrap_or(format!("No {}", index))

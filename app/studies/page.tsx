@@ -5,7 +5,7 @@ import {useAppSelector} from "@/app/lib/hook";
 import {invoke} from "@tauri-apps/api/core";
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react'
 import { EllipsisVerticalIcon } from '@heroicons/react/20/solid'
-import {classNames} from "@/app/lib/helpers";
+import {classNames, formatDicomDateAndTime} from "@/app/lib/helpers";
 import {Study} from "@/app/lib/types";
 
 const statuses = {
@@ -57,7 +57,7 @@ export default function Page() {
                                             <p className="whitespace-nowrap truncate w-full">
                                                 Study Instance UID: {study.study_uid}
                                             </p>
-                                            <p className="truncate w-full">Created at: {study.study_date}</p>
+                                            <p className="truncate w-full">Created at: {formatDicomDateAndTime(study.study_date, study.study_time)}</p>
                                         </div>
                                     </div>
                                     <div className="flex flex-none items-center gap-x-4">

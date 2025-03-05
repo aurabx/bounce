@@ -117,8 +117,11 @@ impl Transmission {
         study_uid: String,
         delete_after_send: bool
     ) -> Result<()> {
+        
 
         let upload_id = Uuid::new_v4();
+
+        log_info!("Starting send_study for upload: {:?}", &upload_id);
 
         // Actually push the study (you’ll have to adapt to your code)
         let out_dir = PathBuf::from(self.config.base_dir.clone());

@@ -24,7 +24,7 @@ export default function Page() {
 
     return (
         <main className="">
-            <h1 className="text-3xl font-bold mb-6">
+            <h1 className="text-3xl mt-6 font-bold mb-12 text-center">
                 Aurabox Bounce
             </h1>
 
