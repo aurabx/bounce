@@ -28,6 +28,14 @@ export default function Page() {
                 Aurabox Bounce
             </h1>
 
+            <div className="flex justify-center mb-12">
+                <button
+                    onClick={running ? receiverStop : receiverStart}
+                    className="flex transition ease-in-out text-center border shadow-sm font-medium rounded-md px-8 py-4 text-sm cursor-pointer text-white bg-indigo-400 hover:bg-indigo-500"
+                >
+                    {running ? 'Stop Service' : 'Start Service'}
+                </button>
+            </div>
             <div className="mb-6">
                 <dl className="mt-5 grid grid-cols-1 divide-y divide-gray-200 overflow-hidden rounded-lg bg-white shadow-sm md:grid-cols-2 md:divide-x md:divide-y-0">
                     <div className="px-4 py-5 sm:p-6">
@@ -56,16 +64,8 @@ export default function Page() {
                     </div>
                 </dl>
             </div>
-            <div className="bg-white shadow-lg rounded-lg p-6 w-full">
-                <div className="mb-4">
-                    <button
-                        onClick={running ? receiverStop : receiverStart}
-                        className="flex w-full  transition ease-in-out text-center border shadow-sm font-medium rounded-md px-4 py-2 text-sm cursor-pointer text-white bg-indigo-400 hover:bg-indigo-500"
-                    >
-                        {running ? 'Stop Service' : 'Start Service'}
-                    </button>
-                </div>
-                <div className="mb-4 flex gap-4">
+            <div className="bg-white shadow-lg rounded-lg p-6 w-full hidden">
+                <div className="flex gap-4">
                     <button
                         onClick={loadStudies}
                         className="flex w-full  transition ease-in-out text-center border shadow-sm font-medium rounded-md px-4 py-2 text-sm cursor-pointer text-white bg-indigo-400 hover:bg-indigo-500"

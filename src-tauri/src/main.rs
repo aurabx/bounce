@@ -11,6 +11,7 @@ use tauri::{AppHandle, Emitter, Listener, Manager};
 use tauri_plugin_store::StoreExt;
 use tokio::sync::Mutex;
 use crate::aura::aura_api::AuraApi;
+use crate::logger::setup_logger;
 use crate::receiver::server::init_server_state;
 use crate::transmitter::manager::{TransmissionManager};
 use crate::transmitter::transmission::Transmission;
@@ -44,10 +45,6 @@ async fn api_start_upload(
     signature: String,
     upload_id: String
 ) -> Result<(), String> {
-    println!(
-        "api_start_upload (study_uid: {}), (signature: {}), (signature: {})",
-        study_uid, signature, upload_id
-    );
 
     let aura_api = AuraApi::new(load_config(app));
 
@@ -55,7 +52,7 @@ async fn api_start_upload(
         study_uid,
         signature,
         upload_id
-    ).await.expect("upload_start panic");
+    ).await.expect("api start upload panic");
 
     Ok(())
 }
@@ -65,17 +62,26 @@ async fn send_study(
     app: AppHandle,
     study_uid: String,
 ) -> Result<(), String> {
-    println!(
-        "send_study (study_uid: {})",
-        study_uid
-    );
-
     let transmission = Transmission::new(load_config(app));
 
     transmission.send_study(
         study_uid,
         false
-    ).await.expect("send_study panic");
+    ).await.expect("send study panic");
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn delete_study(
+    app: AppHandle,
+    study_uid: String,
+) -> Result<(), String> {
+    let transmission = Transmission::new(load_config(app));
+
+    transmission.delete_study(
+        study_uid,
+    ).await.expect("delete study panic");
 
     Ok(())
 }
@@ -109,11 +115,8 @@ async fn receiver_stop(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 fn current_studies(app: AppHandle) -> Result<(), String> {
-
     let config = load_config(app.clone());
-
     app.emit("current-studies", config.current_studies()).unwrap();
-
     Ok(())
 }
 
@@ -141,6 +144,9 @@ fn main() {
                 });
             });
 
+            // Setup logging
+            setup_logger();
+
             Ok(())
         })
         .plugin(tauri_plugin_shell::init())
@@ -151,6 +157,7 @@ fn main() {
             receiver_stop,
             send_log,
             send_study,
+            delete_study,
             api_start_upload,
             current_studies
         ])

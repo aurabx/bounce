@@ -46,6 +46,12 @@ impl AuraApi {
         signature: String,
         upload_id: String
     ) -> anyhow::Result<Value> {
+        println!(
+            "upload_start (study_uid: {}), (signature: {}), (signature: {})",
+            study_uid, signature, upload_id
+        );
+
+
         let out_dir = PathBuf::from(&self.config.base_dir);
         let mut file_path = out_dir.clone();
         file_path.push(study_uid.trim_end_matches('\0').to_string());

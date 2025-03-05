@@ -32,6 +32,17 @@ export default function Page() {
         });
     };
 
+    const deleteStudy = async (study: Study) => {
+        setLoaded(false)
+
+        await invoke('delete_study', {
+            studyUid: study.study_uid,
+        });
+
+        invoke('current_studies').then(() => {
+            setLoaded(true)
+        });
+    };
 
     return (
         <div className="h-full flex flex-col">
@@ -44,14 +55,14 @@ export default function Page() {
                                     <div className="min-w-0">
                                         <div className="flex items-start gap-x-3">
                                             <p className="text-sm/6 font-semibold text-gray-900">{study.study_description}</p>
-                                            <p
+                                            {/* <p
                                                 className={classNames(
                                                     statuses['In progress'],
                                                     'mt-0.5 rounded-md px-1.5 py-0.5 text-xs font-medium whitespace-nowrap ring-1 ring-inset',
                                                 )}
                                             >
                                                 {'TODO'}
-                                            </p>
+                                            </p>*/}
                                         </div>
                                         <div className="mt-1 flex flex-col items-start gap-x-2 text-xs/5 text-gray-500">
                                             <p className="whitespace-nowrap truncate w-full">
@@ -80,6 +91,7 @@ export default function Page() {
                                                 <MenuItem>
                                                     <a
                                                         href="#"
+                                                        onClick={() => deleteStudy(study)}
                                                         className="block px-3 py-1 text-sm/6 text-gray-900 data-focus:bg-gray-50 data-focus:outline-hidden"
                                                     >
                                                         Delete<span className="sr-only">, {study.study_description}</span>

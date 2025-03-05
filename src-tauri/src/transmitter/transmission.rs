@@ -21,6 +21,7 @@ use crate::log_info;
 use crate::store::config::Config;
 use crate::aura::aura_api::AuraApi;
 use uuid::Uuid;
+// use tokio_util::io::ReaderStream;
 
 #[derive(Debug)]
 pub struct ScheduledStudy {
@@ -111,28 +112,30 @@ impl Transmission {
         Ok(())
     }
 
+    pub async fn delete_study(&self, study_uid: String) -> Result<()> {
+        let study_path = self.resolve_study_path(&study_uid);
+
+        self.delete_local_study_files(study_path).await?;
+        log_info!("Deleted local study files for {}", study_uid);
+
+        Ok(())
+    }
 
     pub async fn send_study(
         &self,
         study_uid: String,
         delete_after_send: bool
     ) -> Result<()> {
-        
 
         let upload_id = Uuid::new_v4();
 
-        log_info!("Starting send_study for upload: {:?}", &upload_id);
+        log_info!("Starting send_study {} for upload: {}", &study_uid, &upload_id);
 
-        // Actually push the study (you’ll have to adapt to your code)
-        let out_dir = PathBuf::from(self.config.base_dir.clone());
-        let mut file_path = out_dir.clone();
-        file_path.push(study_uid.trim_end_matches('\0').to_string());
+        let study_path = self.resolve_study_path(&study_uid);
 
-        let study_path = file_path.as_path();
+        log_info!("Preparing to send study: {:?}", &study_path);
 
-        log_info!("Preparing to send study: {:?}", study_path);
-
-        let archive_path = self.compress_study(study_path).await?;
+        let archive_path = self.compress_study(study_path.clone()).await?;
         log_info!("Preparing to send study zip: {:?}", archive_path);
 
         // === Create an Assembly on Transloadit, get the TUS URL back
@@ -148,13 +151,13 @@ impl Transmission {
             assembly.get("signature").unwrap().to_string(),
             upload_id.to_string()
         ).await.expect("Error sending upload start api message");
-        
         log_info!("Send upload start");
 
 
         // Optionally, delete local study if requested
         if delete_after_send {
-            self.delete_local_study_files(study_path).await?;
+            self.delete_local_study_files(study_path.clone()).await?;
+            log_info!("Deleted local study files for {}", study_path.to_str().unwrap());
         }
 
         Ok(())
@@ -186,6 +189,16 @@ impl Transmission {
         // }
     }
 
+
+
+
+    fn resolve_study_path(&self, study_uid: &String) -> PathBuf {
+        // Actually push the study (you’ll have to adapt to your code)
+        let mut file_path = PathBuf::from(&self.config.base_dir);
+        file_path.push(study_uid.trim_end_matches('\0').to_string());
+
+        file_path
+    }
 
     pub async fn zip_folder<T, I>(
         &self,
@@ -234,7 +247,8 @@ impl Transmission {
     }
 
 
-    async fn compress_study(&self, study_path: &Path) -> Result<PathBuf> {
+    async fn compress_study(&self, study_path: PathBuf) -> Result<PathBuf> {
+        let study_path = study_path.as_path();
         let archive_path = study_path.with_extension("zip");
 
         if !Path::new(study_path).is_dir() {
@@ -255,8 +269,8 @@ impl Transmission {
         Ok(archive_path)
     }
 
-    async fn delete_local_study_files(&self, study_path: &Path) -> Result<()> {
-        fs::remove_dir_all(study_path)
+    async fn delete_local_study_files(&self, study_path: PathBuf) -> Result<()> {
+        fs::remove_dir_all(study_path.as_path())
             .await
             .context("Failed to delete local study files")?;
 
@@ -331,6 +345,8 @@ impl Transmission {
         } else {
             eprintln!("resp_json is not an object and cannot have key-value pairs added.");
         }
+
+        println!("tus response exists: {:?}", resp_json.to_string());
 
         Ok(resp_json)
     }

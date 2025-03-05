@@ -1,6 +1,5 @@
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
-use crate::logger::setup_logger;
 use crate::{log_error, log_info, receiver};
 use receiver::dicom_server::DICOMServer;
 use tokio;
@@ -20,8 +19,6 @@ pub fn init_server_state() -> ServerState {
 }
 
 pub async fn start(config: Config, app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    // Setup logging
-    setup_logger();
 
     // Create DICOM server
     let dicom_server = DICOMServer::new(config, app.clone());

@@ -72,7 +72,7 @@ impl Config {
         let region = region.as_str();
 
         match self.mode.as_str() {
-            "staging" => "https://staging.aurabox.app".to_string(),
+            "staging" => "https://staging-5em2ouy-pghszvpk65pns.au.platformsh.site".to_string(),
             "development" => "https://dev-54ta5gq-pghszvpk65pns.au.platformsh.site".to_string(),
             "local" => "https://aura.lndo.site".to_string(),
             _ => format!("https://{}.aurabox.app", region),
