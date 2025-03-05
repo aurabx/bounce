@@ -52,9 +52,6 @@ export default function Page() {
 
     return (
         <>
-            <h1 className="text-3xl font-bold mb-6">
-                Settings
-            </h1>
             {(saved ? <Alert>Saved</Alert> : null)}
             <div className="bg-white shadow-lg rounded-lg p-6 w-full">
                 <Suspense fallback={<Loading />}>

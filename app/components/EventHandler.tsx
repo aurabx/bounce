@@ -5,13 +5,14 @@ import { logMessage, setRunning, setCurrentStudies } from '../lib/store'
 import {useAppDispatch} from "@/app/lib/hook";
 import {listen} from "@tauri-apps/api/event";
 import {CurrentStudies, Study} from "@/app/lib/types";
+import {invoke} from "@tauri-apps/api/core";
 
 
 export default function EventHandler({ children, }: { children: React.ReactNode }) {
 
     const dispatch = useAppDispatch()
 
-    let bindEvents = async () => {
+    const bindEvents = async () => {
         await listen("log", (event) => {
             let action = logMessage(event.payload as string);
             dispatch(action)
@@ -29,8 +30,16 @@ export default function EventHandler({ children, }: { children: React.ReactNode 
         });
     }
 
+    const initialEvents = async () => {
+        await invoke('current_studies');
+    }
+
     useEffect(() => {
-        bindEvents().finally();
+        bindEvents()
+            .then(() => {
+                initialEvents().catch(console.error)
+            })
+            .catch(console.error);
     }, [])
 
     return <>{children}</>

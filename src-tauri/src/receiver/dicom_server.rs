@@ -47,6 +47,55 @@ impl DICOMServer {
         let listener = TcpListener::bind(listen_addr)?;
         log_info!("listening on: tcp://{}", listen_addr);
 
+        // Convert to tokio listener - this lets us use accept_async
+        let listener = tokio::net::TcpListener::from_std(listener)?;
+
+        let current_path = path.clone();
+
+        // Instead of spawning a task here, we run the loop directly
+        // This allows the task to be cancelable from the outside
+        loop {
+            // Accept connections with timeout to allow checking for shutdown
+            match tokio::time::timeout(
+                tokio::time::Duration::from_secs(1),  // Check every second
+                listener.accept()
+            ).await {
+                Ok(Ok((scu_stream, _addr))) => {
+                    // Convert to std TcpStream for your DICOM library
+                    let std_stream = scu_stream.into_std()?;
+
+                    // Process the connection
+                    if let Err(e) = server.run_store_sync(std_stream, &current_path).await {
+                        log_error!("{}", Report::from_error(e));
+                    }
+                },
+                Ok(Err(e)) => {
+                    log_error!("Error accepting connection: {}", e);
+                },
+                Err(_) => {
+                    // Timeout - just continue and check for shutdown signal
+                    continue;
+                }
+            }
+        }
+    }
+
+    pub async fn start_old(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let server = Arc::new(self.clone());
+        let port = server.config.port;
+        let out_dir = server.config.base_dir.clone();
+        let path = PathBuf::from(&out_dir);
+
+        fs::create_dir_all(&out_dir).unwrap_or_else(|e| {
+            log_error!("Could not create output directory: {}", e);
+            std::process::exit(-2);
+        });
+
+        // Bind the listener
+        let listen_addr = SocketAddrV4::new(Ipv4Addr::from(0), port);
+        let listener = TcpListener::bind(listen_addr)?;
+        log_info!("listening on: tcp://{}", listen_addr);
+
         let current_path = path.clone();
 
         tokio::spawn({

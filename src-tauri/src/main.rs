@@ -5,10 +5,13 @@ mod store;
 mod transmitter;
 mod aura;
 
+use std::sync::Arc;
 use store::config::Config;
 use tauri::{AppHandle, Emitter, Listener, Manager};
 use tauri_plugin_store::StoreExt;
+use tokio::sync::Mutex;
 use crate::aura::aura_api::AuraApi;
+use crate::receiver::server::init_server_state;
 use crate::transmitter::manager::{TransmissionManager};
 use crate::transmitter::transmission::Transmission;
 
@@ -126,6 +129,9 @@ fn main() {
             app.manage(AppState {
                 tx_manager: manager,
             });
+
+            // Initialize and manage server state
+            app.manage(Arc::new(Mutex::new(init_server_state())));
 
             app.listen("study-received", |event| {
                 println!("MAIN: study received {}", event.payload());

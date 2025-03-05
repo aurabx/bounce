@@ -22,9 +22,7 @@ export const mainSlice = createSlice({
             state.logs.push(action.payload)
         },
         setRunning(state, action: PayloadAction<boolean>){
-            console.log(state.running)
             state.running = action.payload;
-            console.log(state.running)
         },
         setCurrentStudies(state, action: PayloadAction<CurrentStudies>){
             state.studies = action.payload.studies

@@ -15,9 +15,6 @@ export default function Page() {
 
     return (
         <div className="h-full flex flex-col">
-            <h1 className="text-3xl font-bold mb-6">
-                Logs
-            </h1>
             <div className="bg-white shadow-lg rounded-lg p-6 w-full flex-grow">
                 <Suspense fallback={<Loading/>}>
                     {(loaded ? <div className="h-full">

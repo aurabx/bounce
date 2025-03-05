@@ -1,55 +1,94 @@
-use tauri::{AppHandle, Emitter};
+use std::sync::Arc;
+use tauri::{AppHandle, Emitter, Manager};
 use crate::logger::setup_logger;
-use crate::{receiver};
+use crate::{log_error, log_info, receiver};
 use receiver::dicom_server::DICOMServer;
 use tokio;
+use tokio::sync::{oneshot, Mutex};
 use crate::store::config::Config;
 
-pub async fn start(config: Config, app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+// Define a struct to manage server state
+pub struct ServerState {
+    shutdown_sender: Option<oneshot::Sender<()>>,
+}
 
+// Initialize the server state in main.rs
+pub fn init_server_state() -> ServerState {
+    ServerState {
+        shutdown_sender: None,
+    }
+}
+
+pub async fn start(config: Config, app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     // Setup logging
     setup_logger();
 
     // Create DICOM server
     let dicom_server = DICOMServer::new(config, app.clone());
 
-    // let transmission_manager = TransmissionManager::new(config.clone());
+    // Create a channel for shutdown signal
+    let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
 
-    // Create DICOM server
-    // let dicom_server = DICOMServer::new(config, app.clone(), Arc::new(transmission_manager));
+    // Store the shutdown sender in the app state
+    let app_state = app.state::<Arc<Mutex<ServerState>>>();
+    {
+        let mut state = app_state.lock().await;
+        state.shutdown_sender = Some(shutdown_tx);
+    }
 
-    // Handle OS signals for graceful shutdown
-    // get this out of unsafe
+    // Spawn server in a background task
     tokio::spawn(async move {
-        eprintln!("Dicom server message: {:?}", "Running");
+        app.emit("log", "Starting server").unwrap();
         app.emit("running", true).unwrap();
 
-        // Start the DICOM server
-        if let Err(err) = dicom_server.start().await {
-            eprintln!("Dicom server error: {:?}", err);
-            app.emit("running", false).unwrap();
+        // Wrap the server task in a select to handle shutdown
+        tokio::select! {
+            result = dicom_server.start() => {
+                if let Err(err) = result {
+                    log_error!("Dicom server error: {:?}", err);
+                    app.emit("log", format!("Server error: {}", err)).unwrap();
+                }
+            }
+            _ = shutdown_rx => {
+                log_info!("Shutdown signal received");
+                app.emit("log", "Server shutdown requested").unwrap();
+            }
         }
-    });
 
+        // Signal that the server has stopped
+        app.emit("running", false).unwrap();
+        app.emit("log", "Server stopped").unwrap();
+    });
 
     Ok(())
 }
 
-pub(crate) async fn stop(app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
-    // let state = app.state::<ServerState>();
-    // let sender_state = Arc::new(state);
+#[allow(unused_assignments)]
+pub async fn stop(app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    let app_state = app.state::<Arc<Mutex<ServerState>>>();
 
-    app.emit("running", false).unwrap();
+    // Take the shutdown sender from the state
 
-    eprintln!("Dicom server message: {:?}", "Stopped");
+    let mut shutdown_sender = None;
+    {
+        let mut state = app_state.lock().await;
+        shutdown_sender = state.shutdown_sender.take();
+    }
 
-    //sender_state.stop_sender.send("stopped").expect("TODO: panic message");
+    if let Some(sender) = shutdown_sender {
+        // Send the shutdown signal
+        if let Err(_) = sender.send(()) {
+            app.emit("log", "Server already stopped").unwrap();
+            app.emit("running", false).unwrap();
+            log_info!("Dicom server message: {:?}", "Stopped");
+            return Ok(());
+        }
 
-    // if let Some(stop_sender) = &state {
-    //     // Send stop signal
-    //     stop_sender.send("0").map_err(|_| "Failed to send stop signal")?
-    // }
+        app.emit("log", "Server stopping...").unwrap();
+    } else {
+        app.emit("log", "No running server to stop").unwrap();
+    }
 
     Ok(())
 }

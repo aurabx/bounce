@@ -4,6 +4,9 @@ import {FormEvent, Suspense, useEffect, useState} from 'react'
 import {invoke} from "@tauri-apps/api/core";
 import TextInput from "@/app/components/Fields/TextInput";
 import SelectInput from "@/app/components/Fields/SelectInput";
+import {useAppSelector} from "@/app/lib/hook";
+import {Study} from "@/app/lib/types";
+import { v4 as uuidv4 } from 'uuid';
 
 type Commands = {
     [key: string]: string
@@ -11,8 +14,10 @@ type Commands = {
 
 export default function Page() {
 
-    const [studies, setStudies] = useState<string>('1.3.46.670589.11.3540642177.2867929537.1763690001.2563942908');
-    const [study_uid, setStudyUid] = useState<string>('1.3.46.670589.11.3540642177.2867929537.1763690001.2563942908');
+    const studies = useAppSelector((state) => state.main.studies)
+
+    const [loaded, setLoaded] = useState<boolean>(false);
+    const [study_uid, setStudyUid] = useState<string>(studies.length > 0 ? studies[0].study_uid : '');
     const [signature, setSignature] = useState<string>('8a5b26c5485049200a1167df5efc664ee9c6f115');
     const [upload_id, setUploadId] = useState<string>('b4a9764d-75e6-4ac0-8235-9f8189289353');
 
@@ -23,7 +28,9 @@ export default function Page() {
     };
 
     useEffect(() => {
-        console.log('setStudies')
+        invoke('current_studies').then(() => {
+            setLoaded(true)
+        });
     }, []);
 
     const testStartUpload = async (e: FormEvent<HTMLFormElement>) => {
@@ -48,14 +55,15 @@ export default function Page() {
         }
     };
 
+    const generateUploadId = () => {
+        setUploadId(uuidv4());
+    }
+
     return (
         <>
-            <h1 className="text-3xl font-bold mb-6">
-                Tools
-            </h1>
             <div className="bg-white shadow-lg rounded-lg p-6 w-full">
                 <Suspense fallback={<Loading />}>
-
+                {(loaded ? <>
                     <SelectInput
                         config={({
                             label: 'Command',
@@ -70,8 +78,15 @@ export default function Page() {
 
                     <form onSubmit={testStartUpload}>
                         <div className="space-y-6">
-                            <TextInput
-                                config={({label: 'Study UID', key: 'study_uid'})}
+                            <SelectInput
+                                config={({
+                                    label: 'Study UID',
+                                    key: 'study_uid',
+                                    options: studies.reduce((acc: {[key: string]: string}, study: Study) => {
+                                        acc[study.study_uid] = study.study_uid;
+                                        return acc;
+                                    }, {})
+                                })}
                                 value={study_uid}
                                 onChange={(e: any) => setStudyUid(e.target.value)}
                             />
@@ -84,12 +99,16 @@ export default function Page() {
                                 />
 
                                 <TextInput
-                                    config={({label: 'Upload ID', key: 'upload_id'})}
+                                    config={({
+                                        label: 'Upload ID',
+                                        key: 'upload_id',
+                                        suffix_button: 'Generate'
+                                    })}
                                     value={upload_id}
+                                    onSuffixClick={() => generateUploadId()}
                                     onChange={(e: any) => setUploadId(e.target.value)}
                                 />
                             </>}
-
                             <div className="mb-4 flex justify-end">
                                 <button
                                     type="submit"
@@ -100,12 +119,13 @@ export default function Page() {
                             </div>
                         </div>
                     </form>
-
+                </> : null)}
                 </Suspense>
             </div>
         </>
     );
 }
+
 
 function Loading() {
     return <h2>🌀 Loading...</h2>;

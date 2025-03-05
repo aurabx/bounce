@@ -1,10 +1,18 @@
+use std::sync::Once;
 use tracing_subscriber;
+
+// Use a static Once guard to ensure initialization happens only once
+static INIT: Once = Once::new();
+
 pub fn setup_logger() {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .with_target(true)
-        .compact()
-        .init();
+    // This will ensure the code inside only runs once, no matter how many times setup_logger() is called
+    INIT.call_once(|| {
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::INFO)
+            .with_target(true)
+            .compact()
+            .init();
+    });
 }
 
 // Optional: Custom logging macro for more flexibility

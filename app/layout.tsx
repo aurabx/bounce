@@ -8,6 +8,8 @@ import Providers from './components/Providers'
 import EventHandler from "@/app/components/EventHandler";
 import Tray from "@/app/components/Tray";
 import CurrentStatus from "@/app/components/CurrentStatus";
+import PageTitle from "@/app/components/PageTitle";
+import {items} from "@/app/lib/menu";
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -15,6 +17,7 @@ export const metadata: Metadata = {
   title: 'Aurabox Bounce',
   description: 'Dicom proxy recaster and packager',
 }
+
 
 export default function RootLayout({
   children,
@@ -34,10 +37,9 @@ export default function RootLayout({
                 <ul role="list" className="flex flex-col">
                   <li>
                     <ul role="list" className="space-y-2">
-                      <MenuItem href="/" label="Dashboard"/>
-                      <MenuItem href="/logs" label="Logs"/>
-                      <MenuItem href="/settings" label="Settings"/>
-                      <MenuItem href="/tools" label="Tools"/>
+                      {items.map(
+                          (item) => <MenuItem key={item.label} {...item}/>
+                      )}
                     </ul>
                   </li>
                 </ul>
@@ -47,6 +49,7 @@ export default function RootLayout({
             </div>
           </div>
           <div className="pl-48 h-full">
+            <PageTitle />
             <main className="py-4 h-full">
               <div className="p-4 h-full">{children}</div>
             </main>
