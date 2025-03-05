@@ -34,7 +34,7 @@ impl DICOMServer {
     pub async fn start(&self) -> Result<(), Box<dyn std::error::Error>> {
         let server = Arc::new(self.clone());
         let port = server.config.port;
-        let out_dir = "./tmp";
+        let out_dir = server.config.base_dir.clone();
         let path = PathBuf::from(&out_dir);
 
         fs::create_dir_all(&out_dir).unwrap_or_else(|e| {

@@ -3,28 +3,50 @@
 import {FormEvent, Suspense, useEffect, useState} from 'react'
 import {invoke} from "@tauri-apps/api/core";
 import TextInput from "@/app/components/Fields/TextInput";
+import SelectInput from "@/app/components/Fields/SelectInput";
+
+type Commands = {
+    [key: string]: string
+}
 
 export default function Page() {
 
+    const [studies, setStudies] = useState<string>('1.3.46.670589.11.3540642177.2867929537.1763690001.2563942908');
     const [study_uid, setStudyUid] = useState<string>('1.3.46.670589.11.3540642177.2867929537.1763690001.2563942908');
     const [signature, setSignature] = useState<string>('8a5b26c5485049200a1167df5efc664ee9c6f115');
     const [upload_id, setUploadId] = useState<string>('b4a9764d-75e6-4ac0-8235-9f8189289353');
+
+    const [command, setCommand] = useState<string>('api_start_upload');
+    const commands: Commands = {
+        api_start_upload: 'Send api start request to aura',
+        send_study: 'Send stored studies',
+    };
+
+    useEffect(() => {
+        console.log('setStudies')
+    }, []);
 
     const testStartUpload = async (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault()
 
         try {
-            await invoke('start_upload', {
-                studyUid: study_uid,
-                signature: signature,
-                uploadId: upload_id,
-            });
+            if (command === 'api_start_upload')
+                await invoke('api_start_upload', {
+                    studyUid: study_uid,
+                    signature: signature,
+                    uploadId: upload_id,
+                });
+            else if (command === 'send_study'){
+                await invoke('send_study', {
+                    studyUid: study_uid,
+                });
+            }
+
         } catch (error) {
-            console.error('Error start_upload:', error);
-            alert(`Failed to start_upload: ${error}`);
+            console.error(`Error ${command}:`, error);
+            alert(`Error ${command}: ${error}`);
         }
     };
-
 
     return (
         <>
@@ -33,27 +55,40 @@ export default function Page() {
             </h1>
             <div className="bg-white shadow-lg rounded-lg p-6 w-full">
                 <Suspense fallback={<Loading />}>
-                    <h3 className="mb-3 font-bold text-lg">Send study to aura</h3>
+
+                    <SelectInput
+                        config={({
+                            label: 'Command',
+                            key: 'command',
+                            options: commands
+                        })}
+                        value={command}
+                        onChange={(e: any) => setCommand(e.target.value)}
+                    />
+
+                    <h3 className="my-3 font-bold text-lg">{commands[command] || 'Unknown command'}</h3>
+
                     <form onSubmit={testStartUpload}>
                         <div className="space-y-6">
-
                             <TextInput
                                 config={({label: 'Study UID', key: 'study_uid'})}
                                 value={study_uid}
                                 onChange={(e: any) => setStudyUid(e.target.value)}
                             />
 
-                            <TextInput
-                                config={({label: 'Signature', key: 'signature'})}
-                                value={signature}
-                                onChange={(e: any) => setSignature(e.target.value)}
-                            />
+                            {command === 'api_start_upload' && <>
+                                <TextInput
+                                    config={({label: 'Signature', key: 'signature'})}
+                                    value={signature}
+                                    onChange={(e: any) => setSignature(e.target.value)}
+                                />
 
-                            <TextInput
-                                config={({label: 'Upload ID', key: 'upload_id'})}
-                                value={upload_id}
-                                onChange={(e: any) => setUploadId(e.target.value)}
-                            />
+                                <TextInput
+                                    config={({label: 'Upload ID', key: 'upload_id'})}
+                                    value={upload_id}
+                                    onChange={(e: any) => setUploadId(e.target.value)}
+                                />
+                            </>}
 
                             <div className="mb-4 flex justify-end">
                                 <button
@@ -65,6 +100,7 @@ export default function Page() {
                             </div>
                         </div>
                     </form>
+
                 </Suspense>
             </div>
         </>

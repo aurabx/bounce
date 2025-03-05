@@ -27,6 +27,26 @@ const fields = [{
         help: 'Port where this is going to run',
     },
     component: TextInput
+},{
+    config: {
+        label: 'Storage directory',
+        key: 'base_dir',
+        help: 'Local storage directory for bounce to use',
+    },
+    component: TextInput
+},{
+    config: {
+        label: 'Mode',
+        key: 'mode',
+        help: 'Select the mode for bounce to run in',
+        options: {
+            production: "Production",
+            staging: "Staging",
+            development: "Development",
+            local: "Local",
+        }
+    },
+    component: SelectInput
 }];
 
 

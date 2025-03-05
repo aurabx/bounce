@@ -1,6 +1,6 @@
 "use client"
 
-import {classNames} from "@/app/helpers";
+import {classNames} from "@/app/lib/helpers";
 import {useAppSelector} from "@/app/lib/hook";
 export default function CurrentStatus() {
     const running = useAppSelector((state) => state.main.running)

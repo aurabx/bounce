@@ -1,13 +1,16 @@
 import { configureStore, createSlice } from '@reduxjs/toolkit'
 import type { PayloadAction } from '@reduxjs/toolkit'
+import {CurrentStudies, Study} from "@/app/lib/types";
 
 export interface State {
     logs: string[]
+    studies: Study[],
     running: boolean
 }
 
 const initialState: State = {
     logs: [],
+    studies: [],
     running: false,
 }
 
@@ -23,11 +26,14 @@ export const mainSlice = createSlice({
             state.running = action.payload;
             console.log(state.running)
         },
+        setCurrentStudies(state, action: PayloadAction<CurrentStudies>){
+            state.studies = action.payload.studies
+        }
     },
 })
 
 // Action creators are generated for each case reducer function
-export const { logMessage, setRunning } = mainSlice.actions
+export const { logMessage, setRunning, setCurrentStudies } = mainSlice.actions
 
 export const makeStore = () => {
     return configureStore({

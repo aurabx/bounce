@@ -1,6 +1,6 @@
 "use client"
 
-import {classNames} from "@/app/helpers";
+import {classNames} from "@/app/lib/helpers";
 import {usePathname} from "next/navigation";
 import Link from 'next/link'
 

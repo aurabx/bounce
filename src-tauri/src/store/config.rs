@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::env;
 use std::sync::Arc;
+use serde_json::{json, Value};
 use tauri_plugin_store::Store;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -11,6 +11,7 @@ pub struct Config {
     pub region: String,
     pub port: u16,
     pub host: String,
+    pub mode: String,
 }
 
 impl Config {
@@ -53,12 +54,98 @@ impl Config {
                 Some(value) => value.as_str().unwrap().parse().unwrap(),
             },
 
-            base_dir: env::var("STORAGE_DIR").unwrap_or_else(|_| "/tmp/dicom_storage".to_string()),
+            mode: match store.get("host") {
+                None => "production".to_string(),
+                Some(value) => value.as_str().unwrap().parse().unwrap(),
+            },
+
+            base_dir: match store.get("base_dir") {
+                None => "./tmp/dicom_storage".to_string(),
+                Some(value) => value.as_str().unwrap().parse().unwrap(),
+            },
+
         }
     }
 
     pub fn get_api_endpoint(&self) -> String {
-        "https://aura.lndo.site".to_string()
-        // self.region.clone() + ".aurabox.app"
+        let region = self.region.clone();
+        let region = region.as_str();
+
+        match self.mode.as_str() {
+            "staging" => "api.staging.aurabox.app".to_string(),
+            "development" => "dev-54ta5gq-pghszvpk65pns.au.platformsh.site".to_string(),
+            "local" => "aura.lndo.site".to_string(),
+            _ => format!("{:?}.aurabox.app", region),
+        }
+    }
+
+    pub fn current_studies(&self) -> Value {
+        let storage_dir = self.base_dir.clone();
+        let storage_dir = storage_dir.as_str();
+
+        // Create a path to the storage directory
+        let path = std::path::Path::new(storage_dir);
+
+        // Initialize an empty array to store our results
+        let mut studies = Value::Array(Vec::new());
+
+        // Check if the directory exists
+        if path.exists() && path.is_dir() {
+            // Read the directory entries
+            if let Ok(entries) = std::fs::read_dir(path) {
+                // Process each entry in the directory
+                for entry in entries.filter_map(Result::ok) {
+                    let entry_path = entry.path();
+
+                    // Check if this is a directory
+                    if entry_path.is_dir() {
+                        // Look for metadata.json in this directory
+                        let metadata_path = entry_path.join("metadata.json");
+
+                        if metadata_path.exists() && metadata_path.is_file() {
+                            // Read and parse the metadata file
+                            if let Ok(metadata_content) = std::fs::read_to_string(&metadata_path) {
+                                if let Ok(metadata) = serde_json::from_str::<Value>(&metadata_content) {
+                                    // Extract information from the metadata
+                                    if let Some(studies_data) = metadata.get("studies") {
+                                        // Iterate through each study in the metadata
+                                        if let Some(studies_obj) = studies_data.as_object() {
+                                            for (_, study_info) in studies_obj {
+
+                                                let study_uid = study_info.get("study_uid")
+                                                    .and_then(|v| v.as_str())
+                                                    .unwrap_or("unknown");
+
+                                                let study_description = study_info.get("study_description")
+                                                    .and_then(|v| v.as_str())
+                                                    .unwrap_or("No description");
+
+                                                // Create a study object with extracted information
+                                                let study = json!({
+                                                "study_uid": study_uid,
+                                                "study_description": study_description,
+                                                "path": entry_path.to_string_lossy()
+                                            });
+
+                                                // Add the study to our array
+                                                studies.as_array_mut().unwrap().push(study);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let count = studies.as_array().unwrap().len();
+
+        // Return the array as a JSON value
+        Value::Object(serde_json::Map::from_iter([
+            ("studies".to_string(), studies),
+            ("count".to_string(), Value::from(count))
+        ]))
     }
 }

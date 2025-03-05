@@ -3,7 +3,7 @@ import { Inter } from 'next/font/google'
 import React from 'react'
 import './globals.css'
 import MenuItem from "@/app/components/MenuItem";
-import {classNames} from "@/app/helpers";
+import {classNames} from "@/app/lib/helpers";
 import Providers from './components/Providers'
 import EventHandler from "@/app/components/EventHandler";
 import Tray from "@/app/components/Tray";
@@ -15,7 +15,6 @@ export const metadata: Metadata = {
   title: 'Aurabox Bounce',
   description: 'Dicom proxy recaster and packager',
 }
-
 
 export default function RootLayout({
   children,

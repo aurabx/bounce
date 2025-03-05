@@ -34,6 +34,7 @@ pub struct Transmission {
     client: Client,
     scheduled_studies: Arc<Mutex<HashMap<String, ScheduledStudy>>>,
     aura_api: Arc<AuraApi>,
+    config: Config,
 }
 
 impl Transmission {
@@ -41,7 +42,8 @@ impl Transmission {
         Self {
             client: Client::new(),
             scheduled_studies: Arc::new(Mutex::new(HashMap::new())),
-            aura_api: Arc::new(AuraApi::new(config.clone()))
+            aura_api: Arc::new(AuraApi::new(config.clone())),
+            config
         }
     }
 
@@ -119,7 +121,7 @@ impl Transmission {
         let upload_id = Uuid::new_v4();
 
         // Actually push the study (you’ll have to adapt to your code)
-        let out_dir = PathBuf::from("./tmp");
+        let out_dir = PathBuf::from(self.config.base_dir.clone());
         let mut file_path = out_dir.clone();
         file_path.push(study_uid.trim_end_matches('\0').to_string());
 

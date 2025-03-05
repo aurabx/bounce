@@ -1,13 +1,11 @@
 
 
 export default function SelectInput(props: {
-    config: { options: { [key: string]: string }; label: string; key: string, help: string },
-    settings: { [p: string]: any } | undefined,
+    config: { options: { [key: string]: string }; label: string; key: string, help?: string },
+    settings?: { [p: string]: any } | undefined,
     value: any,
     onChange: (e: any) => void
 }) {
-    console.log('select value', props.value)
-
     return <div className="sm:col-span-3">
         <label htmlFor={props.config.key}
                className="block text-sm/6 font-medium text-gray-900">
