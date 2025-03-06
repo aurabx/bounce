@@ -1,3 +1,4 @@
+use crate::receiver::metadata::Metadata;
 use crate::{log_error, log_info, receiver, store, transmitter, AppState};
 use dicom::core::{DataElement, Tag, VR};
 use dicom::dicom_value;
@@ -8,14 +9,13 @@ use dicom::transfer_syntax::TransferSyntaxRegistry;
 use dicom_ul::{pdu::PDataValueType, Pdu};
 use receiver::enums::ABSTRACT_SYNTAXES;
 use snafu::{OptionExt, Report, ResultExt, Whatever};
-use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
-use std::path::{ PathBuf};
-use store::config::Config;
-use std::sync::{Arc};
 use std::fs;
+use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
+use std::path::PathBuf;
+use std::sync::Arc;
+use store::config::Config;
 use tauri::{AppHandle, Emitter, Manager};
-use transmitter::manager::{TransmissionCommand};
-use crate::receiver::metadata::Metadata;
+use transmitter::manager::TransmissionCommand;
 
 #[derive(Clone)]
 pub struct DICOMServer {
@@ -27,7 +27,7 @@ impl DICOMServer {
     pub fn new(config: Config, app_handle: AppHandle) -> Self {
         Self {
             config: Arc::new(config.clone()),
-            app_handle
+            app_handle,
         }
     }
 
@@ -57,9 +57,11 @@ impl DICOMServer {
         loop {
             // Accept connections with timeout to allow checking for shutdown
             match tokio::time::timeout(
-                tokio::time::Duration::from_secs(1),  // Check every second
-                listener.accept()
-            ).await {
+                tokio::time::Duration::from_secs(1), // Check every second
+                listener.accept(),
+            )
+            .await
+            {
                 Ok(Ok((scu_stream, _addr))) => {
                     // Convert to std TcpStream for your DICOM library
                     let std_stream = scu_stream.into_std()?;
@@ -68,10 +70,10 @@ impl DICOMServer {
                     if let Err(e) = server.run_store_sync(std_stream, &current_path).await {
                         log_error!("{}", Report::from_error(e));
                     }
-                },
+                }
                 Ok(Err(e)) => {
                     log_error!("Error accepting connection: {}", e);
-                },
+                }
                 Err(_) => {
                     // Timeout - just continue and check for shutdown signal
                     continue;
@@ -80,8 +82,11 @@ impl DICOMServer {
         }
     }
 
-
-    pub async fn run_store_sync(&self, scu_stream: TcpStream, out_dir: &PathBuf) -> Result<(), Whatever> {
+    pub async fn run_store_sync(
+        &self,
+        scu_stream: TcpStream,
+        out_dir: &PathBuf,
+    ) -> Result<(), Whatever> {
         let verbose = true;
         let strict = false;
         let calling_ae_title = "STORE-SCP";
@@ -157,18 +162,66 @@ impl DICOMServer {
                                             "failed to read incoming DICOM command",
                                         )?;
 
-
                                     let command_field =
                                         Self::extract_int_tag(&obj, tags::COMMAND_FIELD)?;
 
                                     println!("Tags: {:?}", &obj.tags().collect::<Vec<_>>());
-                                    println!("COMMAND_GROUP_LENGTH: {:?}", &obj.element(tags::COMMAND_GROUP_LENGTH).unwrap().to_str().unwrap().to_string());
-                                    println!("AFFECTED_SOP_CLASS_UID: {:?}", &obj.element(tags::AFFECTED_SOP_CLASS_UID).unwrap().to_str().unwrap().to_string());
-                                    println!("COMMAND_FIELD: {:?}", &obj.element(tags::COMMAND_FIELD).unwrap().to_str().unwrap().to_string());
-                                    println!("MESSAGE_ID: {:?}", &obj.element(tags::MESSAGE_ID).unwrap().to_str().unwrap().to_string());
-                                    println!("PRIORITY: {:?}", &obj.element(tags::PRIORITY).unwrap().to_str().unwrap().to_string());
-                                    println!("COMMAND_DATA_SET_TYPE: {:?}", &obj.element(tags::COMMAND_DATA_SET_TYPE).unwrap().to_str().unwrap().to_string());
-                                    println!("AFFECTED_SOP_INSTANCE_UID: {:?}", &obj.element(tags::AFFECTED_SOP_INSTANCE_UID).unwrap().to_str().unwrap().to_string());
+                                    println!(
+                                        "COMMAND_GROUP_LENGTH: {:?}",
+                                        &obj.element(tags::COMMAND_GROUP_LENGTH)
+                                            .unwrap()
+                                            .to_str()
+                                            .unwrap()
+                                            .to_string()
+                                    );
+                                    println!(
+                                        "AFFECTED_SOP_CLASS_UID: {:?}",
+                                        &obj.element(tags::AFFECTED_SOP_CLASS_UID)
+                                            .unwrap()
+                                            .to_str()
+                                            .unwrap()
+                                            .to_string()
+                                    );
+                                    println!(
+                                        "COMMAND_FIELD: {:?}",
+                                        &obj.element(tags::COMMAND_FIELD)
+                                            .unwrap()
+                                            .to_str()
+                                            .unwrap()
+                                            .to_string()
+                                    );
+                                    println!(
+                                        "MESSAGE_ID: {:?}",
+                                        &obj.element(tags::MESSAGE_ID)
+                                            .unwrap()
+                                            .to_str()
+                                            .unwrap()
+                                            .to_string()
+                                    );
+                                    println!(
+                                        "PRIORITY: {:?}",
+                                        &obj.element(tags::PRIORITY)
+                                            .unwrap()
+                                            .to_str()
+                                            .unwrap()
+                                            .to_string()
+                                    );
+                                    println!(
+                                        "COMMAND_DATA_SET_TYPE: {:?}",
+                                        &obj.element(tags::COMMAND_DATA_SET_TYPE)
+                                            .unwrap()
+                                            .to_str()
+                                            .unwrap()
+                                            .to_string()
+                                    );
+                                    println!(
+                                        "AFFECTED_SOP_INSTANCE_UID: {:?}",
+                                        &obj.element(tags::AFFECTED_SOP_INSTANCE_UID)
+                                            .unwrap()
+                                            .to_str()
+                                            .unwrap()
+                                            .to_string()
+                                    );
 
                                     if command_field == 0x0030 {
                                         // Handle C-ECHO-RQ
@@ -199,8 +252,10 @@ impl DICOMServer {
                                             &obj,
                                             tags::AFFECTED_SOP_CLASS_UID,
                                         )?;
-                                        sop_instance_uid =
-                                            Self::extract_string_tag(&obj, tags::AFFECTED_SOP_INSTANCE_UID)?;
+                                        sop_instance_uid = Self::extract_string_tag(
+                                            &obj,
+                                            tags::AFFECTED_SOP_INSTANCE_UID,
+                                        )?;
                                     }
                                     instance_buffer.clear();
                                 } else if data_value.value_type == PDataValueType::Data
@@ -222,10 +277,12 @@ impl DICOMServer {
                                     .whatever_context("failed to read DICOM data object")?;
 
                                     // Extract StudyInstanceUID
-                                    let study_uid = Self::extract_string_tag(&obj, tags::STUDY_INSTANCE_UID)?;
+                                    let study_uid =
+                                        Self::extract_string_tag(&obj, tags::STUDY_INSTANCE_UID)?;
                                     println!("Received StudyInstanceUID: {}", study_uid);
 
-                                    let series_uid = Self::extract_string_tag(&obj, tags::SERIES_INSTANCE_UID)?;
+                                    let series_uid =
+                                        Self::extract_string_tag(&obj, tags::SERIES_INSTANCE_UID)?;
                                     println!("Received SeriesInstanceUID: {}", series_uid);
 
                                     let message = format!("Received Study: {}", study_uid);
@@ -242,7 +299,6 @@ impl DICOMServer {
                                             "failed to build DICOM meta file information",
                                         )?;
 
-
                                     // write the files to the current directory with their SOPInstanceUID as filenames
                                     let mut file_path = out_dir.clone();
 
@@ -253,10 +309,12 @@ impl DICOMServer {
                                     let series_dir = file_path.clone();
 
                                     if !series_dir.exists() {
-                                        fs::create_dir_all(&series_dir).whatever_context(format!(
-                                            "Failed to create study directory: {}",
-                                            series_dir.display()
-                                        ))?;
+                                        fs::create_dir_all(&series_dir).whatever_context(
+                                            format!(
+                                                "Failed to create study directory: {}",
+                                                series_dir.display()
+                                            ),
+                                        )?;
                                     }
 
                                     file_path.push(
@@ -266,7 +324,12 @@ impl DICOMServer {
 
                                     log_info!("Stored {}", file_path.display());
 
-                                    if let Err(err) = Metadata::update_study_metadata_json(study_dir.as_path(), &obj).await {
+                                    if let Err(err) = Metadata::update_study_metadata_json(
+                                        study_dir.as_path(),
+                                        &obj,
+                                    )
+                                    .await
+                                    {
                                         log_error!("Failed to update study metadata: {}", err);
                                     }
 
@@ -276,15 +339,13 @@ impl DICOMServer {
                                         .write_to_file(&file_path)
                                         .whatever_context("could not save DICOM object to file")?;
 
-                                    self.app_handle.emit("study-received", study_uid.clone())
-                                        .unwrap_or_else(|e| {
-                                            println!("Failed to emit study-received event: {}", e);
-                                        });
-
                                     let state = self.app_handle.state::<AppState>();
-                                    state.tx_manager.send_command(TransmissionCommand::ScheduleStudy {
-                                        study_uid
-                                    }).await;
+                                    state
+                                        .tx_manager
+                                        .send_command(TransmissionCommand::ScheduleStudy {
+                                            study_uid,
+                                        })
+                                        .await;
 
                                     // send C-STORE-RSP object
                                     // commands are always in implict VR LE
@@ -386,21 +447,22 @@ impl DICOMServer {
     }
 
     /// Extract string tag from DICOM object, returning None if tag is missing or empty
-    pub(crate) fn extract_string_tag_optional(obj: &InMemDicomObject, tag: dicom::core::Tag) -> Option<String> {
+    pub(crate) fn extract_string_tag_optional(
+        obj: &InMemDicomObject,
+        tag: dicom::core::Tag,
+    ) -> Option<String> {
         match obj.element(tag) {
-            Ok(element) => {
-                match element.to_str() {
-                    Ok(s) => {
-                        let s = s.trim_end_matches('\0').to_string();
-                        if s.is_empty() {
-                            None
-                        } else {
-                            Some(s)
-                        }
+            Ok(element) => match element.to_str() {
+                Ok(s) => {
+                    let s = s.trim_end_matches('\0').to_string();
+                    if s.is_empty() {
+                        None
+                    } else {
+                        Some(s)
                     }
-                    Err(_) => None,
                 }
-            }
+                Err(_) => None,
+            },
             Err(_) => None,
         }
     }
@@ -453,7 +515,4 @@ impl DICOMServer {
             DataElement::new(tags::STATUS, VR::US, dicom_value!(U16, [0x0000])),
         ])
     }
-
-
-
 }

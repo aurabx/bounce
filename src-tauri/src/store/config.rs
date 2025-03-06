@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::sync::Arc;
 use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::Arc;
 use tauri_plugin_store::Store;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -63,7 +64,6 @@ impl Config {
                 None => "./tmp/dicom_storage".to_string(),
                 Some(value) => value.as_str().unwrap().parse().unwrap(),
             },
-
         }
     }
 
@@ -77,6 +77,15 @@ impl Config {
             "local" => "https://aura.lndo.site".to_string(),
             _ => format!("https://{}.aurabox.app", region),
         }
+    }
+
+
+    pub fn resolve_study_path(&self, study_uid: &String) -> PathBuf {
+        // Actually push the study (you’ll have to adapt to your code)
+        let mut file_path = PathBuf::from(&self.base_dir);
+        file_path.push(study_uid.trim_end_matches('\0').to_string());
+
+        file_path
     }
 
     pub fn current_studies(&self) -> Value {
@@ -105,13 +114,14 @@ impl Config {
                         if metadata_path.exists() && metadata_path.is_file() {
                             // Read and parse the metadata file
                             if let Ok(metadata_content) = std::fs::read_to_string(&metadata_path) {
-                                if let Ok(metadata) = serde_json::from_str::<Value>(&metadata_content) {
+                                if let Ok(metadata) =
+                                    serde_json::from_str::<Value>(&metadata_content)
+                                {
                                     // Extract information from the metadata
                                     if let Some(studies_data) = metadata.get("studies") {
                                         // Iterate through each study in the metadata
                                         if let Some(studies_obj) = studies_data.as_object() {
                                             for (_, study_info) in studies_obj {
-
                                                 // Create a study object with extracted information
                                                 let study = json!({
                                                     "study_uid": Self::extract_field(study_info, "study_uid"),
@@ -139,15 +149,15 @@ impl Config {
         // Return the array as a JSON value
         Value::Object(serde_json::Map::from_iter([
             ("studies".to_string(), studies),
-            ("count".to_string(), Value::from(count))
+            ("count".to_string(), Value::from(count)),
         ]))
     }
 
     fn extract_field(study_info: &Value, index: &str) -> String {
-        study_info.get(index)
+        study_info
+            .get(index)
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
             .unwrap_or(format!("No {}", index))
-
     }
 }

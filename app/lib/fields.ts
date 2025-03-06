@@ -32,6 +32,8 @@ const fields = [{
         label: 'Storage directory',
         key: 'base_dir',
         help: 'Local storage directory for bounce to use',
+        suffix_button: 'Select storage directory',
+        readOnly: true,
     },
     component: TextInput
 },{

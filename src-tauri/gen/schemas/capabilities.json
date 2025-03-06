@@ -1,1 +1,1 @@
-{"main":{"identifier":"main","description":"main permissions","local":true,"windows":["main"],"permissions":["core:default","store:default","process:default","core:app:allow-default-window-icon","shell:default"]}}
+{"main":{"identifier":"main","description":"main permissions","local":true,"windows":["main"],"permissions":["core:default","store:default","process:default","core:app:allow-default-window-icon","shell:default","log:default","dialog:default"]}}

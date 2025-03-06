@@ -1,16 +1,15 @@
-use std::collections::HashMap;
-use std::fs;
-use std::path::Path;
+use crate::receiver::dicom_server::DICOMServer;
+use crate::{log_error, log_info};
 use dicom::object::InMemDicomObject;
 use dicom_dictionary_std::tags;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use crate::{log_error, log_info};
-use crate::receiver::dicom_server::DICOMServer;
+use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
 
 #[derive(Debug, Clone)]
 pub struct Metadata {}
-
 
 /// Represents a DICOM study in the JSON format
 #[derive(Debug, Serialize, Deserialize)]
@@ -48,9 +47,11 @@ struct SeriesInfo {
 }
 
 impl Metadata {
-
     /// Update the study metadata JSON file with study_uid as the key
-    pub async fn update_study_metadata_json(study_path: &Path, obj: &InMemDicomObject) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn update_study_metadata_json(
+        study_path: &Path,
+        obj: &InMemDicomObject,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         // Extract required tags for study and series info
         let study_uid = DICOMServer::extract_string_tag(obj, tags::STUDY_INSTANCE_UID)?;
         let series_uid = DICOMServer::extract_string_tag(obj, tags::SERIES_INSTANCE_UID)?;
@@ -75,7 +76,7 @@ impl Metadata {
                     match serde_json::from_value::<StudyInfo>(study_value.clone()) {
                         Ok(study_info) => {
                             map.insert(study_id.clone(), study_info);
-                        },
+                        }
                         Err(e) => {
                             log_error!("Failed to deserialize study info for {}: {}", study_id, e);
                             // Continue with other studies
@@ -124,8 +125,14 @@ impl Metadata {
             study_instance_uid: study_uid.clone(),
             series_instance_uid: series_uid.clone(),
             modality: DICOMServer::extract_string_tag_optional(obj, tags::MODALITY),
-            series_description: DICOMServer::extract_string_tag_optional(obj, tags::SERIES_DESCRIPTION),
-            body_part_examined: DICOMServer::extract_string_tag_optional(obj, tags::BODY_PART_EXAMINED),
+            series_description: DICOMServer::extract_string_tag_optional(
+                obj,
+                tags::SERIES_DESCRIPTION,
+            ),
+            body_part_examined: DICOMServer::extract_string_tag_optional(
+                obj,
+                tags::BODY_PART_EXAMINED,
+            ),
             series_date: DICOMServer::extract_string_tag_optional(obj, tags::SERIES_DATE),
             series_time: DICOMServer::extract_string_tag_optional(obj, tags::SERIES_TIME),
         };
@@ -161,20 +168,41 @@ impl Metadata {
         Ok(())
     }
     /// Create a new StudyInfo object from a DICOM object
-    fn create_new_study_info(obj: &InMemDicomObject, study_uid: &str) -> Result<StudyInfo, Box<dyn std::error::Error>> {
+    fn create_new_study_info(
+        obj: &InMemDicomObject,
+        study_uid: &str,
+    ) -> Result<StudyInfo, Box<dyn std::error::Error>> {
         Ok(StudyInfo {
             study_uid: study_uid.to_string(),
-            study_description: DICOMServer::extract_string_tag_optional(obj, tags::STUDY_DESCRIPTION),
+            study_description: DICOMServer::extract_string_tag_optional(
+                obj,
+                tags::STUDY_DESCRIPTION,
+            ),
             institution_name: DICOMServer::extract_string_tag_optional(obj, tags::INSTITUTION_NAME),
-            institution_address: DICOMServer::extract_string_tag_optional(obj, tags::INSTITUTION_ADDRESS),
+            institution_address: DICOMServer::extract_string_tag_optional(
+                obj,
+                tags::INSTITUTION_ADDRESS,
+            ),
             patient_id: DICOMServer::extract_string_tag_optional(obj, tags::PATIENT_ID),
-            other_patient_ids: DICOMServer::extract_string_tag_optional(obj, tags::OTHER_PATIENT_NAMES),
+            other_patient_ids: DICOMServer::extract_string_tag_optional(
+                obj,
+                tags::OTHER_PATIENT_NAMES,
+            ),
             accession_no: DICOMServer::extract_string_tag_optional(obj, tags::ACCESSION_NUMBER),
             patient_name: DICOMServer::extract_string_tag_optional(obj, tags::PATIENT_NAME),
-            issuer_of_patient_id: DICOMServer::extract_string_tag_optional(obj, tags::ISSUER_OF_PATIENT_ID),
-            patient_birth_date: DICOMServer::extract_string_tag_optional(obj, tags::PATIENT_BIRTH_DATE),
+            issuer_of_patient_id: DICOMServer::extract_string_tag_optional(
+                obj,
+                tags::ISSUER_OF_PATIENT_ID,
+            ),
+            patient_birth_date: DICOMServer::extract_string_tag_optional(
+                obj,
+                tags::PATIENT_BIRTH_DATE,
+            ),
             patient_sex: DICOMServer::extract_string_tag_optional(obj, tags::PATIENT_SEX),
-            referring_physician_name: DICOMServer::extract_string_tag_optional(obj, tags::REFERRING_PHYSICIAN_NAME),
+            referring_physician_name: DICOMServer::extract_string_tag_optional(
+                obj,
+                tags::REFERRING_PHYSICIAN_NAME,
+            ),
             study_date: DICOMServer::extract_string_tag_optional(obj, tags::STUDY_DATE),
             study_time: DICOMServer::extract_string_tag_optional(obj, tags::STUDY_TIME),
             tz_offset: None, // TZ offset isn't directly in standard DICOM tags

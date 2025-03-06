@@ -49,9 +49,9 @@ export default function RootLayout({
             </div>
           </div>
           <div className="pl-48 h-full">
-            <PageTitle />
-            <main className="py-4 h-full">
-              <div className="p-4 h-full">{children}</div>
+            <main className="py-4 h-full relative">
+              <PageTitle />
+              <div className="p-4">{children}</div>
             </main>
           </div>
         </div>

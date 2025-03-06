@@ -14,6 +14,6 @@ export default function PageTitle() {
         return null;
     }
 
-    return <div className="p-5 bg-white shadow-lg font-semibold text-xl">{title}</div>
+    return <div className="p-5 bg-white shadow-lg font-semibold text-xl sticky top-0">{title}</div>
 }
 

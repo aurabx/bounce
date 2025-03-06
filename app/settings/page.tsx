@@ -4,6 +4,7 @@ import {load} from '@tauri-apps/plugin-store';
 import {Suspense, useEffect, useState} from 'react'
 import fields from "@/app/lib/fields";
 import Alert from "@/app/components/Fields/Alert";
+import { open } from '@tauri-apps/plugin-dialog';
 
 export default function Page() {
 
@@ -31,6 +32,16 @@ export default function Page() {
             ...settings,
             ...{[key]: value}
         })
+    }
+
+    const suffixClick = async (key: string) => {
+        if (key === 'base_dir') {
+            const file = await open({
+                multiple: false,
+                directory: true,
+            });
+            await setField(key, file)
+        }
     }
 
     useEffect(() => {
@@ -66,6 +77,7 @@ export default function Page() {
                                         key={field.config.key}
                                         config={field.config}
                                         settings={settings}
+                                        onSuffixClick={field.config.suffix_button ? () => suffixClick(field.config.key) : () => null}
                                         value={settings && settings[field.config.key] ? settings[field.config.key] : undefined}
                                         onChange={(e: any) => setField(field.config.key, e.target.value)}/>)
                                 })}

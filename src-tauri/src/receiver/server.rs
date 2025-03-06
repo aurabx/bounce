@@ -1,10 +1,11 @@
-use std::sync::Arc;
-use tauri::{AppHandle, Emitter, Manager};
+use crate::logger::setup_logger;
+use crate::store::config::Config;
 use crate::{log_error, log_info, receiver};
 use receiver::dicom_server::DICOMServer;
+use std::sync::Arc;
+use tauri::{AppHandle, Emitter, Manager};
 use tokio;
 use tokio::sync::{oneshot, Mutex};
-use crate::store::config::Config;
 
 // Define a struct to manage server state
 pub struct ServerState {
@@ -19,6 +20,8 @@ pub fn init_server_state() -> ServerState {
 }
 
 pub async fn start(config: Config, app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    // Setup logging
+    setup_logger();
 
     // Create DICOM server
     let dicom_server = DICOMServer::new(config, app.clone());
@@ -60,7 +63,6 @@ pub async fn start(config: Config, app: AppHandle) -> Result<(), Box<dyn std::er
     Ok(())
 }
 
-
 #[allow(unused_assignments)]
 pub async fn stop(app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let app_state = app.state::<Arc<Mutex<ServerState>>>();
@@ -89,4 +91,3 @@ pub async fn stop(app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-

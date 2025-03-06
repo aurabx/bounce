@@ -1,26 +1,22 @@
-use std::path::{Path, PathBuf};
-use anyhow::{anyhow, Context, Result};
-use zip::{
-    write::ZipWriter,
-    write::SimpleFileOptions,
-    CompressionMethod
-};
-use base64::engine::general_purpose::STANDARD as BASE64;
-use walkdir::{DirEntry, WalkDir};
-use std::io::{Seek, Write};
-use reqwest::{Client, multipart};
-use tokio::{fs, fs::File};
-use tokio::io::AsyncReadExt;
-use serde_json::Value;
-use std::{collections::HashMap, sync::Arc};
-use base64::Engine;
-use tokio::sync::{Mutex, oneshot};
-use tokio::time::{sleep, Duration};
-use zip::result::ZipError;
+use crate::aura::aura_api::AuraApi;
 use crate::log_info;
 use crate::store::config::Config;
-use crate::aura::aura_api::AuraApi;
+use anyhow::{anyhow, Context, Result};
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine;
+use reqwest::{multipart, Client};
+use serde_json::Value;
+use std::io::{Seek, Write};
+use std::path::{Path, PathBuf};
+use std::{collections::HashMap, sync::Arc};
+use tokio::io::AsyncReadExt;
+use tokio::sync::{oneshot, Mutex};
+use tokio::time::{sleep, Duration};
+use tokio::{fs, fs::File};
 use uuid::Uuid;
+use walkdir::{DirEntry, WalkDir};
+use zip::result::ZipError;
+use zip::{write::SimpleFileOptions, write::ZipWriter, CompressionMethod};
 // use tokio_util::io::ReaderStream;
 
 #[derive(Debug)]
@@ -44,7 +40,7 @@ impl Transmission {
             client: Client::new(),
             scheduled_studies: Arc::new(Mutex::new(HashMap::new())),
             aura_api: Arc::new(AuraApi::new(config.clone())),
-            config
+            config,
         }
     }
 
@@ -74,7 +70,7 @@ impl Transmission {
         // Clone what we need for the spawned task
         let scheduled_studies = Arc::clone(&self.scheduled_studies);
         let study_uid_clone = study_uid.clone();
-        let self_clone=  self.clone();
+        let self_clone = self.clone();
 
         // Spawn the debounce countdown in a background task
         tauri::async_runtime::spawn(async move {
@@ -103,7 +99,6 @@ impl Transmission {
                 }
             }
 
-
             // Either we pushed or canceled, so remove this entry from the map
             let mut map = scheduled_studies.lock().await;
             map.remove(&study_uid);
@@ -113,23 +108,23 @@ impl Transmission {
     }
 
     pub async fn delete_study(&self, study_uid: String) -> Result<()> {
-        let study_path = self.resolve_study_path(&study_uid);
+        self.delete_local_study_files(study_uid.clone()).await?;
+        self.delete_local_compressed_study(study_uid.clone())
+            .await?;
 
-        self.delete_local_study_files(study_path).await?;
-        log_info!("Deleted local study files for {}", study_uid);
+        log_info!("Deleted local study files and archive for {}", study_uid);
 
         Ok(())
     }
 
-    pub async fn send_study(
-        &self,
-        study_uid: String,
-        delete_after_send: bool
-    ) -> Result<()> {
-
+    pub async fn send_study(&self, study_uid: String, delete_after_send: bool) -> Result<()> {
         let upload_id = Uuid::new_v4();
 
-        log_info!("Starting send_study {} for upload: {}", &study_uid, &upload_id);
+        log_info!(
+            "Starting send_study {} for upload: {}",
+            &study_uid,
+            &upload_id
+        );
 
         let study_path = self.resolve_study_path(&study_uid);
 
@@ -138,59 +133,44 @@ impl Transmission {
         let archive_path = self.compress_study(study_path.clone()).await?;
         log_info!("Preparing to send study zip: {:?}", archive_path);
 
+
         // === Create an Assembly on Transloadit, get the TUS URL back
         let assembly = self.create_transloadit_assembly(&upload_id).await?;
         log_info!("Got TUS URL: {}", assembly.get("tus_url").unwrap());
 
+        self.aura_api
+            .upload_start(
+                study_uid.clone(),
+                assembly.get("signature").unwrap().to_string(),
+                upload_id.to_string(),
+            )
+            .await
+            .expect("Error sending upload start api message");
+        log_info!("Sent upload start to aura");
+        
         // === Upload via TUS
         self.upload_via_tus(&assembly, &archive_path).await?;
-        log_info!("Study sent successfully via TUS to {}", assembly.get("tus_url").unwrap());
-        
-        self.aura_api.upload_start(
-            study_uid,
-            assembly.get("signature").unwrap().to_string(),
-            upload_id.to_string()
-        ).await.expect("Error sending upload start api message");
-        log_info!("Send upload start");
+        log_info!(
+            "Study sent successfully via TUS to {}",
+            assembly.get("tus_url").unwrap()
+        );
 
+        self.aura_api
+            .upload_update(
+                study_uid.clone(),
+                assembly.get("assembly_id").unwrap().to_string(),
+            )
+            .await
+            .expect("Error sending upload update api message");
+        log_info!("Sent upload update to aura");
 
         // Optionally, delete local study if requested
         if delete_after_send {
-            self.delete_local_study_files(study_path.clone()).await?;
-            log_info!("Deleted local study files for {}", study_path.to_str().unwrap());
+            self.delete_study(study_uid).await?;
         }
 
         Ok(())
-
-        // // Send archive
-        // let file = File::open(&archive_path).await?;
-        // // let file_size = file.metadata()?.len();
-        // let stream = ReaderStream::new(file);
-        // let body_stream = Body::wrap_stream(stream);
-        //
-        // log_info!("Endpoint: {:?}", &self.config.get_api_endpoint());
-        //
-        // let response = self.client.post(&self.config.get_api_endpoint())
-        //     .header("Authorization", format!("Bearer {}", &self.config.api_key))
-        //     .header("Content-Type", "application/octet-stream")
-        //     .timeout(Duration::from_secs(30))
-        //     .body(body_stream)
-        //     .send()
-        //     .await?;
-        //
-        // if response.status().is_success() {
-        //     log_info!("Study sent successfully: {:?}", archive_path);
-        //     if delete_after_send {
-        //         self.delete_local_study_files(study_path).await?;
-        //     }
-        //     Ok(())
-        // } else {
-        //     Err(anyhow::anyhow!("Failed to send archive. Status: {}", response.status()))
-        // }
     }
-
-
-
 
     fn resolve_study_path(&self, study_uid: &String) -> PathBuf {
         // Actually push the study (you’ll have to adapt to your code)
@@ -200,12 +180,7 @@ impl Transmission {
         file_path
     }
 
-    pub async fn zip_folder<T, I>(
-        &self,
-        it: I,
-        prefix: &Path,
-        writer: T
-    ) -> anyhow::Result<()>
+    pub async fn zip_folder<T, I>(&self, it: I, prefix: &Path, writer: T) -> anyhow::Result<()>
     where
         T: Write + Seek,
         I: Iterator<Item = DirEntry> + Send,
@@ -246,7 +221,6 @@ impl Transmission {
         Ok(())
     }
 
-
     async fn compress_study(&self, study_path: PathBuf) -> Result<PathBuf> {
         let study_path = study_path.as_path();
         let archive_path = study_path.with_extension("zip");
@@ -269,7 +243,9 @@ impl Transmission {
         Ok(archive_path)
     }
 
-    async fn delete_local_study_files(&self, study_path: PathBuf) -> Result<()> {
+    async fn delete_local_study_files(&self, study_uid: String) -> Result<()> {
+        let study_path = self.resolve_study_path(&study_uid);
+
         fs::remove_dir_all(study_path.as_path())
             .await
             .context("Failed to delete local study files")?;
@@ -277,21 +253,50 @@ impl Transmission {
         Ok(())
     }
 
+    async fn delete_local_compressed_study(&self, study_uid: String) -> Result<()> {
+        let archive_path = self.resolve_study_path(&study_uid).with_extension("zip");
+
+        fs::remove_file(archive_path.as_path())
+            .await
+            .context("Failed to delete local study files")?;
+
+        Ok(())
+    }
 
     /// Create a Transloadit Assembly and return its TUS upload URL.
     async fn create_transloadit_assembly(&self, upload_id: &Uuid) -> Result<Value> {
-
         let signature_result = self.aura_api.generate_signature().await?;
-        let signature = signature_result.get("signature").unwrap().as_str().unwrap().to_string();
+        let signature = signature_result
+            .get("signature")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_string();
 
         log_info!("signature {:#?}", &signature);
-        log_info!("params {:#?}", signature_result.get("params").unwrap().as_str().unwrap().to_string());
+        log_info!(
+            "params {:#?}",
+            signature_result
+                .get("params")
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .to_string()
+        );
 
         let form = multipart::Form::new()
-            .text("params", signature_result.get("params").unwrap().as_str().unwrap().to_string())
+            .text(
+                "params",
+                signature_result
+                    .get("params")
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .to_string(),
+            )
             .text("signature", signature.clone())
-            .text("mode" , "supplier")
-            .text("upload_id" , upload_id.to_string())
+            .text("mode", "supplier")
+            .text("upload_id", upload_id.to_string())
             .text("num_expected_upload_files", "1");
 
         // The Transloadit docs say you can send:
@@ -299,7 +304,8 @@ impl Transmission {
         // with a JSON body that has "params" as a JSON-encoded string, or
         // that you can pass it as top-level JSON. This snippet uses
         // top-level "params" JSON for convenience:
-        let resp = self.client
+        let resp = self
+            .client
             .post("https://api2.transloadit.com/assemblies")
             // .header("Content-Type", "multipart/form-data")
             // .json(&assembly_params)
@@ -323,7 +329,9 @@ impl Transmission {
         }
 
         // The Transloadit response includes "tus_url" - parse it out:
-        let mut resp_json: Value = resp.json().await
+        let mut resp_json: Value = resp
+            .json()
+            .await
             .context("Failed to parse create-assembly JSON")?;
 
         log_info!("{:#?}", resp_json);
@@ -335,13 +343,14 @@ impl Transmission {
             // `tus_url` does not exist
             log_info!("Missing tus_url in Transloadit assembly response");
 
-            return Err(anyhow!(
-                "Missing tus_url in Transloadit assembly response"
-            ));
+            return Err(anyhow!("Missing tus_url in Transloadit assembly response"));
         }
 
         if let Some(obj) = resp_json.as_object_mut() {
-            obj.insert("signature".to_string(), Value::String(signature.to_string()));
+            obj.insert(
+                "signature".to_string(),
+                Value::String(signature.to_string()),
+            );
         } else {
             eprintln!("resp_json is not an object and cannot have key-value pairs added.");
         }
@@ -360,7 +369,8 @@ impl Transmission {
             .context("Could not get metadata for file")?
             .len();
 
-        let file_name = file_path.file_name()
+        let file_name = file_path
+            .file_name()
             .and_then(|s| s.to_str())
             .unwrap_or("file.dcm.zip");
 
@@ -384,13 +394,11 @@ impl Transmission {
 
         let upload_metadata = encoded_metadata.join(",");
 
-        log_info!(
-            "upload_metadata {:?}",
-            upload_metadata,
-        );
+        log_info!("upload_metadata {:?}", upload_metadata,);
 
         // === 1) Create the TUS file on the server (POST ...)
-        let create_req = self.client
+        let create_req = self
+            .client
             .post(tus_url) // Transloadit’s TUS endpoint from assembly
             .header("Tus-Resumable", "1.0.0")
             .header("Upload-Length", file_size.to_string())
@@ -403,11 +411,7 @@ impl Transmission {
             let status = create_req.status();
             let body = create_req.text().await.ok();
 
-            log_info!(
-                "TUS creation failed. Status: {}, Body: {:?}",
-                status,
-                body
-            );
+            log_info!("TUS creation failed. Status: {}, Body: {:?}", status, body);
 
             return Err(anyhow!(
                 "TUS creation failed. Status: {}, Body: {:?}",
@@ -434,7 +438,8 @@ impl Transmission {
             .await
             .context("Could not read archive to memory")?;
 
-        let patch_resp = self.client
+        let patch_resp = self
+            .client
             .patch(&upload_url)
             .header("Tus-Resumable", "1.0.0")
             .header("Upload-Offset", 0.to_string())
@@ -454,6 +459,4 @@ impl Transmission {
 
         Ok(())
     }
-
-
 }

@@ -1,35 +1,31 @@
-use std::fs;
-use std::path::PathBuf;
-use std::sync::Arc;
+use crate::store::config::Config;
 use anyhow::Error;
 use reqwest::{Client, Response};
 use serde_json::{json, Value};
-use crate::store::config::Config;
+use std::fs;
+use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub struct AuraApi {
     client: Client,
-    config: Arc<Config>
+    config: Arc<Config>,
 }
 
 impl AuraApi {
     pub fn new(config: Config) -> Self {
         Self {
             client: Client::new(),
-            config: Arc::new(config.clone())
+            config: Arc::new(config.clone()),
         }
     }
-
 
     pub async fn generate_signature(&self) -> anyhow::Result<Value> {
         let url = format!("{}/api/bounce/signature", &self.config.get_api_endpoint());
 
-        println!(
-            "generate_signature (url: {})",
-            url
-        );
+        println!("generate_signature (url: {})", url);
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .header("Content-Type", "application/json")
             .header("Authorization", format!("Bearer {}", &self.config.api_key))
@@ -39,38 +35,67 @@ impl AuraApi {
         Self::handle_response(response).await
     }
 
-
     pub async fn upload_start(
         &self,
         study_uid: String,
         signature: String,
-        upload_id: String
+        upload_id: String,
     ) -> anyhow::Result<Value> {
         println!(
             "upload_start (study_uid: {}), (signature: {}), (signature: {})",
             study_uid, signature, upload_id
         );
 
-
-        let out_dir = PathBuf::from(&self.config.base_dir);
-        let mut file_path = out_dir.clone();
-        file_path.push(study_uid.trim_end_matches('\0').to_string());
-
-        let study_path = file_path.as_path();
+        let study_path = &self.config.resolve_study_path(&study_uid);
         let json_path = study_path.join("metadata.json");
 
         let json_content = fs::read_to_string(&json_path)?;
-
         let json_value: Value = serde_json::from_str::<Value>(&json_content)?;
 
-        let url = format!("{}/api/bounce/upload/start", &self.config.get_api_endpoint());
+        let url = format!(
+            "{}/api/bounce/upload/start",
+            &self.config.get_api_endpoint()
+        );
 
-        let response = self.client
+        let response = self
+            .client
             .post(&url)
             .json(&json!({
                 "studies" : json_value.get("studies").unwrap(),
                 "mode" : "supplier",
                 "signature" : signature,
+                "upload_id" : upload_id,
+            }))
+            .header("Content-Type", "application/json")
+            .header("Accepts", "application/json")
+            .header("Authorization", format!("Bearer {}", &self.config.api_key))
+            .send()
+            .await?;
+
+        Self::handle_response(response).await
+    }
+
+
+    pub async fn upload_update(
+        &self,
+        upload_id: String,
+        assembly_id: String,
+    ) -> anyhow::Result<Value> {
+        println!(
+            "upload_update (upload_id: {}), (assembly_id: {})",
+            upload_id, assembly_id
+        );
+
+        let url = format!(
+            "{}/api/bounce/upload/update",
+            &self.config.get_api_endpoint()
+        );
+
+        let response = self
+            .client
+            .post(&url)
+            .json(&json!({
+                "assembly_id" : assembly_id,
                 "upload_id" : upload_id,
             }))
             .header("Content-Type", "application/json")
@@ -96,8 +121,7 @@ impl AuraApi {
 
             println!(
                 "API request failed with status {}: {:?}",
-                status,
-                error_detail
+                status, error_detail
             );
 
             return Err(anyhow::anyhow!(
@@ -107,10 +131,13 @@ impl AuraApi {
             ));
         }
 
-
         let body = response.text().await?;
         let result: Value = serde_json::from_str(&body).map_err(|e| {
-            anyhow::anyhow!("Failed to parse API response: {}. Raw response: {}", e, body)
+            anyhow::anyhow!(
+                "Failed to parse API response: {}. Raw response: {}",
+                e,
+                body
+            )
         })?;
 
         Ok(result)

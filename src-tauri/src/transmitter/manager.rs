@@ -1,8 +1,8 @@
-use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
 use crate::log_info;
 use crate::store::config::Config;
 use crate::transmitter::transmission::Transmission;
+use std::sync::Arc;
+use tokio::sync::{mpsc, Mutex};
 
 #[derive(Debug, Clone)]
 pub struct TransmissionManager {
@@ -15,14 +15,9 @@ impl TransmissionManager {
         let transmission = Arc::new(Mutex::new(Transmission::new(config)));
 
         // Start background task
-        let _ =  tauri::async_runtime::spawn({
-            Self::run_background_task(rx, transmission)
-        });
+        let _ = tauri::async_runtime::spawn({ Self::run_background_task(rx, transmission) });
 
-
-        Self {
-            sender: tx
-        }
+        Self { sender: tx }
     }
 
     /// Background task to process commands
@@ -44,7 +39,7 @@ impl TransmissionManager {
                         if let Err(e) = transmission.schedule_study_push(study_uid).await {
                             println!("Error sending study: {:?}", e);
                         }
-                    },
+                    }
                 }
             });
         }

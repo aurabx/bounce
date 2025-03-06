@@ -1,2 +1,2 @@
-pub mod transmission;
 pub mod manager;
+pub mod transmission;

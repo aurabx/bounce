@@ -1,20 +1,21 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod aura;
 mod logger;
 mod receiver;
 mod store;
 mod transmitter;
-mod aura;
 
-use std::sync::Arc;
-use store::config::Config;
-use tauri::{AppHandle, Emitter, Listener, Manager};
-use tauri_plugin_store::StoreExt;
-use tokio::sync::Mutex;
 use crate::aura::aura_api::AuraApi;
 use crate::logger::setup_logger;
 use crate::receiver::server::init_server_state;
-use crate::transmitter::manager::{TransmissionManager};
+use crate::transmitter::manager::TransmissionManager;
 use crate::transmitter::transmission::Transmission;
+use std::sync::Arc;
+use store::config::Config;
+use tauri::{AppHandle, Emitter, Listener, Manager};
+use tauri_plugin_log::{Target, TargetKind};
+use tauri_plugin_store::StoreExt;
+use tokio::sync::Mutex;
 
 #[derive(Clone)]
 struct AppState {
@@ -43,50 +44,41 @@ async fn api_start_upload(
     app: AppHandle,
     study_uid: String,
     signature: String,
-    upload_id: String
+    upload_id: String,
 ) -> Result<(), String> {
-
     let aura_api = AuraApi::new(load_config(app));
 
-    aura_api.upload_start(
-        study_uid,
-        signature,
-        upload_id
-    ).await.expect("api start upload panic");
+    aura_api
+        .upload_start(study_uid, signature, upload_id)
+        .await
+        .expect("api start upload panic");
 
     Ok(())
 }
 
 #[tauri::command]
-async fn send_study(
-    app: AppHandle,
-    study_uid: String,
-) -> Result<(), String> {
+async fn send_study(app: AppHandle, study_uid: String) -> Result<(), String> {
     let transmission = Transmission::new(load_config(app));
 
-    transmission.send_study(
-        study_uid,
-        false
-    ).await.expect("send study panic");
+    transmission
+        .send_study(study_uid, false)
+        .await
+        .expect("send study panic");
 
     Ok(())
 }
 
 #[tauri::command]
-async fn delete_study(
-    app: AppHandle,
-    study_uid: String,
-) -> Result<(), String> {
+async fn delete_study(app: AppHandle, study_uid: String) -> Result<(), String> {
     let transmission = Transmission::new(load_config(app));
 
-    transmission.delete_study(
-        study_uid,
-    ).await.expect("delete study panic");
+    transmission
+        .delete_study(study_uid)
+        .await
+        .expect("delete study panic");
 
     Ok(())
 }
-
-
 
 #[tauri::command]
 async fn receiver_start(app: AppHandle) -> Result<(), String> {
@@ -103,7 +95,6 @@ async fn receiver_start(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 async fn receiver_stop(app: AppHandle) -> Result<(), String> {
-
     app.emit("log", "Stopping server").unwrap();
 
     receiver::server::stop(app)
@@ -116,17 +107,18 @@ async fn receiver_stop(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 fn current_studies(app: AppHandle) -> Result<(), String> {
     let config = load_config(app.clone());
-    app.emit("current-studies", config.current_studies()).unwrap();
+    app.emit("current-studies", config.current_studies())
+        .unwrap();
     Ok(())
 }
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_log::Builder::new().build())
         .setup(|app| {
             // create a TransmissionManager
-            let manager = TransmissionManager::new(
-                load_config(app.app_handle().clone())
-            );
+            let manager = TransmissionManager::new(load_config(app.app_handle().clone()));
 
             // store it in Tauri's managed state
             app.manage(AppState {
@@ -136,22 +128,18 @@ fn main() {
             // Initialize and manage server state
             app.manage(Arc::new(Mutex::new(init_server_state())));
 
-            app.listen("study-received", |event| {
-                println!("MAIN: study received {}", event.payload());
-
-                tauri::async_runtime::spawn(async move {
-                    log_info!("MAIN: study-received send_command");
-                });
-            });
-
-            // Setup logging
-            setup_logger();
-
             Ok(())
         })
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_store::Builder::new().build())
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .target(Target::new(TargetKind::LogDir {
+                    file_name: Some("logs".to_string()),
+                }))
+                .build(),
+        )
         .invoke_handler(tauri::generate_handler![
             receiver_start,
             receiver_stop,
