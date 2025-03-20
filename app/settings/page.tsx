@@ -11,6 +11,7 @@ export default function Page() {
     const [settings, setSettings] = useState<{ [key: string]: any }>();
     const [loaded, setLoaded] = useState<boolean>(false);
     const [saved, setSaved] = useState<boolean>(false);
+    const [isSuper, setIsSuper] = useState<boolean>(false);
 
     const save = async (e: any) => {
         e.preventDefault();
@@ -23,15 +24,29 @@ export default function Page() {
 
         await store.save();
 
+
         setSaved(true);
         setTimeout(() => setSaved(false), 3000)
+        await checkApiKey()
     };
+
+    const checkApiKey = async () => {
+
+        if (settings && settings.api_key) {
+            const parts = settings.api_key.split('_');
+            const last = parts[parts.length - 1];
+
+            ['local', 'dev', 'staging'].includes(last) ? setIsSuper(true) : setIsSuper(false);
+        }
+    }
 
     const setField = async (key: string, value: any) => {
         setSettings({
             ...settings,
             ...{[key]: value}
         })
+
+
     }
 
     const suffixClick = async (key: string) => {
@@ -42,6 +57,12 @@ export default function Page() {
             });
             await setField(key, file)
         }
+    }
+
+    const filteredFields = () => {
+        return fields.filter((field) => {
+            return !(!isSuper && field.super === true);
+        })
     }
 
     useEffect(() => {
@@ -70,7 +91,7 @@ export default function Page() {
                         <div className="space-y-12">
                             <div
                                 className="grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-3">
-                                {fields.map((field) => {
+                                {filteredFields().map((field) => {
                                     const FieldComponent: any = field.component;
 
                                     return (<FieldComponent

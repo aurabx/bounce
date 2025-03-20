@@ -20,8 +20,6 @@ pub fn init_server_state() -> ServerState {
 }
 
 pub async fn start(config: Config, app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    // Setup logging
-    setup_logger();
 
     // Create DICOM server
     let dicom_server = DICOMServer::new(config, app.clone());

@@ -117,6 +117,9 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_log::Builder::new().build())
         .setup(|app| {
+            // Setup logging
+            setup_logger();
+
             // create a TransmissionManager
             let manager = TransmissionManager::new(load_config(app.app_handle().clone()));
 

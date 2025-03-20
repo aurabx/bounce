@@ -9,7 +9,7 @@ use tauri_plugin_store::Store;
 pub struct Config {
     pub base_dir: String,
     pub api_key: String,
-    pub region: String,
+    // pub region: String,
     pub port: u16,
     pub host: String,
     pub mode: String,
@@ -23,27 +23,16 @@ impl Config {
             keyed_config.insert(key, value);
         }
 
-        // let api_key = store
-        //     .get("api_key")
-        //     .expect("No API key found in store")
-        //     .to_string();
-
-        // println!("api_key in command: {}", api_key);
-        // println!(
-        //     "store.entries(): {}",
-        //     serde_json::to_string(&keyed_config).unwrap().to_string()
-        // );
-
         Config {
             api_key: match store.get("api_key") {
                 None => "API key not found in store".to_string(),
                 Some(value) => value.as_str().unwrap().parse().unwrap(),
             },
 
-            region: match store.get("region") {
-                None => "Region not found in store".to_string(),
-                Some(value) => value.as_str().unwrap().parse().unwrap(),
-            },
+            // region: match store.get("region") {
+            //     None => "Region not found in store".to_string(),
+            //     Some(value) => value.as_str().unwrap().parse().unwrap(),
+            // },
 
             port: match store.get("port") {
                 None => 104,
@@ -67,9 +56,36 @@ impl Config {
         }
     }
 
+    // Existing methods...
+
+    /// Extracts the region code from the API key
+    ///
+    /// The API key format is expected to be "aura_REGION_bounce_TOKEN"
+    /// where REGION is the region code (e.g., "au")
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let config = Config { api_key: "aura_au_bounce_ADASDASDASDASDASDA".to_string(), ... };
+    /// assert_eq!(config.region_from_api_key(), Some("au".to_string()));
+    /// ```
+    ///
+    /// Returns None if the API key doesn't match the expected format
+    pub fn region_from_api_key(&self) -> Option<String> {
+        let parts: Vec<&str> = self.api_key.split('_').collect();
+
+        // Check if the API key has at least 3 parts (aura_REGION_bounce_TOKEN)
+        if parts.len() >= 3 && parts[0] == "aura" {
+            // Return the second part (index 1) which should be the region code
+            return Some(parts[1].to_string());
+        }
+
+        None
+    }
+
     pub fn get_api_endpoint(&self) -> String {
-        let region = self.region.clone();
-        let region = region.as_str();
+
+        let region = self.region_from_api_key().unwrap();
 
         match self.mode.as_str() {
             "staging" => "https://staging-5em2ouy-pghszvpk65pns.au.platformsh.site".to_string(),
