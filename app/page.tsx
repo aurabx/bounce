@@ -4,10 +4,14 @@ import { invoke } from '@tauri-apps/api/core';
 import {receiverStart, receiverStop} from "@/app/lib/server";
 import {useAppSelector} from "@/app/lib/hook";
 import {classNames} from "@/app/lib/helpers";
+import {useEffect, useState} from "react";
+import {load} from "@tauri-apps/plugin-store";
+import fields from "@/app/lib/fields";
 
 export default function Page() {
     const running = useAppSelector((state) => state.main.running)
     const studies = useAppSelector((state) => state.main.studies)
+    const [port, setPort] = useState<string>('');
 
     const sendLog = async () => {
         try {
@@ -21,6 +25,19 @@ export default function Page() {
     const loadStudies = async () => {
         await invoke('current_studies');
     }
+
+    useEffect(() => {
+        const loadStore = async () => {
+            const store =  await load('store.json', { autoSave: false });
+            const port = await store.get('port');
+
+            setPort(port as string)
+        }
+
+        loadStore().then(() => {
+        })
+    }, [])
+
 
     return (
         <main className="">
@@ -36,6 +53,12 @@ export default function Page() {
                     {running ? 'Stop Service' : 'Start Service'}
                 </button>
             </div>
+            {running && (<div className="flex justify-center mb-12">
+                <code className="p-2 bg-slate-300 rounded-lg">
+                    Running at https://0.0.0.0:{port}
+                </code>
+            </div>)}
+
             <div className="mb-6">
                 <dl className="mt-5 grid grid-cols-1 divide-y divide-gray-200 overflow-hidden rounded-lg bg-white shadow-sm md:grid-cols-2 md:divide-x md:divide-y-0">
                     <div className="px-4 py-5 sm:p-6">
