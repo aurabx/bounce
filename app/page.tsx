@@ -55,7 +55,7 @@ export default function Page() {
             </div>
             {running && (<div className="flex justify-center mb-12">
                 <code className="p-2 bg-slate-300 rounded-lg">
-                    Running at https://0.0.0.0:{port}
+                    Running at 0.0.0.0:{port}
                 </code>
             </div>)}
 
