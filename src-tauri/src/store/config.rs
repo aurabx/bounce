@@ -25,28 +25,35 @@ impl Config {
 
         Config {
             api_key: match store.get("api_key") {
-                None => "API key not found in store".to_string(),
-                Some(value) => value.as_str().unwrap().parse().unwrap(),
+                None => "".to_string(),
+                Some(value) => match value.as_str() {
+                    Some(str_value) => str_value.parse().unwrap_or_else(|_| "".to_string()),
+                    None => "".to_string(),
+                },
             },
-
-            // region: match store.get("region") {
-            //     None => "Region not found in store".to_string(),
-            //     Some(value) => value.as_str().unwrap().parse().unwrap(),
-            // },
 
             port: match store.get("port") {
                 None => 104,
-                Some(value) => value.as_str().unwrap().parse().unwrap(),
+                Some(value) => match value.as_str() {
+                    Some(str_value) => str_value.parse().unwrap_or_else(|_| 104),
+                    None => 104,
+                },
             },
 
             host: match store.get("host") {
                 None => "0.0.0.0".to_string(),
-                Some(value) => value.as_str().unwrap().parse().unwrap(),
+                Some(value) => match value.as_str() {
+                    Some(str_value) => str_value.parse().unwrap_or_else(|_| "0.0.0.0".to_string()),
+                    None => "0.0.0.0".to_string(),
+                },
             },
 
             mode: match store.get("mode") {
                 None => "production".to_string(),
-                Some(value) => value.as_str().unwrap().parse().unwrap(),
+                Some(value) => match value.as_str() {
+                    Some(str_value) => str_value.parse().unwrap_or_else(|_| "production".to_string()),
+                    None => "production".to_string(),
+                },
             },
 
             base_dir: match store.get("base_dir") {

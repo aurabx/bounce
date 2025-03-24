@@ -15,7 +15,7 @@ impl TransmissionManager {
         let transmission = Arc::new(Mutex::new(Transmission::new(config)));
 
         // Start background task
-        let _ = tauri::async_runtime::spawn({ Self::run_background_task(rx, transmission) });
+        let _ = tauri::async_runtime::spawn(Self::run_background_task(rx, transmission));
 
         Self { sender: tx }
     }

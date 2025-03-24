@@ -12,7 +12,7 @@ use crate::transmitter::manager::TransmissionManager;
 use crate::transmitter::transmission::Transmission;
 use std::sync::Arc;
 use store::config::Config;
-use tauri::{AppHandle, Emitter, Listener, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_log::{Target, TargetKind};
 use tauri_plugin_store::StoreExt;
 use tokio::sync::Mutex;
