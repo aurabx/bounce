@@ -2,12 +2,14 @@
   "name": "aurabox-bounce",
   "version": "0.1.0",
   "private": true,
+  "license": "UNLICENSED",
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "tauri:build": "dotenv -- tauri build"
   },
   "dependencies": {
     "@headlessui/react": "^2.2.0",
@@ -33,6 +35,7 @@
     "@types/node": "^20",
     "@types/react": "^18.3.14",
     "autoprefixer": "^10.0.1",
+    "dotenv-cli": "^8.0.0",
     "eslint": "^8",
     "eslint-config-next": "15.0.3",
     "postcss": "^8",

@@ -1,6 +1,4 @@
 use std::sync::Once;
-use tracing_appender::rolling::{Rotation};
-use tracing_subscriber::{self, prelude::*};
 
 // Use a static Once guard to ensure initialization happens only once
 static INIT: Once = Once::new();

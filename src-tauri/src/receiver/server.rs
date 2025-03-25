@@ -1,4 +1,3 @@
-use crate::logger::setup_logger;
 use crate::store::config::Config;
 use crate::{log_error, log_info, receiver};
 use receiver::dicom_server::DICOMServer;

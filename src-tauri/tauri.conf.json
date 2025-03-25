@@ -8,7 +8,7 @@
   },
   "bundle": {
     "active": true,
-    "category": "DeveloperTool",
+    "category": "Utility",
     "copyright": "",
     "targets": "all",
     "externalBin": [],
@@ -30,7 +30,7 @@
       "exceptionDomain": "",
       "frameworks": [],
       "providerShortName": null,
-      "signingIdentity": "6A7T6PQ64L"
+      "signingIdentity": "Developer ID Application: Aurabox Pty Ltd (X52XM4SP3U)"
     },
     "resources": ["icons/icon.ico", "icons/**/*"],
     "shortDescription": "",
