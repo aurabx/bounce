@@ -6,6 +6,8 @@ import fields from "@/app/lib/fields";
 import Alert from "@/app/components/Fields/Alert";
 import { open } from '@tauri-apps/plugin-dialog';
 import { useRouter } from 'next/navigation'
+import {useSetupComplete} from "@/app/lib/customHooks";
+import {classNames} from "@/app/lib/helpers";
 
 export default function Settings() {
 
@@ -14,12 +16,12 @@ export default function Settings() {
     const [saved, setSaved] = useState<boolean>(false);
     const [isSuper, setIsSuper] = useState<boolean>(false);
     const router = useRouter();
+    const { setupComplete } = useSetupComplete();
 
     const save = async (e: any) => {
         e.preventDefault();
 
         let store =  await load('store.json', { autoSave: false });
-        const previousSetupStatus = store.get('setup_complete');
 
         for (const field of fields) {
             await store.set(field.config.key, settings?.[field.config.key] ? settings?.[field.config.key] : null)
@@ -36,8 +38,9 @@ export default function Settings() {
         setTimeout(() => setSaved(false), 3000)
         await checkApiKey()
 
-        if (!previousSetupStatus){
+        if (!setupComplete){
             router.push('/')
+            window.location.reload()
         }
     };
 
@@ -58,7 +61,8 @@ export default function Settings() {
         })
     }
 
-    const suffixClick = async (key: string) => {
+    const suffixClick = async (e: any, key: string) => {
+        e.preventDefault()
         if (key === 'base_dir') {
             const file = await open({
                 multiple: false,
@@ -87,14 +91,25 @@ export default function Settings() {
         setSettings(data)
     }
 
+    const resetApp = async (e: any) => {
+        e.preventDefault();
+
+        let store =  await load('store.json', { autoSave: false });
+        await store.clear()
+        await store.reset()
+
+        router.push('/')
+        window.location.reload();
+
+        console.log('reset app')
+    }
+
 
     useEffect(() => {
-
-        loadStore().then(() => {
+        loadStore().then(async () => {
             setLoaded(true)
+            await checkApiKey()
         })
-
-        checkApiKey().finally()
     }, [])
 
     return (
@@ -113,15 +128,24 @@ export default function Settings() {
                                         key={field.config.key}
                                         config={field.config}
                                         settings={settings}
-                                        onSuffixClick={field.config.suffix_button ? () => suffixClick(field.config.key) : () => null}
-                                        value={settings && settings[field.config.key] ? settings[field.config.key] : undefined}
+                                        onSuffixClick={field.config.suffix_button ? (e: MouseEvent) => suffixClick(e, field.config.key) : () => null}
+                                        value={settings && settings[field.config.key] ? settings[field.config.key] : ''}
                                         onChange={(e: any) => setField(field.config.key, e.target.value)}/>)
                                 })}
                             </div>
-                            <div className="mb-4 flex justify-end">
+                            <div className={classNames("mb-4 flex", setupComplete ? 'justify-between' : 'justify-end')}>
+                                {setupComplete && (
+                                    <button
+                                        type="button"
+                                        onClick={resetApp}
+                                        className="inline-flex grow-0 transition ease-in-out text-center border shadow-sm font-medium rounded-md px-4 py-2 text-sm cursor-pointer border-slate-400 text-slate-600 bg-white hover:bg-slate-100"
+                                    >
+                                        Reset App
+                                    </button>
+                                )}
                                 <button
                                     type="submit"
-                                    className="inline-flex grow-0 transition ease-in-out text-center border shadow-sm font-medium rounded-md px-4 py-2 text-sm cursor-pointer text-white bg-indigo-400 hover:bg-indigo-500"
+                                    className="inline-flex grow-0 transition ease-in-out text-center border shadow-sm font-medium rounded-md px-4 py-2 text-sm cursor-pointer border-indigo-400 text-white bg-indigo-400 hover:bg-indigo-500"
                                 >
                                     Save
                                 </button>

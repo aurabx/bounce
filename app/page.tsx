@@ -93,6 +93,12 @@ export default function Page() {
             </div>
         </main> : (
             <div className="relative p-4">
+                <h1 className="text-3xl mt-6 font-bold mb-6 text-center">
+                    Welcome to Aurabox Bounce
+                </h1>
+                <h3 className="text-xl mt-6 mb-6 text-center text-slate-500">
+                    Please add your api key, port and local storage location below
+                </h3>
                 <Settings />
             </div>
         )
