@@ -26,7 +26,7 @@ export default function Page() {
     const loadStudies = async () => {
         await invoke('current_studies');
     }
-    
+
     return (setupComplete ?
         <main className="">
             <h1 className="text-3xl mt-6 font-bold mb-12 text-center">
@@ -92,7 +92,7 @@ export default function Page() {
                 </div>
             </div>
         </main> : (
-            <div className="absolute inset-0">
+            <div className="relative p-4">
                 <Settings />
             </div>
         )
