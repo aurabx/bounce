@@ -21,7 +21,7 @@ pub fn init_server_state() -> ServerState {
 pub async fn start(config: Config, app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
     // Create DICOM server
-    let dicom_server = DICOMServer::new(config, app.clone());
+    let dicom_server = DICOMServer::new(config.clone(), app.clone());
 
     // Create a channel for shutdown signal
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
@@ -37,6 +37,7 @@ pub async fn start(config: Config, app: AppHandle) -> Result<(), Box<dyn std::er
     tokio::spawn(async move {
         app.emit("log", "Starting server").unwrap();
         app.emit("running", true).unwrap();
+        app.emit("running-details", format!("{}:{}", config.host, config.port)).unwrap();
 
         // Wrap the server task in a select to handle shutdown
         tokio::select! {

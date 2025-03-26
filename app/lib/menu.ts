@@ -1,5 +1,11 @@
 
-export const items = [{
+export type NavigationItem = {
+    label: string;
+    href: string;
+    title: string | false;
+};
+
+export const items: NavigationItem[] = [{
     label: "Dashboard",
     href: "/",
     title: false
@@ -25,3 +31,5 @@ export const items = [{
 export const resolveTitleFromPath = (path: string) => {
     return items.find(item => item.href === path)?.title;
 }
+
+

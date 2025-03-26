@@ -4,14 +4,15 @@ import { invoke } from '@tauri-apps/api/core';
 import {receiverStart, receiverStop} from "@/app/lib/server";
 import {useAppSelector} from "@/app/lib/hook";
 import {classNames} from "@/app/lib/helpers";
-import {useEffect, useState} from "react";
-import {load} from "@tauri-apps/plugin-store";
-import fields from "@/app/lib/fields";
+import {useSetupComplete} from "@/app/lib/customHooks";
+import Settings from "@/app/components/Settings";
+
 
 export default function Page() {
     const running = useAppSelector((state) => state.main.running)
+    const runningDetail = useAppSelector((state) => state.main.runningDetail)
     const studies = useAppSelector((state) => state.main.studies)
-    const [port, setPort] = useState<string>('');
+    const {setupComplete} =  useSetupComplete();
 
     const sendLog = async () => {
         try {
@@ -26,20 +27,8 @@ export default function Page() {
         await invoke('current_studies');
     }
 
-    useEffect(() => {
-        const loadStore = async () => {
-            const store =  await load('store.json', { autoSave: false });
-            const port = await store.get('port');
 
-            setPort(port as string)
-        }
-
-        loadStore().then(() => {
-        })
-    }, [])
-
-
-    return (
+    return (setupComplete ?
         <main className="">
             <h1 className="text-3xl mt-6 font-bold mb-12 text-center">
                 Aurabox Bounce
@@ -55,7 +44,7 @@ export default function Page() {
             </div>
             {running && (<div className="flex justify-center mb-12">
                 <code className="p-2 bg-slate-300 rounded-lg">
-                    Running at 0.0.0.0:{port}
+                    Running at {runningDetail}
                 </code>
             </div>)}
 
@@ -103,6 +92,10 @@ export default function Page() {
                     </button>
                 </div>
             </div>
-        </main>
+        </main> : (
+            <div className="absolute inset-0">
+                <Settings />
+            </div>
+        )
     );
 }

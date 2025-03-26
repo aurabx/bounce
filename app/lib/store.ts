@@ -5,13 +5,15 @@ import {CurrentStudies, Study} from "@/app/lib/types";
 export interface State {
     logs: string[]
     studies: Study[],
-    running: boolean
+    running: boolean,
+    runningDetail: string,
 }
 
 const initialState: State = {
     logs: [],
     studies: [],
     running: false,
+    runningDetail: '',
 }
 
 export const mainSlice = createSlice({
@@ -24,6 +26,9 @@ export const mainSlice = createSlice({
         setRunning(state, action: PayloadAction<boolean>){
             state.running = action.payload;
         },
+        setRunningDetail(state, action: PayloadAction<string>){
+            state.runningDetail = action.payload;
+        },
         setCurrentStudies(state, action: PayloadAction<CurrentStudies>){
             state.studies = action.payload.studies
         }
@@ -31,7 +36,7 @@ export const mainSlice = createSlice({
 })
 
 // Action creators are generated for each case reducer function
-export const { logMessage, setRunning, setCurrentStudies } = mainSlice.actions
+export const { logMessage, setRunning, setRunningDetail, setCurrentStudies } = mainSlice.actions
 
 export const makeStore = () => {
     return configureStore({

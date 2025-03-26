@@ -52,6 +52,12 @@ const fields = [
     },
     super: true,
     component: SelectInput
+},{
+    config: {
+        label: 'Setup complete',
+        key: 'setup_complete',
+    },
+    hidden: true,
 }];
 
 
