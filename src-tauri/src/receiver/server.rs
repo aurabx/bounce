@@ -37,7 +37,7 @@ pub async fn start(config: Config, app: AppHandle) -> Result<(), Box<dyn std::er
     tokio::spawn(async move {
         app.emit("log", "Starting server").unwrap();
         app.emit("running", true).unwrap();
-        app.emit("running-details", format!("{}:{}", config.host, config.port)).unwrap();
+        app.emit("running-details", format!("tcp//{}:{}", config.host, config.port)).unwrap();
 
         // Wrap the server task in a select to handle shutdown
         tokio::select! {
