@@ -15,9 +15,6 @@ export const metadata: Metadata = {
   description: 'Dicom proxy recaster and packager',
 }
 
-
-
-
 export default function RootLayout({ children, }: {
   children: React.ReactNode
 }) {
