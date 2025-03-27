@@ -28,11 +28,6 @@ dicom-dictionary-std = { version = "0.8.0" }
 # HTTP client
 reqwest = { version = "0.12.9", features = ["json", "multipart", "stream"] }
 
-# Logging
-tracing = "0.1.40"
-tracing-subscriber = "0.3.18"
-tracing-appender = "0.2"
-
 # Serialization
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
