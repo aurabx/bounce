@@ -8,13 +8,16 @@ on:
 jobs:
   build-macos:
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - args: '--target aarch64-apple-darwin'
-            arch: 'silicon'
-          - args: '--target x86_64-apple-darwin'
-            arch: 'intel'
-    runs-on: macos-latest
+          - platform: "macos-latest" # for Arm based macs (M1 and above).
+            args: "--target aarch64-apple-darwin"
+          - platform: "macos-latest" # for Intel based macs.
+            args: "--target x86_64-apple-darwin"
+          - platform: "windows-latest"
+            args: ""
+    runs-on: ${{ matrix.platform }}
     env:
       APPLE_ID: ${{ secrets.APPLE_ID }}
       APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
