@@ -29,6 +29,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: install dependencies (ubuntu only)
+        if: matrix.platform == 'ubuntu-22.04' # This must match the platform value defined above.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
       - name: setup node
         uses: actions/setup-node@v4
         with:
@@ -43,6 +49,7 @@ jobs:
         run: yarn install # change this to npm, pnpm or bun depending on which one you use.
 
       - name: import Apple Developer Certificate
+        if: matrix.platform == 'macos-latest'
         # Prevents keychain from locking automatically for 3600 seconds.
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -59,14 +66,16 @@ jobs:
           security find-identity -v -p codesigning build.keychain
 
       - name: verify certificate
+        if: matrix.platform == 'macos-latest'
         run: |
           CERT_INFO=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application")
           CERT_ID=$(echo "$CERT_INFO" | awk -F'"' '{print $2}')
           echo "CERT_ID=$CERT_ID" >> $GITHUB_ENV
           echo "Certificate imported."
 
-      - name: build and publish
+      - name: build and publish macos
         uses: tauri-apps/tauri-action@v0
+        if: matrix.platform == 'macos-latest'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -76,6 +85,19 @@ jobs:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ env.CERT_ID }}
+        with:
+          tagName: aurabox-bounce-v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
+          releaseName: "Aurabox Bounce v__VERSION__"
+          releaseBody: "See the assets to download this version and install."
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
+
+      - name: build and publish window and linux
+        uses: tauri-apps/tauri-action@v0
+        if: matrix.platform != 'macos-latest'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: aurabox-bounce-v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
           releaseName: "Aurabox Bounce v__VERSION__"
