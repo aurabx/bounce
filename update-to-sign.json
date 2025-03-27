@@ -1,0 +1,19 @@
+{
+  "version": "1.0.0",
+  "notes": "Release notes",
+  "pub_date": "2025-03-27T05:39:39Z",
+  "platforms": {
+    "windows-x86_64": {
+      "url": "https://github.com/aurabx/bounce-rust/releases/download/v1.0.0/app.msi",
+    },
+    "darwin-x86_64": {
+      "url": "https://github.com/aurabx/bounce-rust/releases/download/v1.0.0/app.dmg",
+    },
+    "darwin-aarch64": {
+      "url": "https://github.com/aurabx/bounce-rust/releases/download/v1.0.0/app.dmg",
+    },
+    "linux-x86_64": {
+      "url": "https://github.com/aurabx/bounce-rust/releases/download/v1.0.0/app.AppImage",
+    }
+  }
+}
