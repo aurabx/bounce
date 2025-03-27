@@ -17,6 +17,7 @@ use tauri_plugin_log::{Target, TargetKind};
 use tauri_plugin_store::StoreExt;
 use tokio::sync::Mutex;
 
+
 #[derive(Clone)]
 struct AppState {
     tx_manager: TransmissionManager,
@@ -85,6 +86,8 @@ async fn receiver_start(app: AppHandle) -> Result<(), String> {
     println!("receiver_start: {}", "now");
 
     app.emit("log", "Starting server").unwrap();
+
+
 
     receiver::server::start(load_config(app.clone()), app)
         .await

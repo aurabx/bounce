@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio;
 use tokio::sync::{oneshot, Mutex};
+use local_ip_address::local_ip;
 
 // Define a struct to manage server state
 pub struct ServerState {
@@ -33,11 +34,20 @@ pub async fn start(config: Config, app: AppHandle) -> Result<(), Box<dyn std::er
         state.shutdown_sender = Some(shutdown_tx);
     }
 
+    let local_ip = local_ip().unwrap();
+    log_info!("local IP address: {:?}", local_ip);
+
     // Spawn server in a background task
     tokio::spawn(async move {
         app.emit("log", "Starting server").unwrap();
         app.emit("running", true).unwrap();
-        app.emit("running-details", format!("tcp//{}:{}", config.host, config.port)).unwrap();
+        app.emit("running-details",
+                 format!("tcp//{0}:{2} and tcp//{1}:{2}",
+                         local_ip,
+                         config.host,
+                         config.port
+                 )
+        ).unwrap();
 
         // Wrap the server task in a select to handle shutdown
         tokio::select! {
