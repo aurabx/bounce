@@ -29,7 +29,6 @@ export default function EventHandler({ children, }: { children: React.ReactNode 
         })
 
         await listen<CurrentStudies>('current-studies', (event) => {
-            console.log(event.payload.studies);
             let action = setCurrentStudies(event.payload as CurrentStudies);
             dispatch(action)
         });

@@ -5,52 +5,107 @@ on:
     branches:
       - release
 
-# This is the example for publishing a Universal macOS app with a signing certificate.
-# On each push to the `release` branch it will create or update a GitHub release, build your app, and upload the artifacts to the release.
-
 jobs:
+  # First job: Check if a draft release exists, create one if not
+  check-or-create-release:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.get_or_create_release.outputs.release_id }}
+      release_upload_url: ${{ steps.get_or_create_release.outputs.release_upload_url }}
+      tag_name: ${{ steps.get_or_create_release.outputs.tag_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get app version
+        id: get_version
+        run: |
+          VERSION=$(grep -o '"version": *"[^"]*"' src-tauri/tauri.conf.json | cut -d'"' -f4)
+          TAG_NAME="aurabox-bounce-v$VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+
+      - name: Get or create release
+        id: get_or_create_release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ steps.get_version.outputs.tag_name }}
+          VERSION: ${{ steps.get_version.outputs.version }}
+        run: |
+          # Check if a draft release with this tag already exists
+          RELEASES=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases?per_page=100")
+          
+          RELEASE_ID=$(echo "$RELEASES" | jq -r ".[] | select(.draft == true and .tag_name == \"$TAG_NAME\") | .id")
+          
+          # If no release exists, create one
+          if [ -z "$RELEASE_ID" ]; then
+            echo "Creating a new draft release..."
+            RESPONSE=$(curl -s -X POST \
+              -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"tag_name\":\"$TAG_NAME\", \"name\":\"Aurabox Bounce v$VERSION\", \"body\":\"See the assets to download this version and install.\", \"draft\":true}" \
+              "https://api.github.com/repos/${{ github.repository }}/releases")
+          
+            RELEASE_ID=$(echo "$RESPONSE" | jq -r ".id")
+            UPLOAD_URL=$(echo "$RESPONSE" | jq -r ".upload_url")
+          else
+            echo "Using existing draft release with ID: $RELEASE_ID"
+            UPLOAD_URL=$(echo "$RELEASES" | jq -r ".[] | select(.id == $RELEASE_ID) | .upload_url")
+          fi
+          
+          echo "release_id=$RELEASE_ID" >> $GITHUB_OUTPUT
+          echo "release_upload_url=$UPLOAD_URL" >> $GITHUB_OUTPUT
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+
+  # Second job: Build and publish the app for all platforms
   publish-tauri:
+    needs: check-or-create-release
     permissions:
       contents: write
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: "macos-latest" # for Arm based macs (M1 and above).
-            args: "--target aarch64-apple-darwin"
-          - platform: "macos-latest" # for Intel based macs.
-            args: "--target x86_64-apple-darwin"
-          - platform: "ubuntu-22.04" # for Tauri v1 you could replace this with ubuntu-20.04.
-            args: ""
+          - platform: "macos-latest"
+            target: "aarch64-apple-darwin"
+            name: "macOS-arm64"
+          - platform: "macos-latest"
+            target: "x86_64-apple-darwin"
+            name: "macOS-intel"
+          - platform: "ubuntu-22.04"
+            target: ""
+            name: "linux"
           - platform: "windows-latest"
-            args: ""
+            target: ""
+            name: "windows"
 
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: install dependencies (ubuntu only)
-        if: matrix.platform == 'ubuntu-22.04' # This must match the platform value defined above.
+      - name: Install dependencies (Ubuntu only)
+        if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
-      - name: setup node
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: lts/*
 
-      - name: install Rust stable
+      - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
-      - name: install frontend dependencies
-        run: yarn install # change this to npm, pnpm or bun depending on which one you use.
+      - name: Install frontend dependencies
+        run: yarn install
 
-      - name: import Apple Developer Certificate
+      - name: Import Apple Developer Certificate
         if: matrix.platform == 'macos-latest'
-        # Prevents keychain from locking automatically for 3600 seconds.
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -65,7 +120,7 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
           security find-identity -v -p codesigning build.keychain
 
-      - name: verify certificate
+      - name: Verify certificate
         if: matrix.platform == 'macos-latest'
         run: |
           CERT_INFO=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application")
@@ -73,9 +128,8 @@ jobs:
           echo "CERT_ID=$CERT_ID" >> $GITHUB_ENV
           echo "Certificate imported."
 
-      - name: build and publish macos
+      - name: Build the app
         uses: tauri-apps/tauri-action@v0
-        if: matrix.platform == 'macos-latest'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -86,22 +140,10 @@ jobs:
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ env.CERT_ID }}
         with:
-          tagName: aurabox-bounce-v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
+          tagName: ${{ needs.check-or-create-release.outputs.tag_name }}
           releaseName: "Aurabox Bounce v__VERSION__"
+          releaseId: ${{ needs.check-or-create-release.outputs.release_id }}
           releaseBody: "See the assets to download this version and install."
           releaseDraft: true
           prerelease: false
-          args: ${{ matrix.args }}
-
-      - name: build and publish window and linux
-        uses: tauri-apps/tauri-action@v0
-        if: matrix.platform != 'macos-latest'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
-          releaseName: "Aurabox Bounce v__VERSION__"
-          releaseBody: "See the assets to download this version and install."
-          releaseDraft: true
-          prerelease: false
-          args: ${{ matrix.args }}
+          args: ${{ matrix.target != '' && format('--target {0}', matrix.target) || '' }}

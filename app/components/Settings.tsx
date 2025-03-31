@@ -36,6 +36,7 @@ export default function Settings() {
 
         setSaved(true);
         setTimeout(() => setSaved(false), 3000)
+
         await checkApiKey()
 
         if (!setupComplete){
@@ -100,15 +101,18 @@ export default function Settings() {
 
         router.push('/')
         window.location.reload();
-
-        console.log('reset app')
     }
 
 
     useEffect(() => {
         loadStore().then(async () => {
-            setLoaded(true)
             await checkApiKey()
+
+            setTimeout(async () => {
+
+
+                setLoaded(true)
+            }, 1000)
         })
     }, [])
 

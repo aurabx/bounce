@@ -49,7 +49,7 @@ export default function Page() {
             <div>
                 <Suspense fallback={<Loading/>}>
                     {(loaded ? <div className="h-full">
-                        <ul role="list" className="divide-y divide-gray-100">
+                        <ul role="list" className="divide-y divide-gray-100 space-y-2">
                             {studies.map((study) => (
                                 <li key={study.study_uid} className="flex items-center justify-between gap-x-6 py-5 bg-white shadow-lg rounded-lg p-6 w-full flex-grow">
                                     <div className="min-w-0">
