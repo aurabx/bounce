@@ -156,13 +156,27 @@ impl Transmission {
         );
 
         self.aura_api
-            .upload_update(
-                study_uid.clone(),
+            .upload_save(
+                upload_id.clone().to_string(),
                 assembly.get("assembly_id").unwrap().to_string(),
+                "update"
             )
             .await
             .expect("Error sending upload update api message");
+
         log_info!("Sent upload update to aura");
+
+
+        self.aura_api
+            .upload_save(
+                upload_id.clone().to_string(),
+                assembly.get("assembly_id").unwrap().to_string(),
+                "complete"
+            )
+            .await
+            .expect("Error sending complete update api message");
+
+        log_info!("Sent upload complete to aura");
 
         // Optionally, delete local study if requested
         if delete_after_send {

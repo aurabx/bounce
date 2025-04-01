@@ -12,7 +12,7 @@ use crate::transmitter::manager::TransmissionManager;
 use crate::transmitter::transmission::Transmission;
 use std::sync::Arc;
 use store::config::Config;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 use tauri_plugin_log::{Target, TargetKind};
 use tauri_plugin_store::StoreExt;
 use tokio::sync::Mutex;
@@ -46,6 +46,7 @@ async fn api_start_upload(
     study_uid: String,
     signature: String,
     upload_id: String,
+    assembly_id: String,
 ) -> Result<(), String> {
     let aura_api = AuraApi::new(load_config(app));
 
@@ -53,6 +54,16 @@ async fn api_start_upload(
         .upload_start(study_uid, signature, upload_id)
         .await
         .expect("api start upload panic");
+
+    aura_api
+        .upload_save(
+            upload_id.clone(),
+            assembly_id.clone(),
+            "update"
+        )
+        .await
+        .expect("Error sending upload update api message");
+
 
     Ok(())
 }
@@ -115,6 +126,15 @@ fn current_studies(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn show_window(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_window("main") {
+        window.show().map_err(|e| e.to_string())?;
+        window.set_focus().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -146,6 +166,15 @@ fn main() {
                 }))
                 .build(),
         )
+        .on_window_event(|window, event| match event {
+            WindowEvent::CloseRequested { api, .. } => {
+                // Don't close the window, just hide it
+                window.hide().unwrap();
+                // Prevent the window from actually closing
+                api.prevent_close();
+            }
+            _ => {}
+        })
         .invoke_handler(tauri::generate_handler![
             receiver_start,
             receiver_stop,
@@ -153,7 +182,8 @@ fn main() {
             send_study,
             delete_study,
             api_start_upload,
-            current_studies
+            current_studies,
+            show_window
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

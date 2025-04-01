@@ -4,6 +4,7 @@ use reqwest::{Client, Response};
 use serde_json::{json, Value};
 use std::fs;
 use std::sync::Arc;
+use crate::log_info;
 
 #[derive(Clone, Debug)]
 pub struct AuraApi {
@@ -76,20 +77,31 @@ impl AuraApi {
     }
 
 
-    pub async fn upload_update(
+    pub async fn upload_save(
         &self,
         upload_id: String,
         assembly_id: String,
+        method: &str,
     ) -> anyhow::Result<Value> {
         println!(
             "upload_update (upload_id: {}), (assembly_id: {})",
             upload_id, assembly_id
         );
 
+        let path = match method {
+            "complete" => "complete".to_string(),
+            _ => "update".to_string()
+        };
+
         let url = format!(
-            "{}/api/bounce/upload/update",
-            &self.config.get_api_endpoint()
+            "{}/api/bounce/upload/{}",
+            &self.config.get_api_endpoint(),
+            path
         );
+
+        log_info!("upload_save url {}", url);
+        log_info!("upload_save assembly_id {}", assembly_id);
+        log_info!("upload_save upload_id {}", upload_id);
 
         let response = self
             .client
@@ -106,6 +118,7 @@ impl AuraApi {
 
         Self::handle_response(response).await
     }
+
 
     async fn handle_response(response: Response) -> Result<Value, Error> {
         // Check HTTP status code first

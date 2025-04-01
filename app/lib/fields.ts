@@ -1,7 +1,16 @@
 import TextInput from "@/app/components/Fields/TextInput";
 import SelectInput from "@/app/components/Fields/SelectInput";
 
-const fields = [
+
+export const fieldKeys = [
+    'api_key',
+    'port',
+    'base_dir',
+    'mode',
+    'setup_complete'
+]
+
+export const fields = [
     // {
     //     config: {
     //         label: 'Region',
@@ -38,28 +47,5 @@ const fields = [
         readOnly: true,
     },
     component: TextInput
-},{
-    config: {
-        label: 'Mode',
-        key: 'mode',
-        help: 'Select the mode for bounce to run in',
-        options: {
-            production: "Production",
-            staging: "Staging",
-            development: "Development",
-            local: "Local",
-        },
-    },
-    super: true,
-    component: SelectInput
-},{
-    config: {
-        label: 'Setup complete',
-        key: 'setup_complete',
-    },
-    hidden: true,
 }];
 
-
-
-export default fields;

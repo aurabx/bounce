@@ -19,7 +19,8 @@ export default function Page() {
     const [loaded, setLoaded] = useState<boolean>(false);
     const [study_uid, setStudyUid] = useState<string>(studies.length > 0 ? studies[0].study_uid : '');
     const [signature, setSignature] = useState<string>('8a5b26c5485049200a1167df5efc664ee9c6f115');
-    const [upload_id, setUploadId] = useState<string>('b4a9764d-75e6-4ac0-8235-9f8189289353');
+    const [upload_id, setUploadId] = useState<string>('5bbfd5f0-3602-4ad7-8b1b-5ffa466fff8a');
+    const [assembly_id, setAssemblyId] = useState<string>('4895b6a75bd44943adaeff6ec50d23a1');
 
     const [command, setCommand] = useState<string>('api_start_upload');
     const commands: Commands = {
@@ -42,6 +43,7 @@ export default function Page() {
                     studyUid: study_uid,
                     signature: signature,
                     uploadId: upload_id,
+                    assemblyId: assembly_id,
                 });
             else if (command === 'send_study'){
                 await invoke('send_study', {
@@ -107,6 +109,15 @@ export default function Page() {
                                     value={upload_id}
                                     onSuffixClick={() => generateUploadId()}
                                     onChange={(e: any) => setUploadId(e.target.value)}
+                                />
+
+                                <TextInput
+                                    config={({
+                                        label: 'Assembly ID',
+                                        key: 'assembly_id',
+                                    })}
+                                    value={assembly_id}
+                                    onChange={(e: any) => setAssemblyId(e.target.value)}
                                 />
                             </>}
                             <div className="mb-4 flex justify-end">

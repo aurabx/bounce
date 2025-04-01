@@ -3,11 +3,12 @@ import { Menu, MenuItem, PredefinedMenuItem } from "@tauri-apps/api/menu";
 import { defaultWindowIcon } from "@tauri-apps/api/app";
 import { TrayIcon, type TrayIconOptions } from "@tauri-apps/api/tray";
 import { exit, relaunch } from "@tauri-apps/plugin-process";
-// import { open } from "@tauri-apps/plugin-shell";
+import { window as trauiWindow } from '@tauri-apps/api'
 import {useEffect, useState} from "react";
 import {resolveResource} from "@tauri-apps/api/path";
 import {useAppSelector} from "@/app/lib/hook";
 import {receiverStart, receiverStop} from "@/app/lib/server";
+import {invoke} from "@tauri-apps/api/core";
 
 const TRAY_ID = 'bounce';
 
@@ -65,6 +66,11 @@ const Tray = () => {
         return TrayIcon.new(options);
     };
 
+
+    const show = async () => {
+        await invoke('show_window');
+    }
+
     const getTrayMenu = async () => {
 
         const items = await Promise.all([
@@ -73,6 +79,10 @@ const Tray = () => {
                     ? 'Stop'
                     : 'Start',
                 action: () => running ? receiverStop() : receiverStart(),
+            }),
+            MenuItem.new({
+                text: `Show window`,
+                action: show,
             }),
             PredefinedMenuItem.new({ item: "Separator" }),
             MenuItem.new({

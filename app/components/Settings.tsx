@@ -2,16 +2,17 @@
 
 import {load} from '@tauri-apps/plugin-store';
 import {Suspense, useEffect, useState} from 'react'
-import fields from "@/app/lib/fields";
+import {fields, fieldKeys} from "@/app/lib/fields";
 import Alert from "@/app/components/Fields/Alert";
 import { open } from '@tauri-apps/plugin-dialog';
 import { useRouter } from 'next/navigation'
 import {useSetupComplete} from "@/app/lib/customHooks";
 import {classNames} from "@/app/lib/helpers";
+import SelectInput from "@/app/components/Fields/SelectInput";
 
 export default function Settings() {
 
-    const [settings, setSettings] = useState<{ [key: string]: any }>();
+    const [settings, setSettings] = useState<{ [key: string]: any }>({});
     const [loaded, setLoaded] = useState<boolean>(false);
     const [saved, setSaved] = useState<boolean>(false);
     const [isSuper, setIsSuper] = useState<boolean>(false);
@@ -23,8 +24,8 @@ export default function Settings() {
 
         let store =  await load('store.json', { autoSave: false });
 
-        for (const field of fields) {
-            await store.set(field.config.key, settings?.[field.config.key] ? settings?.[field.config.key] : null)
+        for (const fieldKey in fieldKeys) {
+            await store.set(fieldKey, settings?.[fieldKey] ? settings?.[fieldKey] : null)
         }
 
         await store.save();
@@ -46,7 +47,6 @@ export default function Settings() {
     };
 
     const checkApiKey = async () => {
-
         if (settings && settings.api_key) {
             const parts = settings.api_key.split('_');
             const last = parts[parts.length - 1];
@@ -73,13 +73,6 @@ export default function Settings() {
         }
     }
 
-    const filteredFields = () => {
-        return fields.filter((field) => {
-            return !(!isSuper && field.super === true);
-        }).filter((field) => {
-            return field.hidden !== true
-        })
-    }
 
     const loadStore = async () => {
         let store =  await load('store.json', { autoSave: false });
@@ -103,18 +96,27 @@ export default function Settings() {
         window.location.reload();
     }
 
+    const modeConfig = {
+        label: 'Mode',
+        key: 'mode',
+        help: 'Select the mode for bounce to run in',
+        options: {
+            production: "Production",
+            staging: "Staging",
+            development: "Development",
+            local: "Local",
+        },
+    }
 
     useEffect(() => {
         loadStore().then(async () => {
-            await checkApiKey()
-
-            setTimeout(async () => {
-
-
-                setLoaded(true)
-            }, 1000)
+            setLoaded(true)
         })
     }, [])
+
+    useEffect(() => {
+        checkApiKey().then()
+    }, [settings, isSuper]);
 
     return (
         <>
@@ -125,9 +127,8 @@ export default function Settings() {
                         <div className="space-y-12">
                             <div
                                 className="grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-3">
-                                {filteredFields().map((field) => {
+                                {fields.map((field) => {
                                     const FieldComponent: any = field.component;
-
                                     return (<FieldComponent
                                         key={field.config.key}
                                         config={field.config}
@@ -136,6 +137,17 @@ export default function Settings() {
                                         value={settings && settings[field.config.key] ? settings[field.config.key] : ''}
                                         onChange={(e: any) => setField(field.config.key, e.target.value)}/>)
                                 })}
+
+                                {isSuper && (
+                                    <SelectInput
+                                        key="mode"
+                                        settings={settings}
+                                        value={settings && settings.mode ? settings.mode : ''}
+                                        onChange={(e: any) => setField('mode', e.target.value)}
+                                        config={modeConfig}
+                                    />
+                                )}
+
                             </div>
                             <div className={classNames("mb-4 flex", setupComplete ? 'justify-between' : 'justify-end')}>
                                 {setupComplete && (
