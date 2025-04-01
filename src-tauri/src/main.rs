@@ -51,7 +51,7 @@ async fn api_start_upload(
     let aura_api = AuraApi::new(load_config(app));
 
     aura_api
-        .upload_start(study_uid, signature, upload_id)
+        .upload_start(study_uid, signature, upload_id.clone())
         .await
         .expect("api start upload panic");
 
