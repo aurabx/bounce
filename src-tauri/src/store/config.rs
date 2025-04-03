@@ -51,7 +51,9 @@ impl Config {
             mode: match store.get("mode") {
                 None => "production".to_string(),
                 Some(value) => match value.as_str() {
-                    Some(str_value) => str_value.parse().unwrap_or_else(|_| "production".to_string()),
+                    Some(str_value) => str_value
+                        .parse()
+                        .unwrap_or_else(|_| "production".to_string()),
                     None => "production".to_string(),
                 },
             },
@@ -91,7 +93,6 @@ impl Config {
     }
 
     pub fn get_api_endpoint(&self) -> String {
-
         let region = self.region_from_api_key().unwrap();
 
         match self.mode.as_str() {
@@ -101,7 +102,6 @@ impl Config {
             _ => format!("https://{}.aurabox.app", region),
         }
     }
-
 
     pub fn resolve_study_path(&self, study_uid: &String) -> PathBuf {
         // Actually push the study (you’ll have to adapt to your code)
