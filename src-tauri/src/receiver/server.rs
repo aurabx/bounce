@@ -1,11 +1,11 @@
 use crate::store::config::Config;
 use crate::{log_error, log_info, receiver};
+use local_ip_address::local_ip;
 use receiver::dicom_server::DICOMServer;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio;
 use tokio::sync::{oneshot, Mutex};
-use local_ip_address::local_ip;
 
 // Define a struct to manage server state
 pub struct ServerState {
@@ -20,7 +20,6 @@ pub fn init_server_state() -> ServerState {
 }
 
 pub async fn start(config: Config, app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-
     // Create DICOM server
     let dicom_server = DICOMServer::new(config.clone(), app.clone());
 
@@ -41,13 +40,14 @@ pub async fn start(config: Config, app: AppHandle) -> Result<(), Box<dyn std::er
     tokio::spawn(async move {
         app.emit("log", "Starting server").unwrap();
         app.emit("running", true).unwrap();
-        app.emit("running-details",
-                 format!("tcp//{0}:{2} and tcp//{1}:{2}",
-                         local_ip,
-                         config.host,
-                         config.port
-                 )
-        ).unwrap();
+        app.emit(
+            "running-details",
+            format!(
+                "tcp//{0}:{2} and tcp//{1}:{2}",
+                local_ip, config.host, config.port
+            ),
+        )
+        .unwrap();
 
         // Wrap the server task in a select to handle shutdown
         tokio::select! {

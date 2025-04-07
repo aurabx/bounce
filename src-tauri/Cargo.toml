@@ -9,6 +9,9 @@ default-run = "app"
 edition = "2021"
 rust-version = "1.60"
 
+[build]
+rustflags = ["--cfg", "tokio_allow_from_blocking_fd"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -17,7 +20,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2.4.0", features = ["tray-icon", "image-ico", "image-png", "unstable"] }
 
 # Async runtime
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1.43.0", features = ["full"] }
 
 # DICOM library
 dicom = { version = "0.8.0" }
@@ -47,6 +50,8 @@ tauri-plugin-log = "2"
 log = "0.4"
 tauri-plugin-dialog = "2"
 local-ip-address = "0.6.3"
+tauri-plugin-opener = "2"
+tauri-plugin-os = "2"
 
 [features]
 # this feature is used for production builds or when `devPath` points to the filesystem and the built-in dev server is disabled.

@@ -133,7 +133,6 @@ impl Transmission {
         let archive_path = self.compress_study(study_path.clone()).await?;
         log_info!("Preparing to send study zip: {:?}", archive_path);
 
-
         // === Create an Assembly on Transloadit, get the TUS URL back
         let assembly = self.create_transloadit_assembly(&upload_id).await?;
         log_info!("Got TUS URL: {}", assembly.get("tus_url").unwrap());
@@ -147,7 +146,7 @@ impl Transmission {
             .await
             .expect("Error sending upload start api message");
         log_info!("Sent upload start to aura");
-        
+
         // === Upload via TUS
         self.upload_via_tus(&assembly, &archive_path).await?;
         log_info!(
@@ -159,19 +158,18 @@ impl Transmission {
             .upload_save(
                 upload_id.clone().to_string(),
                 assembly.get("assembly_id").unwrap().to_string(),
-                "update"
+                "update",
             )
             .await
             .expect("Error sending upload update api message");
 
         log_info!("Sent upload update to aura");
 
-
         self.aura_api
             .upload_save(
                 upload_id.clone().to_string(),
                 assembly.get("assembly_id").unwrap().to_string(),
-                "complete"
+                "complete",
             )
             .await
             .expect("Error sending complete update api message");
