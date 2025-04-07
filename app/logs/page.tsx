@@ -38,7 +38,7 @@ export default function Page() {
         // Open the directory using the system's default file explorer
         await openPath(logFilePath);
     }
-    
+
     useEffect(() => {
         setLoaded(true)
     }, []);
