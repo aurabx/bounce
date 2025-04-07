@@ -1,6 +1,6 @@
 {
   "name": "aurabox-bounce",
-  "version": "0.4.6",
+  "version": "0.5.0",
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
@@ -9,18 +9,21 @@
     "start": "next start",
     "lint": "next lint",
     "tauri": "tauri",
-    "tauri:build": "dotenv -- tauri build"
+    "tauri:build": "dotenv -- tauri build",
+    "tauri:dev": "tauri dev"
   },
   "dependencies": {
     "@headlessui/react": "^2.2.0",
     "@heroicons/react": "^2.2.0",
     "@reduxjs/toolkit": "^2.4.0",
-    "@tauri-apps/api": "^2.1.1",
+    "@tauri-apps/api": "^2.4.0",
     "@tauri-apps/plugin-dialog": "~2",
     "@tauri-apps/plugin-log": "~2",
+    "@tauri-apps/plugin-opener": "~2",
+    "@tauri-apps/plugin-os": "~2",
     "@tauri-apps/plugin-process": "^2.2.0",
     "@tauri-apps/plugin-shell": "^2.2.0",
-    "@tauri-apps/plugin-store": "^2.1.0",
+    "@tauri-apps/plugin-store": "^2.2.0",
     "@types/luxon": "^3.4.2",
     "luxon": "^3.5.0",
     "next": "15.0.3",
@@ -31,7 +34,7 @@
   },
   "devDependencies": {
     "@tailwindcss/forms": "^0.5.9",
-    "@tauri-apps/cli": "^2.1.0",
+    "@tauri-apps/cli": "^2.4.0",
     "@types/node": "^20",
     "@types/react": "^18.3.14",
     "autoprefixer": "^10.0.1",

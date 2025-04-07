@@ -17,7 +17,6 @@ use tauri_plugin_log::{Target, TargetKind};
 use tauri_plugin_store::StoreExt;
 use tokio::sync::Mutex;
 
-
 #[derive(Clone)]
 struct AppState {
     tx_manager: TransmissionManager,
@@ -56,14 +55,9 @@ async fn api_start_upload(
         .expect("api start upload panic");
 
     aura_api
-        .upload_save(
-            upload_id.clone(),
-            assembly_id.clone(),
-            "update"
-        )
+        .upload_save(upload_id.clone(), assembly_id.clone(), "update")
         .await
         .expect("Error sending upload update api message");
-
 
     Ok(())
 }
@@ -97,8 +91,6 @@ async fn receiver_start(app: AppHandle) -> Result<(), String> {
     println!("receiver_start: {}", "now");
 
     app.emit("log", "Starting server").unwrap();
-
-
 
     receiver::server::start(load_config(app.clone()), app)
         .await
@@ -137,6 +129,8 @@ fn show_window(app: AppHandle) -> Result<(), String> {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_os::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_log::Builder::new().build())
         .setup(|app| {

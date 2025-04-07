@@ -24,16 +24,16 @@ export default function Settings() {
 
         let store =  await load('store.json', { autoSave: false });
 
-        for (const fieldKey in fieldKeys) {
-            await store.set(fieldKey, settings?.[fieldKey] ? settings?.[fieldKey] : null)
+        for (const fieldKey of fieldKeys) {
+            console.log(fieldKey, settings?.[fieldKey])
+            await store.set(fieldKey, settings?.[fieldKey] ?? '')
         }
-
-        await store.save();
 
         if (await store.get('api_key') && await store.get('port') && await store.get('base_dir')){
             await store.set('setup_complete', true);
-            await store.save();
         }
+
+        await store.save();
 
         setSaved(true);
         setTimeout(() => setSaved(false), 3000)
@@ -79,8 +79,8 @@ export default function Settings() {
         let values =  await store.entries();
 
         let data: { [key: string]: any } = {}
-        for (const field of fields) {
-            data[field.config.key] = await store.get(field.config.key)
+        for (const fieldKey of fieldKeys) {
+            data[fieldKey] = await store.get(fieldKey)
         }
         setSettings(data)
     }

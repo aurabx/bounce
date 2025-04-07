@@ -1,10 +1,10 @@
+use crate::log_info;
 use crate::store::config::Config;
 use anyhow::Error;
 use reqwest::{Client, Response};
 use serde_json::{json, Value};
 use std::fs;
 use std::sync::Arc;
-use crate::log_info;
 
 #[derive(Clone, Debug)]
 pub struct AuraApi {
@@ -76,7 +76,6 @@ impl AuraApi {
         Self::handle_response(response).await
     }
 
-
     pub async fn upload_save(
         &self,
         upload_id: String,
@@ -90,7 +89,7 @@ impl AuraApi {
 
         let path = match method {
             "complete" => "complete".to_string(),
-            _ => "update".to_string()
+            _ => "update".to_string(),
         };
 
         let url = format!(
@@ -118,7 +117,6 @@ impl AuraApi {
 
         Self::handle_response(response).await
     }
-
 
     async fn handle_response(response: Response) -> Result<Value, Error> {
         // Check HTTP status code first

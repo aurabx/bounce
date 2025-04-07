@@ -5,6 +5,7 @@
   "windows": [
     "main"
   ],
+  "platforms": ["linux", "macOS", "windows"],
   "permissions": [
     "core:default",
     "store:default",
@@ -12,6 +13,16 @@
     "core:app:allow-default-window-icon",
     "shell:default",
     "log:default",
-    "dialog:default"
+    "dialog:default",
+    "opener:default",
+    "os:default",
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [
+        {
+          "path": "/Users/nigelheap/Library/Logs/com.aurabox.bounce/"
+        }
+      ]
+    }
   ]
 }
