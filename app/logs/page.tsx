@@ -38,13 +38,7 @@ export default function Page() {
         // Open the directory using the system's default file explorer
         await openPath(logFilePath);
     }
-
-    const [backendLogs, setBackendLogs] = useState<string[]>([])
-
-    attachLogger(({ message, level }): void => {
-        setBackendLogs([...backendLogs, `[${level}] ${message}`])
-    })
-
+    
     useEffect(() => {
         setLoaded(true)
     }, []);
@@ -52,9 +46,7 @@ export default function Page() {
     return (
         <div className="h-full flex flex-col">
             <div className="bg-white shadow-lg rounded-lg p-6 w-full flex-grow">
-                <button onClick={openLogPath}>open logs</button>
                 <Suspense fallback={<Loading/>}>
-                    {JSON.stringify(backendLogs)}
                     {(loaded ? <div className="h-full">
                         <ul className="overflow-y-scroll font-mono bg-stone-50 shadow-inner min-h-full p-1">
                             {logs.map((log, ind) => (
