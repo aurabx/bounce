@@ -186,7 +186,7 @@ impl Transmission {
 
     fn resolve_study_path(&self, study_uid: &String) -> PathBuf {
         // Actually push the study (you’ll have to adapt to your code)
-        let mut file_path = PathBuf::from(&self.config.base_dir);
+        let mut file_path = PathBuf::from(&self.config.get_base_dir());
         file_path.push(study_uid.trim_end_matches('\0').to_string());
 
         file_path

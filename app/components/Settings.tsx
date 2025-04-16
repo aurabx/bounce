@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation'
 import {useSetupComplete} from "@/app/lib/customHooks";
 import {classNames} from "@/app/lib/helpers";
 import SelectInput from "@/app/components/Fields/SelectInput";
+import { relaunch } from "@tauri-apps/plugin-process";
 
 export default function Settings() {
 

@@ -34,7 +34,7 @@ impl DICOMServer {
     pub async fn start(&self) -> Result<(), Box<dyn std::error::Error>> {
         let server = Arc::new(self.clone());
         let port = server.config.port;
-        let out_dir = server.config.base_dir.clone();
+        let out_dir = server.config.get_base_dir().clone();
         let path = PathBuf::from(&out_dir);
 
         fs::create_dir_all(&out_dir).unwrap_or_else(|e| {
@@ -340,6 +340,7 @@ impl DICOMServer {
                                         .whatever_context("could not save DICOM object to file")?;
 
                                     let state = self.app_handle.state::<AppState>();
+                                    
                                     state
                                         .tx_manager
                                         .send_command(TransmissionCommand::ScheduleStudy {
