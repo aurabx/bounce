@@ -5,6 +5,11 @@ export const classNames = (...classes: any[])=> {
 }
 
 export const formatDicomDateAndTime = (dicomDate: string, dicomTime: string) => {
-    return DateTime.fromFormat(dicomDate + ' ' + dicomTime, 'yyyyMMdd HHmmss').toFormat('FFF')
+    // "study_date": "20020628",
+    // "study_time": "160956.0",
+
+    const processedDicomTime = parseInt(dicomTime)
+
+    return DateTime.fromFormat(dicomDate + ' ' + processedDicomTime, 'yyyyMMdd HHmmss').toFormat('FFF')
 }
 
