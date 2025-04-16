@@ -65,6 +65,10 @@ impl Config {
         }
     }
 
+    pub fn get_base_dir(&self) -> String {
+        self.base_dir.clone()
+    }
+    
     // Existing methods...
 
     /// Extracts the region code from the API key
@@ -105,14 +109,14 @@ impl Config {
 
     pub fn resolve_study_path(&self, study_uid: &String) -> PathBuf {
         // Actually push the study (you’ll have to adapt to your code)
-        let mut file_path = PathBuf::from(&self.base_dir);
+        let mut file_path = PathBuf::from(&self.get_base_dir());
         file_path.push(study_uid.trim_end_matches('\0').to_string());
 
         file_path
     }
 
     pub fn current_studies(&self) -> Value {
-        let storage_dir = self.base_dir.clone();
+        let storage_dir = self.get_base_dir().clone();
         let storage_dir = storage_dir.as_str();
 
         // Create a path to the storage directory
