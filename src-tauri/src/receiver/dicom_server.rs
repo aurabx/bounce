@@ -128,6 +128,12 @@ impl DICOMServer {
 
         log_info!("New association from {}", association.client_ae_title());
 
+        // Send message to JavaScript
+        self.app_handle.emit("log", format!("New association from {}", association.client_ae_title())).unwrap_or_else(|e| {
+            println!("Failed to emit log event: {}", e);
+        });
+
+
         loop {
             match association.receive() {
                 Ok(mut pdu) => {
@@ -285,13 +291,8 @@ impl DICOMServer {
                                         Self::extract_string_tag(&obj, tags::SERIES_INSTANCE_UID)?;
                                     println!("Received SeriesInstanceUID: {}", series_uid);
 
-                                    let message = format!("Received Study: {}", study_uid);
-
-                                    // Send message to JavaScript
-                                    self.app_handle.emit("log", message).unwrap_or_else(|e| {
-                                        println!("Failed to emit log event: {}", e);
-                                    });
-
+                                    // let message = format!("Received Study: {}", study_uid);
+                                    
                                     let file_meta = FileMetaTableBuilder::new()
                                         .transfer_syntax(ts)
                                         .build()
@@ -426,6 +427,10 @@ impl DICOMServer {
         } else {
             log_info!("Dropping connection with {}", association.client_ae_title());
         }
+
+        self.app_handle.emit("log", format!("Dropping connection with {}", association.client_ae_title())).unwrap_or_else(|e| {
+            println!("Failed to emit log event: {}", e);
+        });
 
         Ok(())
     }

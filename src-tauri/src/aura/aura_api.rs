@@ -1,27 +1,28 @@
-use crate::log_info;
-use crate::store::config::Config;
+use crate::{load_config, log_info};
 use anyhow::Error;
 use reqwest::{Client, Response};
 use serde_json::{json, Value};
 use std::fs;
-use std::sync::Arc;
+use tauri::AppHandle;
 
 #[derive(Clone, Debug)]
 pub struct AuraApi {
     client: Client,
-    config: Arc<Config>,
+    app_handle: AppHandle,
 }
 
 impl AuraApi {
-    pub fn new(config: Config) -> Self {
+    pub fn new(app: AppHandle) -> Self {
         Self {
             client: Client::new(),
-            config: Arc::new(config.clone()),
+            app_handle: app,
         }
     }
 
     pub async fn generate_signature(&self) -> anyhow::Result<Value> {
-        let url = format!("{}/api/bounce/signature", &self.config.get_api_endpoint());
+        let config = load_config(self.app_handle.clone());
+
+        let url = format!("{}/api/bounce/signature", config.get_api_endpoint());
 
         println!("generate_signature (url: {})", url);
 
@@ -29,9 +30,11 @@ impl AuraApi {
             .client
             .get(&url)
             .header("Content-Type", "application/json")
-            .header("Authorization", format!("Bearer {}", &self.config.api_key))
+            .header("Authorization", format!("Bearer {}", config.api_key))
             .send()
             .await?;
+
+        log_info!("generate_signature status {}", response.status());
 
         Self::handle_response(response).await
     }
@@ -47,7 +50,8 @@ impl AuraApi {
             study_uid, signature, upload_id
         );
 
-        let study_path = &self.config.resolve_study_path(&study_uid);
+        let config = load_config(self.app_handle.clone());
+        let study_path = config.resolve_study_path(&study_uid);
         let json_path = study_path.join("metadata.json");
 
         let json_content = fs::read_to_string(&json_path)?;
@@ -55,7 +59,7 @@ impl AuraApi {
 
         let url = format!(
             "{}/api/bounce/upload/start",
-            &self.config.get_api_endpoint()
+            config.get_api_endpoint()
         );
 
         let response = self
@@ -69,7 +73,7 @@ impl AuraApi {
             }))
             .header("Content-Type", "application/json")
             .header("Accepts", "application/json")
-            .header("Authorization", format!("Bearer {}", &self.config.api_key))
+            .header("Authorization", format!("Bearer {}", config.api_key))
             .send()
             .await?;
 
@@ -87,6 +91,7 @@ impl AuraApi {
             upload_id, assembly_id
         );
 
+        let config = load_config(self.app_handle.clone());
         let path = match method {
             "complete" => "complete".to_string(),
             _ => "update".to_string(),
@@ -94,7 +99,7 @@ impl AuraApi {
 
         let url = format!(
             "{}/api/bounce/upload/{}",
-            &self.config.get_api_endpoint(),
+            config.get_api_endpoint(),
             path
         );
 
@@ -111,7 +116,7 @@ impl AuraApi {
             }))
             .header("Content-Type", "application/json")
             .header("Accepts", "application/json")
-            .header("Authorization", format!("Bearer {}", &self.config.api_key))
+            .header("Authorization", format!("Bearer {}", config.api_key))
             .send()
             .await?;
 
