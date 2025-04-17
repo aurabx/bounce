@@ -14,7 +14,6 @@ use std::sync::Arc;
 use store::config::Config;
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 use tauri_plugin_log::{Target, TargetKind};
-use tauri_plugin_store::StoreExt;
 use tokio::sync::Mutex;
 
 #[derive(Clone)]
@@ -23,12 +22,7 @@ struct AppState {
 }
 
 fn load_config(app: AppHandle) -> Config {
-    let store = app
-        .store("store.json")
-        .map_err(|e| format!("Failed to load store: {}", e))
-        .unwrap();
-
-    Config::load(store)
+    Config::load(app)
 }
 
 #[tauri::command]
@@ -47,7 +41,7 @@ async fn api_start_upload(
     upload_id: String,
     assembly_id: String,
 ) -> Result<(), String> {
-    let aura_api = AuraApi::new(load_config(app));
+    let aura_api = AuraApi::new(app);
 
     aura_api
         .upload_start(study_uid, signature, upload_id.clone())
@@ -64,7 +58,7 @@ async fn api_start_upload(
 
 #[tauri::command]
 async fn send_study(app: AppHandle, study_uid: String) -> Result<(), String> {
-    let transmission = Transmission::new(load_config(app));
+    let transmission = Transmission::new(app);
 
     transmission
         .send_study(study_uid, false)
@@ -76,7 +70,7 @@ async fn send_study(app: AppHandle, study_uid: String) -> Result<(), String> {
 
 #[tauri::command]
 async fn delete_study(app: AppHandle, study_uid: String) -> Result<(), String> {
-    let transmission = Transmission::new(load_config(app));
+    let transmission = Transmission::new(app);
 
     transmission
         .delete_study(study_uid)
@@ -92,7 +86,7 @@ async fn receiver_start(app: AppHandle) -> Result<(), String> {
 
     app.emit("log", "Starting server").unwrap();
 
-    receiver::server::start(load_config(app.clone()), app)
+    receiver::server::start(app)
         .await
         .map_err(|e| format!("Failed to start server: {}", e))?;
 
@@ -138,7 +132,7 @@ fn main() {
             setup_logger();
 
             // create a TransmissionManager
-            let manager = TransmissionManager::new(load_config(app.app_handle().clone()));
+            let manager = TransmissionManager::new(app.app_handle().clone());
 
             // store it in Tauri's managed state
             app.manage(AppState {

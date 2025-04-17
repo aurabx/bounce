@@ -1,6 +1,5 @@
 use crate::aura::aura_api::AuraApi;
-use crate::log_info;
-use crate::store::config::Config;
+use crate::{load_config, log_info};
 use anyhow::{anyhow, Context, Result};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
@@ -9,6 +8,7 @@ use serde_json::Value;
 use std::io::{Seek, Write};
 use std::path::{Path, PathBuf};
 use std::{collections::HashMap, sync::Arc};
+use tauri::{AppHandle, Emitter};
 use tokio::io::AsyncReadExt;
 use tokio::sync::{oneshot, Mutex};
 use tokio::time::{sleep, Duration};
@@ -31,16 +31,16 @@ pub struct Transmission {
     client: Client,
     scheduled_studies: Arc<Mutex<HashMap<String, ScheduledStudy>>>,
     aura_api: Arc<AuraApi>,
-    config: Config,
+    app_handle: AppHandle,
 }
 
 impl Transmission {
-    pub fn new(config: Config) -> Self {
+    pub fn new(app_handle: AppHandle) -> Self {
         Self {
             client: Client::new(),
             scheduled_studies: Arc::new(Mutex::new(HashMap::new())),
-            aura_api: Arc::new(AuraApi::new(config.clone())),
-            config,
+            aura_api: Arc::new(AuraApi::new(app_handle.clone())),
+            app_handle
         }
     }
 
@@ -79,6 +79,8 @@ impl Transmission {
                 _ = sleep(Duration::from_secs(10)) => {
                     // 5 seconds have passed with no new call for this UID
                     log_info!("Time's up -> pushing study {}", study_uid_clone);
+
+                    self_clone.app_handle.emit("log", format!("Sending study {}", study_uid_clone)).unwrap();
 
                     // do the actual push logic here, e.g. `self_clone.send_study(...).await`
                     let study_uid = study_uid.clone();
@@ -145,7 +147,10 @@ impl Transmission {
             )
             .await
             .expect("Error sending upload start api message");
+
         log_info!("Sent upload start to aura");
+
+        self.app_handle.emit("log", format!("Study data send to aurabox {}", study_uid.clone())).unwrap();
 
         // === Upload via TUS
         self.upload_via_tus(&assembly, &archive_path).await?;
@@ -153,6 +158,8 @@ impl Transmission {
             "Study sent successfully via TUS to {}",
             assembly.get("tus_url").unwrap()
         );
+
+        self.app_handle.emit("log", format!("Dicom send to aurabox storage {}", study_uid.clone())).unwrap();
 
         self.aura_api
             .upload_save(
@@ -176,6 +183,8 @@ impl Transmission {
 
         log_info!("Sent upload complete to aura");
 
+        self.app_handle.emit("log", format!("Complete request sent to aura {}", study_uid.clone())).unwrap();
+
         // Optionally, delete local study if requested
         if delete_after_send {
             self.delete_study(study_uid).await?;
@@ -185,8 +194,10 @@ impl Transmission {
     }
 
     fn resolve_study_path(&self, study_uid: &String) -> PathBuf {
+        let config = load_config(self.app_handle.clone());
+
         // Actually push the study (you’ll have to adapt to your code)
-        let mut file_path = PathBuf::from(&self.config.get_base_dir());
+        let mut file_path = PathBuf::from(config.get_base_dir());
         file_path.push(study_uid.trim_end_matches('\0').to_string());
 
         file_path

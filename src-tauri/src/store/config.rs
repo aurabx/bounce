@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
-use tauri_plugin_store::Store;
+use tauri::AppHandle;
+use tauri_plugin_store::{StoreExt};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
@@ -12,11 +12,21 @@ pub struct Config {
     // pub region: String,
     pub port: u16,
     pub host: String,
-    pub mode: String,
 }
 
 impl Config {
-    pub fn load(store: Arc<Store<tauri::Wry>>) -> Self {
+
+
+
+    pub fn load(app_handle: AppHandle) -> Self {
+
+        // store: Arc<Store<tauri::Wry>>
+
+        let store = app_handle
+            .store("store.json")
+            .map_err(|e| format!("Failed to load store: {}", e))
+            .unwrap();
+
         let mut keyed_config = HashMap::new();
         let config = store.entries();
         for (key, value) in config {
@@ -48,16 +58,6 @@ impl Config {
                 },
             },
 
-            mode: match store.get("mode") {
-                None => "production".to_string(),
-                Some(value) => match value.as_str() {
-                    Some(str_value) => str_value
-                        .parse()
-                        .unwrap_or_else(|_| "production".to_string()),
-                    None => "production".to_string(),
-                },
-            },
-
             base_dir: match store.get("base_dir") {
                 None => "./tmp/dicom_storage".to_string(),
                 Some(value) => value.as_str().unwrap().parse().unwrap(),
@@ -68,7 +68,7 @@ impl Config {
     pub fn get_base_dir(&self) -> String {
         self.base_dir.clone()
     }
-    
+
     // Existing methods...
 
     /// Extracts the region code from the API key
@@ -96,10 +96,24 @@ impl Config {
         None
     }
 
+    pub fn mode_from_api_key(&self) -> Option<String> {
+        let parts: Vec<&str> = self.api_key.split('_').collect();
+
+        // Check if the API key has at least 3 parts (aura_REGION_bounce_USER_TOKEN_ENV)
+        if parts.len() >= 6 && parts[0] == "aura" {
+            // Return the second part (index 1) which should be the region code
+            return Some(parts[5].to_string());
+        }
+
+        Some("production".to_string())
+    }
+
+
     pub fn get_api_endpoint(&self) -> String {
         let region = self.region_from_api_key().unwrap();
+        let mode = self.mode_from_api_key().unwrap();
 
-        match self.mode.as_str() {
+        match mode.as_str() {
             "staging" => "https://staging-5em2ouy-pghszvpk65pns.au.platformsh.site".to_string(),
             "development" => "https://dev-54ta5gq-pghszvpk65pns.au.platformsh.site".to_string(),
             "local" => "https://aura.lndo.site".to_string(),

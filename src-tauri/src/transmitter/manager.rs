@@ -1,7 +1,7 @@
 use crate::log_info;
-use crate::store::config::Config;
 use crate::transmitter::transmission::Transmission;
 use std::sync::Arc;
+use tauri::AppHandle;
 use tokio::sync::{mpsc, Mutex};
 
 #[derive(Debug, Clone)]
@@ -10,9 +10,9 @@ pub struct TransmissionManager {
 }
 
 impl TransmissionManager {
-    pub fn new(config: Config) -> Self {
+    pub fn new(app_handle: AppHandle) -> Self {
         let (tx, rx) = mpsc::channel(32); // Channel to send/receive commands
-        let transmission = Arc::new(Mutex::new(Transmission::new(config)));
+        let transmission = Arc::new(Mutex::new(Transmission::new(app_handle)));
 
         // Start background task
         let _ = tauri::async_runtime::spawn(Self::run_background_task(rx, transmission));

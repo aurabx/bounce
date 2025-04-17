@@ -8,15 +8,13 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { useRouter } from 'next/navigation'
 import {useSetupComplete} from "@/app/lib/customHooks";
 import {classNames} from "@/app/lib/helpers";
-import SelectInput from "@/app/components/Fields/SelectInput";
-import { relaunch } from "@tauri-apps/plugin-process";
 
 export default function Settings() {
 
     const [settings, setSettings] = useState<{ [key: string]: any }>({});
     const [loaded, setLoaded] = useState<boolean>(false);
     const [saved, setSaved] = useState<boolean>(false);
-    const [isSuper, setIsSuper] = useState<boolean>(false);
+    const [env, setEnv] = useState<string|null>(null);
     const router = useRouter();
     const { setupComplete } = useSetupComplete();
 
@@ -52,7 +50,7 @@ export default function Settings() {
             const parts = settings.api_key.split('_');
             const last = parts[parts.length - 1];
 
-            ['local', 'dev', 'staging'].includes(last) ? setIsSuper(true) : setIsSuper(false);
+            ['local', 'dev', 'staging'].includes(last) ? setEnv(last) : setEnv(null);
         }
     }
 
@@ -117,11 +115,12 @@ export default function Settings() {
 
     useEffect(() => {
         checkApiKey().then()
-    }, [settings, isSuper]);
+    }, [settings, env]);
 
     return (
         <>
             {(saved ? <Alert>Saved</Alert> : null)}
+            {(env ? <Alert type="warning">{env} environment</Alert> : null)}
             <div className="bg-white shadow-lg rounded-lg p-6 w-full">
                 <Suspense fallback={<Loading />}>
                     {(loaded ? <form onSubmit={save}>
@@ -138,17 +137,6 @@ export default function Settings() {
                                         value={settings && settings[field.config.key] ? settings[field.config.key] : ''}
                                         onChange={(e: any) => setField(field.config.key, e.target.value)}/>)
                                 })}
-
-                                {isSuper && (
-                                    <SelectInput
-                                        key="mode"
-                                        settings={settings}
-                                        value={settings && settings.mode ? settings.mode : ''}
-                                        onChange={(e: any) => setField('mode', e.target.value)}
-                                        config={modeConfig}
-                                    />
-                                )}
-
                             </div>
                             <div className={classNames("mb-4 flex", setupComplete ? 'justify-between' : 'justify-end')}>
                                 {setupComplete && (

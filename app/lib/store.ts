@@ -2,18 +2,23 @@ import { configureStore, createSlice } from '@reduxjs/toolkit'
 import type { PayloadAction } from '@reduxjs/toolkit'
 import {CurrentStudies, Study} from "@/app/lib/types";
 
+export interface RunningDetail {
+    label: string,
+    value: string,
+}
+
 export interface State {
     logs: string[]
     studies: Study[],
     running: boolean,
-    runningDetail: string,
+    runningDetail: RunningDetail[],
 }
 
 const initialState: State = {
     logs: [],
     studies: [],
     running: false,
-    runningDetail: '',
+    runningDetail: [],
 }
 
 export const mainSlice = createSlice({
@@ -27,7 +32,7 @@ export const mainSlice = createSlice({
             state.running = action.payload;
         },
         setRunningDetail(state, action: PayloadAction<string>){
-            state.runningDetail = action.payload;
+            state.runningDetail = JSON.parse(action.payload);
         },
         setCurrentStudies(state, action: PayloadAction<CurrentStudies>){
             state.studies = action.payload.studies

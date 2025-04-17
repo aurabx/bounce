@@ -1,8 +1,8 @@
-use crate::store::config::Config;
-use crate::{log_error, log_info, receiver};
+use crate::{load_config, log_error, log_info, receiver};
 use local_ip_address::local_ip;
 use receiver::dicom_server::DICOMServer;
 use std::sync::Arc;
+use serde_json::json;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio;
 use tokio::sync::{oneshot, Mutex};
@@ -19,7 +19,9 @@ pub fn init_server_state() -> ServerState {
     }
 }
 
-pub async fn start(config: Config, app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn start(app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    let config = load_config(app.clone());
+
     // Create DICOM server
     let dicom_server = DICOMServer::new(config.clone(), app.clone());
 
@@ -40,12 +42,26 @@ pub async fn start(config: Config, app: AppHandle) -> Result<(), Box<dyn std::er
     tokio::spawn(async move {
         app.emit("log", "Starting server").unwrap();
         app.emit("running", true).unwrap();
+
+        let details = json!([{
+           "label": "Local endpoint",
+           "value": format!("tcp//{}:{}", config.host, config.port)
+        },{
+           "label": "Network endpoint",
+           "value": format!("tcp//{}:{}", local_ip, config.port)
+        },{
+           "label": "Connected to",
+           "value": config.get_api_endpoint()
+        },{
+           "label": "Mode",
+           "value": config.mode_from_api_key()
+        }]);
+
+        let details_string = serde_json::to_string(&details);
+
         app.emit(
             "running-details",
-            format!(
-                "tcp//{0}:{2} and tcp//{1}:{2}",
-                local_ip, config.host, config.port
-            ),
+            details_string.unwrap(),
         )
         .unwrap();
 

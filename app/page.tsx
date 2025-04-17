@@ -41,11 +41,6 @@ export default function Page() {
                     {running ? 'Stop Service' : 'Start Service'}
                 </button>
             </div>
-            {running && (<div className="flex justify-center mb-12">
-                <code className="p-2 bg-slate-300 rounded-lg">
-                    Running at {runningDetail}
-                </code>
-            </div>)}
 
             <div className="mb-6">
                 <dl className="mt-5 grid grid-cols-1 divide-y divide-gray-200 overflow-hidden rounded-lg bg-white shadow-sm md:grid-cols-2 md:divide-x md:divide-y-0">
@@ -75,13 +70,29 @@ export default function Page() {
                     </div>
                 </dl>
             </div>
+
+            {running && (<div className="mb-12">
+                <div className="overflow-hidden bg-white shadow-sm sm:rounded-lg p-4">
+                    <div className="divide-y divide-zinc-100">
+                        {runningDetail.map((detail, key) => (
+                        <dl key={key}>
+                            <div className="py-3 sm:grid sm:grid-cols-3 sm:gap-4">
+                                <dt className="text-sm text-zinc-500 font-semibold">{detail.label}</dt>
+                                <dd className="mt-1 text-sm text-zinc-900 sm:mt-0 sm:col-span-2 break-words">{detail.value}</dd>
+                            </div>
+                        </dl>
+                        ))}
+                    </div>
+                </div>
+            </div>)}
+
             <div className="bg-white shadow-lg rounded-lg p-6 w-full hidden">
                 <div className="flex gap-4">
                     <button
                         onClick={loadStudies}
                         className="flex w-full  transition ease-in-out text-center border shadow-sm font-medium rounded-md px-4 py-2 text-sm cursor-pointer text-white bg-indigo-400 hover:bg-indigo-500"
                     >
-                    Load current studies
+                        Load current studies
                     </button>
                     <button
                         onClick={sendLog}
@@ -92,15 +103,15 @@ export default function Page() {
                 </div>
             </div>
         </main> : (
-            <div className="relative p-4">
-                <h1 className="text-3xl mt-6 font-bold mb-6 text-center">
-                    Welcome to Aurabox Bounce
-                </h1>
-                <h3 className="text-xl mt-6 mb-6 text-center text-slate-500">
-                    Please add your api key, port and local storage location below
-                </h3>
-                <Settings />
-            </div>
-        )
+                <div className="relative p-4">
+                    <h1 className="text-3xl mt-6 font-bold mb-6 text-center">
+                        Welcome to Aurabox Bounce
+                    </h1>
+                    <h3 className="text-xl mt-6 mb-6 text-center text-slate-500">
+                        Please add your api key, port and local storage location below
+                    </h3>
+                    <Settings/>
+                </div>
+            )
     );
 }

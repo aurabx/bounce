@@ -6,25 +6,10 @@ export const fieldKeys = [
     'api_key',
     'port',
     'base_dir',
-    'mode',
     'setup_complete'
 ]
 
-export const fields = [
-    // {
-    //     config: {
-    //         label: 'Region',
-    //         key: 'region',
-    //         help: 'Select the region you login to when connecting to Aurabox',
-    //         options: {
-    //             au: "Australia",
-    //             uk: "United Kingdom",
-    //             sg: "Singapore",
-    //         }
-    //     },
-    //     component: SelectInput
-    // },
-    {
+export const fields = [{
     config: {
         label: 'Api Key',
         key: 'api_key',
