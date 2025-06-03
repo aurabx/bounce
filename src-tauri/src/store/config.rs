@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tauri::AppHandle;
-use tauri_plugin_store::{StoreExt};
+use tauri_plugin_store::StoreExt;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
@@ -15,11 +15,7 @@ pub struct Config {
 }
 
 impl Config {
-
-
-
     pub fn load(app_handle: AppHandle) -> Self {
-
         // store: Arc<Store<tauri::Wry>>
 
         let store = app_handle
@@ -107,7 +103,6 @@ impl Config {
 
         Some("production".to_string())
     }
-
 
     pub fn get_api_endpoint(&self) -> String {
         let region = self.region_from_api_key().unwrap();

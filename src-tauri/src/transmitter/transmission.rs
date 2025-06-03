@@ -40,7 +40,7 @@ impl Transmission {
             client: Client::new(),
             scheduled_studies: Arc::new(Mutex::new(HashMap::new())),
             aura_api: Arc::new(AuraApi::new(app_handle.clone())),
-            app_handle
+            app_handle,
         }
     }
 
@@ -150,7 +150,12 @@ impl Transmission {
 
         log_info!("Sent upload start to aura");
 
-        self.app_handle.emit("log", format!("Study data send to aurabox {}", study_uid.clone())).unwrap();
+        self.app_handle
+            .emit(
+                "log",
+                format!("Study data send to aurabox {}", study_uid.clone()),
+            )
+            .unwrap();
 
         // === Upload via TUS
         self.upload_via_tus(&assembly, &archive_path).await?;
@@ -159,7 +164,12 @@ impl Transmission {
             assembly.get("tus_url").unwrap()
         );
 
-        self.app_handle.emit("log", format!("Dicom send to aurabox storage {}", study_uid.clone())).unwrap();
+        self.app_handle
+            .emit(
+                "log",
+                format!("Dicom send to aurabox storage {}", study_uid.clone()),
+            )
+            .unwrap();
 
         self.aura_api
             .upload_save(
@@ -183,7 +193,12 @@ impl Transmission {
 
         log_info!("Sent upload complete to aura");
 
-        self.app_handle.emit("log", format!("Complete request sent to aura {}", study_uid.clone())).unwrap();
+        self.app_handle
+            .emit(
+                "log",
+                format!("Complete request sent to aura {}", study_uid.clone()),
+            )
+            .unwrap();
 
         // Optionally, delete local study if requested
         if delete_after_send {

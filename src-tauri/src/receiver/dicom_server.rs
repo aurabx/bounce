@@ -129,10 +129,14 @@ impl DICOMServer {
         log_info!("New association from {}", association.client_ae_title());
 
         // Send message to JavaScript
-        self.app_handle.emit("log", format!("New association from {}", association.client_ae_title())).unwrap_or_else(|e| {
-            println!("Failed to emit log event: {}", e);
-        });
-
+        self.app_handle
+            .emit(
+                "log",
+                format!("New association from {}", association.client_ae_title()),
+            )
+            .unwrap_or_else(|e| {
+                println!("Failed to emit log event: {}", e);
+            });
 
         loop {
             match association.receive() {
@@ -292,7 +296,7 @@ impl DICOMServer {
                                     println!("Received SeriesInstanceUID: {}", series_uid);
 
                                     // let message = format!("Received Study: {}", study_uid);
-                                    
+
                                     let file_meta = FileMetaTableBuilder::new()
                                         .transfer_syntax(ts)
                                         .build()
@@ -341,7 +345,7 @@ impl DICOMServer {
                                         .whatever_context("could not save DICOM object to file")?;
 
                                     let state = self.app_handle.state::<AppState>();
-                                    
+
                                     state
                                         .tx_manager
                                         .send_command(TransmissionCommand::ScheduleStudy {
@@ -428,9 +432,14 @@ impl DICOMServer {
             log_info!("Dropping connection with {}", association.client_ae_title());
         }
 
-        self.app_handle.emit("log", format!("Dropping connection with {}", association.client_ae_title())).unwrap_or_else(|e| {
-            println!("Failed to emit log event: {}", e);
-        });
+        self.app_handle
+            .emit(
+                "log",
+                format!("Dropping connection with {}", association.client_ae_title()),
+            )
+            .unwrap_or_else(|e| {
+                println!("Failed to emit log event: {}", e);
+            });
 
         Ok(())
     }

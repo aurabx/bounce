@@ -14,7 +14,9 @@ use std::sync::Arc;
 use store::config::Config;
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 use tauri_plugin_log::{Target, TargetKind};
+use tauri_plugin_sql::{Migration, MigrationKind};
 use tokio::sync::Mutex;
+
 
 #[derive(Clone)]
 struct AppState {
@@ -122,7 +124,21 @@ fn show_window(app: AppHandle) -> Result<(), String> {
 }
 
 fn main() {
+    let migrations = vec![
+        // Define your migrations here
+        Migration {
+            version: 1,
+            description: "create_initial_tables",
+            sql: "CREATE TABLE studies (id INTEGER PRIMARY KEY, study_uid TEXT, date TEXT, status TEXT, created_at TEXT);",
+            kind: MigrationKind::Up,
+        }
+    ];
+
     tauri::Builder::default()
+        .plugin(tauri_plugin_sql::Builder::default()
+            .add_migrations("sqlite:bounce.db", migrations)
+            .build()
+        )
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -141,6 +157,7 @@ fn main() {
 
             // Initialize and manage server state
             app.manage(Arc::new(Mutex::new(init_server_state())));
+
 
             Ok(())
         })

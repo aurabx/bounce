@@ -43,9 +43,13 @@
   },
   "productName": "Aurabox Bounce",
   "mainBinaryName": "Aurabox Bounce",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "identifier": "com.aurabox.bounce",
-  "plugins": {},
+  "plugins": {
+    "sql": {
+      "preload": ["sqlite:bounce.db"]
+    }
+  },
   "app": {
     "windows": [
       {

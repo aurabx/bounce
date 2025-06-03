@@ -5,7 +5,11 @@
   "windows": [
     "main"
   ],
-  "platforms": ["linux", "macOS", "windows"],
+  "platforms": [
+    "linux",
+    "macOS",
+    "windows"
+  ],
   "permissions": [
     "core:default",
     "store:default",
@@ -23,6 +27,7 @@
           "path": "/Users/nigelheap/Library/Logs/com.aurabox.bounce/"
         }
       ]
-    }
+    },
+    "sql:default"
   ]
 }

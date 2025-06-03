@@ -57,10 +57,7 @@ impl AuraApi {
         let json_content = fs::read_to_string(&json_path)?;
         let json_value: Value = serde_json::from_str::<Value>(&json_content)?;
 
-        let url = format!(
-            "{}/api/bounce/upload/start",
-            config.get_api_endpoint()
-        );
+        let url = format!("{}/api/bounce/upload/start", config.get_api_endpoint());
 
         let response = self
             .client
@@ -97,11 +94,7 @@ impl AuraApi {
             _ => "update".to_string(),
         };
 
-        let url = format!(
-            "{}/api/bounce/upload/{}",
-            config.get_api_endpoint(),
-            path
-        );
+        let url = format!("{}/api/bounce/upload/{}", config.get_api_endpoint(), path);
 
         log_info!("upload_save url {}", url);
         log_info!("upload_save assembly_id {}", assembly_id);
