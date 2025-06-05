@@ -10,15 +10,11 @@
 - Designed for secure, internal deployments
 - Minimal configuration required
 
----
-
-## 🚀 Getting Started (Production Use)
-
-### 1. Download the Latest Release
+## Installation
 
 Visit the [Releases page](https://github.com/aurabx/bounce/releases) and download the latest `.tar.gz` or binary appropriate for your platform.
 
-### 2. Set up
+## Set up
 
 Follow the instructions at https://docs.aurabox.cloud/applications/bounce/ to complete the install.
 
