@@ -13,7 +13,7 @@ import {invoke} from "@tauri-apps/api/core";
 const TRAY_ID = 'bounce';
 
 const appName = 'Bounce';
-const appVersion = '1.0.1';
+const appVersion = '0.7.1';
 
 const Tray = () => {
     const running = useAppSelector((state) => state.main.running)

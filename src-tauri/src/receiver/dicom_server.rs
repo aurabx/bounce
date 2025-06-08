@@ -89,7 +89,7 @@ impl DICOMServer {
     ) -> Result<(), Whatever> {
         let verbose = true;
         let strict = false;
-        let calling_ae_title = "STORE-SCP";
+        let calling_ae_title = "BOUNCE";
         let uncompressed_only = false;
         let promiscuous = true;
         let max_pdu_length = 16384;
