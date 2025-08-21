@@ -29,20 +29,20 @@ macro_rules! log_error {
 #[macro_export]
 macro_rules! log_warn {
     ($($arg:tt)*) => {
-        log::warn!($($arg)*);
+        log::warn!($($arg)*)
     };
 }
 
 #[macro_export]
 macro_rules! log_debug {
     ($($arg:tt)*) => {
-        log::debug!($($arg)*);
+        log::debug!($($arg)*)
     };
 }
 
 #[macro_export]
 macro_rules! log_trace {
     ($($arg:tt)*) => {
-        log::trace!($($arg)*);
+        log::trace!($($arg)*)
     };
 }
