@@ -9,9 +9,11 @@ import {classNames, formatDicomDateAndTime} from "@/app/lib/helpers";
 import {Study} from "@/app/lib/types";
 
 const statuses = {
-    Complete: 'text-green-700 bg-green-50 ring-green-600/20',
-    'In progress': 'text-gray-600 bg-gray-50 ring-gray-500/10',
-    Archived: 'text-yellow-800 bg-yellow-50 ring-yellow-600/20',
+    COMPLETE: 'text-green-700 bg-green-50 ring-green-600/20',
+    SENT: 'text-green-700 bg-green-50 ring-green-600/20',
+    "IN-PROGRESS": 'text-yellow-600 bg-yellow-50 ring-yellow-500/10',
+    ARCHIVED: 'text-blue-800 bg-blue-50 ring-blue-600/20',
+    UNKNOWN: 'text-gray-800 bg-gray-50 ring-gray-600/20',
 }
 
 export default function Page() {
@@ -55,14 +57,14 @@ export default function Page() {
                                     <div className="min-w-0">
                                         <div className="flex items-start gap-x-3">
                                             <p className="text-sm/6 font-semibold text-gray-900">{study.study_description}</p>
-                                            {/* <p
+                                            <p
                                                 className={classNames(
-                                                    statuses['In progress'],
+                                                    statuses.hasOwnProperty(study.status) ? statuses[study.status as keyof typeof statuses] : statuses.UNKNOWN,
                                                     'mt-0.5 rounded-md px-1.5 py-0.5 text-xs font-medium whitespace-nowrap ring-1 ring-inset',
                                                 )}
                                             >
-                                                {'TODO'}
-                                            </p>*/}
+                                                {study.status}
+                                            </p>
                                         </div>
                                         <div className="mt-1 flex flex-col items-start gap-x-2 text-xs/5 text-gray-500">
                                             <p className="whitespace-nowrap truncate w-full">

@@ -1,5 +1,5 @@
 use crate::aura::aura_api::AuraApi;
-use crate::{load_config, log_info};
+use crate::{load_config, log_error, log_info};
 use anyhow::{anyhow, Context, Result};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
@@ -17,6 +17,7 @@ use uuid::Uuid;
 use walkdir::{DirEntry, WalkDir};
 use zip::result::ZipError;
 use zip::{write::SimpleFileOptions, write::ZipWriter, CompressionMethod};
+use crate::receiver::metadata::Metadata;
 // use tokio_util::io::ReaderStream;
 
 #[derive(Debug)]
@@ -189,6 +190,13 @@ impl Transmission {
         // Optionally, delete local study if requested
         if delete_after_send {
             self.delete_study(study_uid).await?;
+        }
+
+        if let Err(err) = Metadata::update_study_metadata_status(
+            study_path.as_path(),
+            "SENT",
+        ).await {
+            log_error!("Failed to update study metadata status: {}", err);
         }
 
         Ok(())

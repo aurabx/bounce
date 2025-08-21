@@ -158,6 +158,12 @@ impl Config {
                                 if let Ok(metadata) =
                                     serde_json::from_str::<Value>(&metadata_content)
                                 {
+                                    let status = metadata
+                                        .get("status")
+                                        .and_then(|s| s.as_str())
+                                        .unwrap_or("UNKNOWN")
+                                        .to_string();
+
                                     // Extract information from the metadata
                                     if let Some(studies_data) = metadata.get("studies") {
                                         // Iterate through each study in the metadata
@@ -169,7 +175,8 @@ impl Config {
                                                     "study_description": Self::extract_field(study_info, "study_description"),
                                                     "study_date": Self::extract_field(study_info, "study_date"),
                                                     "study_time": Self::extract_field(study_info, "study_time"),
-                                                    "path": entry_path.to_string_lossy()
+                                                    "path": entry_path.to_string_lossy(),
+                                                    "status": status,
                                                 });
 
                                                 // Add the study to our array
