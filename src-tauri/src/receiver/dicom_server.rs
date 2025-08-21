@@ -15,7 +15,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use store::config::Config;
 use tauri::{AppHandle, Emitter, Manager};
-use transmitter::manager::TransmissionCommand;
 
 #[derive(Clone)]
 pub struct DICOMServer {
@@ -342,12 +341,26 @@ impl DICOMServer {
 
                                     let state = self.app_handle.state::<AppState>();
                                     
-                                    state
-                                        .tx_manager
-                                        .send_command(TransmissionCommand::ScheduleStudy {
-                                            study_uid,
-                                        })
-                                        .await;
+                                    // state
+                                    //     .tx_manager
+                                    //     .send_command(TransmissionCommand::ScheduleStudy {
+                                    //         study_uid,
+                                    //     })
+                                    //     .await;
+
+                                    // state
+                                    //     .transmission
+                                    //     .schedule_study_push(study_uid)
+                                    //     .await
+                                    //     .expect("schedule_study_push panic");
+
+
+
+
+                                    // state
+                                    //     .tx_manager
+                                    //     .schedule_study(study_uid)
+                                    //     .await;
 
                                     // send C-STORE-RSP object
                                     // commands are always in implict VR LE

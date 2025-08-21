@@ -5,20 +5,25 @@ mod receiver;
 mod store;
 mod transmitter;
 
+use std::collections::HashMap;
 use crate::aura::aura_api::AuraApi;
 use crate::logger::setup_logger;
 use crate::receiver::server::init_server_state;
 use crate::transmitter::manager::TransmissionManager;
 use crate::transmitter::transmission::Transmission;
+use crate::transmitter::background::{setup_background_task, ProcessInfo, TaskCommand};
 use std::sync::Arc;
 use store::config::Config;
-use tauri::{AppHandle, Emitter, Manager, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 use tauri_plugin_log::{Target, TargetKind};
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex};
 
 #[derive(Clone)]
 struct AppState {
-    tx_manager: TransmissionManager,
+    // pub tx_manager: TransmissionManager,
+    // pub transmission: Transmission,
+    pub command_tx: mpsc::UnboundedSender<TaskCommand>,
+    pub processes: Arc<Mutex<HashMap<String, ProcessInfo>>>,
 }
 
 fn load_config(app: AppHandle) -> Config {
@@ -121,6 +126,19 @@ fn show_window(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+pub fn schedule_study_upload_by_uid(
+    study_uid: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    state
+        .command_tx
+        .send(TaskCommand::ScheduleStudy { study_uid: study_uid.clone() })
+        .map_err(|e| format!("Failed to send command: {}", e))?;
+
+    Ok(format!("ScheduleStudy process: {}", study_uid))
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_os::init())
@@ -131,13 +149,18 @@ fn main() {
             // Setup logging
             setup_logger();
 
+            setup_background_task(app)?;
+
             // create a TransmissionManager
-            let manager = TransmissionManager::new(app.app_handle().clone());
+            // let manager = TransmissionManager::new(app.app_handle().clone());
+
+            // let trans = Transmission::new(app.app_handle().clone());
 
             // store it in Tauri's managed state
-            app.manage(AppState {
-                tx_manager: manager,
-            });
+            // app.manage(AppState {
+            //     tx_manager: manager,
+            //     transmission: trans
+            // });
 
             // Initialize and manage server state
             app.manage(Arc::new(Mutex::new(init_server_state())));
