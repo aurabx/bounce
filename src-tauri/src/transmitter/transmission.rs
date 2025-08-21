@@ -138,11 +138,12 @@ impl Transmission {
         // === Create an Assembly on Transloadit, get the TUS URL back
         let assembly = self.create_transloadit_assembly(&upload_id).await?;
         log_info!("Got TUS URL: {}", assembly.get("tus_url").unwrap());
+        log_info!("Got signature: {}", assembly.get("signature").unwrap());
 
         self.aura_api
             .upload_start(
                 study_uid.clone(),
-                assembly.get("signature").unwrap().to_string(),
+                assembly.get("signature").unwrap().as_str().unwrap().to_string(),
                 upload_id.to_string(),
             )
             .await
@@ -156,7 +157,7 @@ impl Transmission {
         self.upload_via_tus(&assembly, &archive_path).await?;
         log_info!(
             "Study sent successfully via TUS to {}",
-            assembly.get("tus_url").unwrap()
+            assembly.get("tus_url").unwrap().as_str().unwrap().to_string()
         );
 
         self.app_handle.emit("log", format!("Dicom send to aurabox storage {}", study_uid.clone())).unwrap();
@@ -164,7 +165,7 @@ impl Transmission {
         self.aura_api
             .upload_save(
                 upload_id.clone().to_string(),
-                assembly.get("assembly_id").unwrap().to_string(),
+                assembly.get("assembly_id").unwrap().as_str().unwrap().to_string(),
                 "update",
             )
             .await
@@ -175,7 +176,7 @@ impl Transmission {
         self.aura_api
             .upload_save(
                 upload_id.clone().to_string(),
-                assembly.get("assembly_id").unwrap().to_string(),
+                assembly.get("assembly_id").unwrap().as_str().unwrap().to_string(),
                 "complete",
             )
             .await

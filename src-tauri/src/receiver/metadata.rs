@@ -159,6 +159,7 @@ impl Metadata {
             "studies": studies_map
         });
 
+
         // Write the JSON to file
         fs::write(&json_path, serde_json::to_string_pretty(&json_obj)?)
             .map_err(|e| format!("Failed to write study metadata file: {}", e))?;
