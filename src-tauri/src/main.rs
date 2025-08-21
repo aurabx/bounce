@@ -9,21 +9,19 @@ use std::collections::HashMap;
 use crate::aura::aura_api::AuraApi;
 use crate::logger::setup_logger;
 use crate::receiver::server::init_server_state;
-use crate::transmitter::manager::TransmissionManager;
-use crate::transmitter::transmission::Transmission;
-use crate::transmitter::background::{setup_background_task, ProcessInfo, TaskCommand};
+use crate::transmitter::manager::{TransmissionCommand, TransmissionManager};
+use crate::transmitter::transmission::{QueueUpload, Transmission};
+// use crate::transmitter::background::{setup_background_task, ProcessInfo, TaskCommand};
 use std::sync::Arc;
 use store::config::Config;
-use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
+use tauri::{AppHandle, Emitter, Listener, Manager, State, WindowEvent};
 use tauri_plugin_log::{Target, TargetKind};
 use tokio::sync::{mpsc, Mutex};
 
 #[derive(Clone)]
 struct AppState {
-    // pub tx_manager: TransmissionManager,
-    // pub transmission: Transmission,
-    pub command_tx: mpsc::UnboundedSender<TaskCommand>,
-    pub processes: Arc<Mutex<HashMap<String, ProcessInfo>>>,
+    pub tx_manager: TransmissionManager,
+    pub transmission: Transmission,
 }
 
 fn load_config(app: AppHandle) -> Config {
@@ -126,18 +124,6 @@ fn show_window(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-pub fn schedule_study_upload_by_uid(
-    study_uid: String,
-    state: State<'_, AppState>,
-) -> Result<String, String> {
-    state
-        .command_tx
-        .send(TaskCommand::ScheduleStudy { study_uid: study_uid.clone() })
-        .map_err(|e| format!("Failed to send command: {}", e))?;
-
-    Ok(format!("ScheduleStudy process: {}", study_uid))
-}
 
 fn main() {
     tauri::Builder::default()
@@ -148,18 +134,46 @@ fn main() {
             // Setup logging
             setup_logger();
 
-            setup_background_task(app)?;
+            //setup_background_task(app)?;
 
             // create a TransmissionManager
-            // let manager = TransmissionManager::new(app.app_handle().clone());
+            let manager = TransmissionManager::new(app.app_handle().clone());
 
-            // let trans = Transmission::new(app.app_handle().clone());
+            let trans = Transmission::new(app.app_handle().clone());
 
             // store it in Tauri's managed state
-            // app.manage(AppState {
-            //     tx_manager: manager,
-            //     transmission: trans
-            // });
+            app.manage(AppState {
+                tx_manager: manager,
+                transmission: trans
+            });
+
+            let app_handle = app.handle().clone();
+
+            app.listen("queue-study", move |event| {
+                // Clone the payload to a String first
+                let payload_str = event.payload().to_string();
+
+                // Process outside of the event handler
+                let app_handle_clone = app_handle.clone();
+
+                tauri::async_runtime::spawn(async move {
+                    if let Ok(payload) = serde_json::from_str::<QueueUpload>(&payload_str) {
+                        log_info!("queue-study {}", payload.study_uid);
+                        let study_uid = payload.study_uid;
+
+                        // Get the manager inside the async block
+                        // let tx_manager = app_handle_clone.state::<AppState>().tx_manager.clone();
+                        let transmission = app_handle_clone.state::<AppState>().transmission.clone();
+
+                        transmission.schedule_study_push(study_uid.to_string())
+                            .await.expect("TODO: panic message");
+
+                        // tx_manager.send_command(TransmissionCommand::ScheduleStudy {
+                        //     study_uid: study_uid.to_string()
+                        // }).await;
+                    }
+                });
+            });
 
             // Initialize and manage server state
             app.manage(Arc::new(Mutex::new(init_server_state())));
