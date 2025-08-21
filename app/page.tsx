@@ -7,7 +7,6 @@ import {classNames} from "@/app/lib/helpers";
 import {useSetupComplete} from "@/app/lib/customHooks";
 import Settings from "@/app/components/Settings";
 
-
 export default function Page() {
     const running = useAppSelector((state) => state.main.running)
     const runningDetail = useAppSelector((state) => state.main.runningDetail)
