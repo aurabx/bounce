@@ -1,6 +1,6 @@
 "use client";
 import { Menu, MenuItem, PredefinedMenuItem } from "@tauri-apps/api/menu";
-import { defaultWindowIcon } from "@tauri-apps/api/app";
+import {defaultWindowIcon, getVersion, getName } from "@tauri-apps/api/app";
 import { TrayIcon, type TrayIconOptions } from "@tauri-apps/api/tray";
 import { exit, relaunch } from "@tauri-apps/plugin-process";
 import { window as trauiWindow } from '@tauri-apps/api'
@@ -12,11 +12,9 @@ import {invoke} from "@tauri-apps/api/core";
 
 const TRAY_ID = 'bounce';
 
-const appName = 'Bounce';
-const appVersion = '0.7.3';
-
 const Tray = () => {
     const running = useAppSelector((state) => state.main.running)
+
 
     useEffect(() => {
         createTrayIcon().finally();
@@ -45,6 +43,8 @@ const Tray = () => {
     const createTrayIcon = async () => {
 
         const tray = await getTrayById();
+        const version = await getVersion();
+        const name = await getName();
 
         if (tray) return;
 
@@ -58,7 +58,7 @@ const Tray = () => {
             menu,
             icon,
             id: TRAY_ID,
-            tooltip: `${appName} v${appVersion}`,
+            tooltip: `${name} v${version}`,
             iconAsTemplate: true,
             menuOnLeftClick: true,
         };
@@ -72,6 +72,8 @@ const Tray = () => {
     }
 
     const getTrayMenu = async () => {
+        const version = await getVersion();
+        const name = await getName();
 
         const items = await Promise.all([
             MenuItem.new({
@@ -86,7 +88,7 @@ const Tray = () => {
             }),
             PredefinedMenuItem.new({ item: "Separator" }),
             MenuItem.new({
-                text: `Version ${appVersion}`,
+                text: `${name} v${version}`,
                 enabled: false,
             }),
             MenuItem.new({

@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use store::config::Config;
 use tauri::{AppHandle, Emitter, Manager};
-use transmitter::manager::TransmissionCommand;
+use crate::transmitter::transmission::QueueUpload;
 
 #[derive(Clone)]
 pub struct DICOMServer {
@@ -340,14 +340,29 @@ impl DICOMServer {
                                         .write_to_file(&file_path)
                                         .whatever_context("could not save DICOM object to file")?;
 
-                                    let state = self.app_handle.state::<AppState>();
+                                    //let state = self.app_handle.state::<AppState>();
+
+                                    self.app_handle.emit("queue-study", QueueUpload {
+                                        study_uid: &study_uid,
+                                    }).unwrap();
                                     
-                                    state
-                                        .tx_manager
-                                        .send_command(TransmissionCommand::ScheduleStudy {
-                                            study_uid,
-                                        })
-                                        .await;
+                                    // state
+                                    //     .tx_manager
+                                    //     .send_command(TransmissionCommand::ScheduleStudy {
+                                    //         study_uid,
+                                    //     })
+                                    //     .await;
+
+                                    // state
+                                    //     .transmission
+                                    //     .schedule_study_push(study_uid)
+                                    //     .await
+                                    //     .expect("schedule_study_push panic");
+                                    
+                                    // state
+                                    //     .tx_manager
+                                    //     .schedule_study(study_uid)
+                                    //     .await;
 
                                     // send C-STORE-RSP object
                                     // commands are always in implict VR LE

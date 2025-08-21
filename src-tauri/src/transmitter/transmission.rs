@@ -8,6 +8,7 @@ use serde_json::Value;
 use std::io::{Seek, Write};
 use std::path::{Path, PathBuf};
 use std::{collections::HashMap, sync::Arc};
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 use tokio::io::AsyncReadExt;
 use tokio::sync::{oneshot, Mutex};
@@ -25,6 +26,12 @@ pub struct ScheduledStudy {
     // last_received: Instant,
     // We send a signal to the task whenever we want to reset the countdown.
     cancel_tx: oneshot::Sender<()>,
+}
+
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct QueueUpload<'a> {
+    pub study_uid: &'a str,
 }
 
 #[derive(Debug, Clone)]
@@ -49,6 +56,8 @@ impl Transmission {
     /// If another call comes in for the same study before the 10s ends,
     /// we cancel and restart the countdown.
     pub async fn schedule_study_push(&self, study_uid: String) -> anyhow::Result<()> {
+        log_info!("Scheduling study push for {}", &study_uid);
+
         // Acquire the map lock
         let mut map = self.scheduled_studies.lock().await;
 
