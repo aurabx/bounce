@@ -1,5 +1,5 @@
 use crate::receiver::metadata::Metadata;
-use crate::{log_error, log_info, receiver, store, transmitter, AppState};
+use crate::{log_error, log_info, receiver, store};
 use dicom::core::{DataElement, Tag, VR};
 use dicom::dicom_value;
 use dicom::dictionary_std::tags;
@@ -14,8 +14,8 @@ use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::Arc;
 use store::config::Config;
-use tauri::{AppHandle, Emitter, Manager};
-use transmitter::manager::TransmissionCommand;
+use tauri::{AppHandle, Emitter};
+use crate::transmitter::transmission::QueueUpload;
 
 #[derive(Clone)]
 pub struct DICOMServer {
@@ -43,7 +43,9 @@ impl DICOMServer {
         });
 
         // Bind the listener
-        let listen_addr = SocketAddrV4::new(Ipv4Addr::from(0), port);
+        let ip_address: Result<Ipv4Addr, _> = server.config.ip_address.clone().parse();
+        // let listen_addr = SocketAddrV4::new(Ipv4Addr::from(0), port);
+        let listen_addr = SocketAddrV4::new(ip_address.unwrap(), port);
         let listener = TcpListener::bind(listen_addr)?;
         log_info!("listening on: tcp://{}", listen_addr);
 
@@ -87,9 +89,11 @@ impl DICOMServer {
         scu_stream: TcpStream,
         out_dir: &PathBuf,
     ) -> Result<(), Whatever> {
+        let server = Arc::new(self.clone());
+        let calling_ae_title = server.config.ae_title.clone();
+
         let verbose = true;
         let strict = false;
-        let calling_ae_title = "BOUNCE";
         let uncompressed_only = false;
         let promiscuous = true;
         let max_pdu_length = 16384;
@@ -340,14 +344,29 @@ impl DICOMServer {
                                         .write_to_file(&file_path)
                                         .whatever_context("could not save DICOM object to file")?;
 
-                                    let state = self.app_handle.state::<AppState>();
+                                    //let state = self.app_handle.state::<AppState>();
+
+                                    self.app_handle.emit("queue-study", QueueUpload {
+                                        study_uid: &study_uid,
+                                    }).unwrap();
                                     
-                                    state
-                                        .tx_manager
-                                        .send_command(TransmissionCommand::ScheduleStudy {
-                                            study_uid,
-                                        })
-                                        .await;
+                                    // state
+                                    //     .tx_manager
+                                    //     .send_command(TransmissionCommand::ScheduleStudy {
+                                    //         study_uid,
+                                    //     })
+                                    //     .await;
+
+                                    // state
+                                    //     .transmission
+                                    //     .schedule_study_push(study_uid)
+                                    //     .await
+                                    //     .expect("schedule_study_push panic");
+                                    
+                                    // state
+                                    //     .tx_manager
+                                    //     .schedule_study(study_uid)
+                                    //     .await;
 
                                     // send C-STORE-RSP object
                                     // commands are always in implict VR LE

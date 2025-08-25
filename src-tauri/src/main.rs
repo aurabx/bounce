@@ -8,17 +8,16 @@ mod transmitter;
 use crate::aura::aura_api::AuraApi;
 use crate::logger::setup_logger;
 use crate::receiver::server::init_server_state;
-use crate::transmitter::manager::TransmissionManager;
-use crate::transmitter::transmission::Transmission;
+use crate::transmitter::transmission::{QueueUpload, Transmission};
 use std::sync::Arc;
 use store::config::Config;
-use tauri::{AppHandle, Emitter, Manager, WindowEvent};
+use tauri::{AppHandle, Emitter, Listener, Manager, WindowEvent};
 use tauri_plugin_log::{Target, TargetKind};
 use tokio::sync::Mutex;
 
 #[derive(Clone)]
 struct AppState {
-    tx_manager: TransmissionManager,
+    pub transmission: Transmission,
 }
 
 fn load_config(app: AppHandle) -> Config {
@@ -121,6 +120,7 @@ fn show_window(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_os::init())
@@ -130,12 +130,34 @@ fn main() {
             // Setup logging
             setup_logger();
 
-            // create a TransmissionManager
-            let manager = TransmissionManager::new(app.app_handle().clone());
+            let transmission = Transmission::new(app.app_handle().clone());
 
             // store it in Tauri's managed state
             app.manage(AppState {
-                tx_manager: manager,
+                transmission
+            });
+
+            let app_handle = app.handle().clone();
+
+            app.listen("queue-study", move |event| {
+                // Clone the payload to a String first
+                let payload_str = event.payload().to_string();
+
+                // Process outside of the event handler
+                let app_handle_clone = app_handle.clone();
+
+                tauri::async_runtime::spawn(async move {
+                    if let Ok(payload) = serde_json::from_str::<QueueUpload>(&payload_str) {
+                        log_info!("queue-study {}", payload.study_uid);
+                        let study_uid = payload.study_uid;
+
+                        // Get the manager inside the async block
+                        let transmission = app_handle_clone.state::<AppState>().transmission.clone();
+
+                        transmission.schedule_study_push(study_uid.to_string())
+                            .await.expect("Enable to schedule study push");
+                    }
+                });
             });
 
             // Initialize and manage server state

@@ -11,6 +11,7 @@ export default function Page() {
     const running = useAppSelector((state) => state.main.running)
     const runningDetail = useAppSelector((state) => state.main.runningDetail)
     const studies = useAppSelector((state) => state.main.studies)
+    const errors = useAppSelector((state) => state.main.errors)
     const {setupComplete} =  useSetupComplete();
 
     const sendLog = async () => {
@@ -40,6 +41,14 @@ export default function Page() {
                     {running ? 'Stop Service' : 'Start Service'}
                 </button>
             </div>
+
+            {errors.length > 0 && (
+                <ul className="bg-red-100 border border-red-400 text-red-700 flex flex-col gap-2 rounded-lg">
+                    {errors.map((error, index) => (
+                        <li key={`error-${index}`} className="p-2">{error}</li>
+                    ))}
+                </ul>
+            )}
 
             <div className="mb-6">
                 <dl className="mt-5 grid grid-cols-1 divide-y divide-gray-200 overflow-hidden rounded-lg bg-white shadow-sm md:grid-cols-2 md:divide-x md:divide-y-0">
