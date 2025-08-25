@@ -43,10 +43,10 @@ impl Config {
             },
 
             port: match store.get("port") {
-                None => 104,
+                None => 9090,
                 Some(value) => match value.as_str() {
-                    Some(str_value) => str_value.parse().unwrap_or_else(|_| 104),
-                    None => 104,
+                    Some(str_value) => str_value.parse().unwrap_or_else(|_| 9090),
+                    None => 9090,
                 },
             },
 
