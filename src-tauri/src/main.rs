@@ -5,22 +5,18 @@ mod receiver;
 mod store;
 mod transmitter;
 
-use std::collections::HashMap;
 use crate::aura::aura_api::AuraApi;
 use crate::logger::setup_logger;
 use crate::receiver::server::init_server_state;
-use crate::transmitter::manager::{TransmissionCommand, TransmissionManager};
 use crate::transmitter::transmission::{QueueUpload, Transmission};
-// use crate::transmitter::background::{setup_background_task, ProcessInfo, TaskCommand};
 use std::sync::Arc;
 use store::config::Config;
-use tauri::{AppHandle, Emitter, Listener, Manager, State, WindowEvent};
+use tauri::{AppHandle, Emitter, Listener, Manager, WindowEvent};
 use tauri_plugin_log::{Target, TargetKind};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::Mutex;
 
 #[derive(Clone)]
 struct AppState {
-    pub tx_manager: TransmissionManager,
     pub transmission: Transmission,
 }
 
@@ -134,17 +130,11 @@ fn main() {
             // Setup logging
             setup_logger();
 
-            //setup_background_task(app)?;
-
-            // create a TransmissionManager
-            let manager = TransmissionManager::new(app.app_handle().clone());
-
-            let trans = Transmission::new(app.app_handle().clone());
+            let transmission = Transmission::new(app.app_handle().clone());
 
             // store it in Tauri's managed state
             app.manage(AppState {
-                tx_manager: manager,
-                transmission: trans
+                transmission
             });
 
             let app_handle = app.handle().clone();
@@ -162,15 +152,10 @@ fn main() {
                         let study_uid = payload.study_uid;
 
                         // Get the manager inside the async block
-                        // let tx_manager = app_handle_clone.state::<AppState>().tx_manager.clone();
                         let transmission = app_handle_clone.state::<AppState>().transmission.clone();
 
                         transmission.schedule_study_push(study_uid.to_string())
-                            .await.expect("TODO: panic message");
-
-                        // tx_manager.send_command(TransmissionCommand::ScheduleStudy {
-                        //     study_uid: study_uid.to_string()
-                        // }).await;
+                            .await.expect("Enable to schedule study push");
                     }
                 });
             });

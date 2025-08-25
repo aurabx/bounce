@@ -6,7 +6,9 @@ export const fieldKeys = [
     'api_key',
     'port',
     'base_dir',
-    'setup_complete'
+    'ae_title',
+    'ip_address',
+    'setup_complete',
 ]
 
 export const fields = [{
@@ -25,10 +27,24 @@ export const fields = [{
     component: TextInput
 },{
     config: {
+        label: 'AE Title',
+        key: 'ae_title',
+        help: 'AE Title used for the DICOM server. Will default to: BOUNCE',
+    },
+    component: TextInput
+},{
+    config: {
+        label: 'IP Address',
+        key: 'ip_address',
+        help: 'Bind ip address for DICOM server, leave blank to bind to all interfaces',
+    },
+    component: TextInput
+},{
+    config: {
         label: 'Storage directory',
         key: 'base_dir',
         help: 'Local storage directory for bounce to use',
-        suffix_button: 'Select storage directory',
+        suffix_button: 'Select a storage directory',
         readOnly: true,
     },
     component: TextInput

@@ -9,9 +9,9 @@ use tauri_plugin_store::{StoreExt};
 pub struct Config {
     pub base_dir: String,
     pub api_key: String,
-    // pub region: String,
     pub port: u16,
-    pub host: String,
+    pub ip_address: String,
+    pub ae_title: String,
 }
 
 impl Config {
@@ -50,11 +50,26 @@ impl Config {
                 },
             },
 
-            host: match store.get("host") {
+
+            ip_address: match store.get("ip_address") {
                 None => "0.0.0.0".to_string(),
                 Some(value) => match value.as_str() {
-                    Some(str_value) => str_value.parse().unwrap_or_else(|_| "0.0.0.0".to_string()),
+                    Some(str_value) => {
+                        if str_value.trim().is_empty() {
+                            "0.0.0.0".to_string()
+                        } else {
+                            str_value.parse().unwrap_or_else(|_| "0.0.0.0".to_string())
+                        }
+                    },
                     None => "0.0.0.0".to_string(),
+                },
+            },
+
+            ae_title: match store.get("ae_title") {
+                None => "0.0.0.0".to_string(),
+                Some(value) => match value.as_str() {
+                    Some(str_value) => str_value.parse().unwrap_or_else(|_| "BOUNCE".to_string()),
+                    None => "BOUNCE".to_string(),
                 },
             },
 

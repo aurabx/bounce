@@ -12,6 +12,7 @@ export interface State {
     studies: Study[],
     running: boolean,
     runningDetail: RunningDetail[],
+    errors: string[]
 }
 
 const initialState: State = {
@@ -19,6 +20,7 @@ const initialState: State = {
     studies: [],
     running: false,
     runningDetail: [],
+    errors: [],
 }
 
 export const mainSlice = createSlice({
@@ -36,12 +38,18 @@ export const mainSlice = createSlice({
         },
         setCurrentStudies(state, action: PayloadAction<CurrentStudies>){
             state.studies = action.payload.studies
+        },
+        setError(state, action: PayloadAction<string>){
+            state.errors.push(action.payload)
+        },
+        setErrors(state, action: PayloadAction<string[]>){
+            state.errors = action.payload
         }
     },
 })
 
 // Action creators are generated for each case reducer function
-export const { logMessage, setRunning, setRunningDetail, setCurrentStudies } = mainSlice.actions
+export const { logMessage, setRunning, setRunningDetail, setCurrentStudies, setError, setErrors } = mainSlice.actions
 
 export const makeStore = () => {
     return configureStore({
@@ -62,4 +70,6 @@ export type AppDispatch = AppStore['dispatch']
 // the state. Selectors can also be defined inline where they're used instead of
 // in the slice file. For example: `useSelector((state) => state.counter.value)`
 export const selectLogs = (state: RootState) => state.main.logs
+
+export const selectErrors = (state: RootState) => state.main.errors
 export const selectRunning = (state: RootState) => state.main.running

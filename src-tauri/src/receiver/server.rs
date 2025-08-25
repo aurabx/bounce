@@ -45,13 +45,16 @@ pub async fn start(app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
         let details = json!([{
            "label": "Local endpoint",
-           "value": format!("tcp//{}:{}", config.host, config.port)
+           "value": format!("tcp//{}:{}", config.ip_address, config.port)
         },{
            "label": "Network endpoint",
            "value": format!("tcp//{}:{}", local_ip, config.port)
         },{
            "label": "Connected to",
            "value": config.get_api_endpoint()
+        },{
+           "label": "AE Title",
+           "value": config.ae_title
         },{
            "label": "Mode",
            "value": config.mode_from_api_key()
@@ -71,6 +74,7 @@ pub async fn start(app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 if let Err(err) = result {
                     log_error!("Dicom server error: {:?}", err);
                     app.emit("log", format!("Server error: {}", err)).unwrap();
+                    app.emit("error", format!("Server error: {}", err)).unwrap();
                 }
             }
             _ = shutdown_rx => {

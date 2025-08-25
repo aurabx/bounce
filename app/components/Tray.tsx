@@ -1,10 +1,9 @@
 "use client";
 import { Menu, MenuItem, PredefinedMenuItem } from "@tauri-apps/api/menu";
-import {defaultWindowIcon, getVersion, getName } from "@tauri-apps/api/app";
+import { getVersion, getName } from "@tauri-apps/api/app";
 import { TrayIcon, type TrayIconOptions } from "@tauri-apps/api/tray";
 import { exit, relaunch } from "@tauri-apps/plugin-process";
-import { window as trauiWindow } from '@tauri-apps/api'
-import {useEffect, useState} from "react";
+import {useEffect} from "react";
 import {resolveResource} from "@tauri-apps/api/path";
 import {useAppSelector} from "@/app/lib/hook";
 import {receiverStart, receiverStop} from "@/app/lib/server";
