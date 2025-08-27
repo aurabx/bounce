@@ -109,7 +109,7 @@ checksum = "dcfed56ad506cb2c684a14971b8861fdc3baaaae314b9e5f9bb532cbe3ba7a4f"
 
 [[package]]
 name = "app"
-version = "0.7.6"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -117,6 +117,7 @@ dependencies = [
  "dicom-dictionary-std",
  "dicom-transfer-syntax-registry",
  "dicom-ul",
+ "gethostname",
  "local-ip-address",
  "log",
  "reqwest",

@@ -5,6 +5,7 @@ export interface Study {
     study_date: string,
     study_time: string,
     status: string,
+    exists: string,
 }
 
 export type CurrentStudies = {

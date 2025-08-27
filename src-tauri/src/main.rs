@@ -6,7 +6,6 @@ mod store;
 mod transmitter;
 
 use crate::aura::aura_api::AuraApi;
-use crate::logger::setup_logger;
 use crate::receiver::server::init_server_state;
 use crate::transmitter::transmission::{QueueUpload, Transmission};
 use std::sync::Arc;
@@ -14,6 +13,7 @@ use store::config::Config;
 use tauri::{AppHandle, Emitter, Listener, Manager, WindowEvent};
 use tauri_plugin_log::{Target, TargetKind};
 use tokio::sync::Mutex;
+use crate::logger::{setup_logger_with_config, LogtailConfig};
 
 #[derive(Clone)]
 struct AppState {
@@ -60,7 +60,7 @@ async fn send_study(app: AppHandle, study_uid: String) -> Result<(), String> {
     let transmission = Transmission::new(app);
 
     transmission
-        .send_study(study_uid, false)
+        .send_study(study_uid)
         .await
         .expect("send study panic");
 
@@ -72,9 +72,14 @@ async fn delete_study(app: AppHandle, study_uid: String) -> Result<(), String> {
     let transmission = Transmission::new(app);
 
     transmission
-        .delete_study(study_uid)
+        .delete_study(study_uid.clone())
         .await
         .expect("delete study panic");
+
+    transmission
+        .delete_local_study_meta(study_uid.clone())
+        .await
+        .expect("delete study meta panic");
 
     Ok(())
 }
@@ -84,6 +89,7 @@ async fn receiver_start(app: AppHandle) -> Result<(), String> {
     println!("receiver_start: {}", "now");
 
     app.emit("log", "Starting server").unwrap();
+    log_info!("Starting server");
 
     receiver::server::start(app)
         .await
@@ -127,10 +133,21 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            // Setup logging
-            setup_logger();
 
-            let transmission = Transmission::new(app.app_handle().clone());
+            let handle = app.app_handle();
+            let config = Config::load(handle.clone());
+
+            let logtail_config = LogtailConfig {
+                enable: config.send_logs == "yes",
+                source_token: "rnMSXo4FKewJaKkoLaYjRsvF".to_string(),
+                endpoint: "https://s1489595.ap-sng-8.betterstackdata.com".to_string(),
+                app_name: config.api_key,
+                hostname: gethostname::gethostname().to_string_lossy().to_string(),
+            };
+
+            setup_logger_with_config(logtail_config);
+
+            let transmission = Transmission::new(handle.clone());
 
             // store it in Tauri's managed state
             app.manage(AppState {
