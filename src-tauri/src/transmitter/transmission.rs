@@ -100,7 +100,7 @@ impl Transmission {
                     //     log_info!("moved run {}", study_uid_clone);
                     // });
 
-                    let _ = self_clone.send_study(study_uid, false).await;
+                    let _ = self_clone.send_study(study_uid).await;
                     // sleep(Duration::from_secs(30)).await;
                     // log_info!("pretended this might take 30 secs to complete {}", study_uid_clone);
                 },
@@ -121,16 +121,21 @@ impl Transmission {
 
     pub async fn delete_study(&self, study_uid: String) -> Result<()> {
         self.delete_local_study_files(study_uid.clone()).await?;
-        self.delete_local_compressed_study(study_uid.clone())
-            .await?;
+        self.delete_local_compressed_study(study_uid.clone()).await?;
+
 
         log_info!("Deleted local study files and archive for {}", study_uid);
 
         Ok(())
     }
 
-    pub async fn send_study(&self, study_uid: String, delete_after_send: bool) -> Result<()> {
+    pub async fn send_study(&self, study_uid: String) -> Result<()> {
         let upload_id = Uuid::new_v4();
+
+        let config = load_config(self.app_handle.clone());
+        let delete_after_send = config.delete_after_success == "yes";
+        let out_dir = config.get_base_dir().clone();
+        let path = PathBuf::from(&out_dir);
 
         log_info!(
             "Starting send_study {} for upload: {}",
@@ -142,13 +147,15 @@ impl Transmission {
 
         log_info!("Preparing to send study: {:?}", &study_path);
 
-        let archive_path = self.compress_study(study_path.clone()).await?;
+        let archive_path = self.compress_study(study_uid.clone()).await?;
         log_info!("Preparing to send study zip: {:?}", archive_path);
 
         // === Create an Assembly on Transloadit, get the TUS URL back
         let assembly = self.create_transloadit_assembly(&upload_id).await?;
-        log_info!("Got TUS URL: {}", assembly.get("tus_url").unwrap());
-        log_info!("Got signature: {}", assembly.get("signature").unwrap());
+
+        log_info!("signature: {}", assembly.get("signature").unwrap().as_str().unwrap().to_string());
+        log_info!("study_uid: {}", study_uid.clone());
+        log_info!("upload_id: {}", upload_id.to_string());
 
         self.aura_api
             .upload_start(
@@ -198,11 +205,12 @@ impl Transmission {
 
         // Optionally, delete local study if requested
         if delete_after_send {
-            self.delete_study(study_uid).await?;
+            self.delete_study(study_uid.clone()).await?;
         }
 
         if let Err(err) = Metadata::update_study_metadata_status(
-            study_path.as_path(),
+            path.as_path(),
+            study_uid,
             "SENT",
         ).await {
             log_error!("Failed to update study metadata status: {}", err);
@@ -217,6 +225,25 @@ impl Transmission {
         // Actually push the study (you’ll have to adapt to your code)
         let mut file_path = PathBuf::from(config.get_base_dir());
         file_path.push(study_uid.trim_end_matches('\0').to_string());
+        // file_path.push(study_uid.to_string());
+
+        file_path
+    }
+
+    fn resolve_study_archive_path(&self, study_uid: &String) -> PathBuf {
+        let config = load_config(self.app_handle.clone());
+
+        let file_path = PathBuf::from(config.get_base_dir());
+        let file_path = file_path.clone().join(study_uid.clone() + ".zip");
+
+        file_path
+    }
+
+    fn resolve_study_meta_path(&self, study_uid: &String) -> PathBuf {
+        let config = load_config(self.app_handle.clone());
+
+        let file_path = PathBuf::from(config.get_base_dir());
+        let file_path = file_path.clone().join(study_uid.clone() + ".json");
 
         file_path
     }
@@ -262,9 +289,18 @@ impl Transmission {
         Ok(())
     }
 
-    async fn compress_study(&self, study_path: PathBuf) -> Result<PathBuf> {
-        let study_path = study_path.as_path();
-        let archive_path = study_path.with_extension("zip");
+    async fn compress_study(&self, study_uid: String) -> Result<PathBuf> {
+
+        //let archive_path = study_path.with_extension("zip");
+        let config = load_config(self.app_handle.clone());
+        let output_path = PathBuf::from(config.get_base_dir());
+        let archive_path = output_path.clone().join(study_uid.clone() + ".zip");
+        log_info!("Compressing with_extension {archive_path:?}");
+
+        let study_path_buf = output_path.join(study_uid);
+        log_info!("compressing study_path {study_path_buf:?}");
+
+        let study_path = study_path_buf.as_path();
 
         if !Path::new(study_path).is_dir() {
             return Err(ZipError::FileNotFound.into());
@@ -287,19 +323,36 @@ impl Transmission {
     async fn delete_local_study_files(&self, study_uid: String) -> Result<()> {
         let study_path = self.resolve_study_path(&study_uid);
 
-        fs::remove_dir_all(study_path.as_path())
-            .await
-            .context("Failed to delete local study files")?;
+        if study_path.exists() {
+            fs::remove_dir_all(study_path.as_path())
+                .await
+                .context("Failed to delete local study files")?;
+        }
 
         Ok(())
     }
 
     async fn delete_local_compressed_study(&self, study_uid: String) -> Result<()> {
-        let archive_path = self.resolve_study_path(&study_uid).with_extension("zip");
+        let archive_path = self.resolve_study_archive_path(&study_uid);
 
-        fs::remove_file(archive_path.as_path())
-            .await
-            .context("Failed to delete local study files")?;
+        if archive_path.exists() {
+            fs::remove_file(archive_path.as_path())
+                .await
+                .context("Failed to delete local study files")?;
+
+        }
+
+        Ok(())
+    }
+
+    pub async fn delete_local_study_meta(&self, study_uid: String) -> Result<()> {
+        let meta_path = self.resolve_study_meta_path(&study_uid);
+
+        if meta_path.exists() {
+            fs::remove_file(meta_path.as_path())
+                .await
+                .context("Failed to delete local study meta file")?;
+        }
 
         Ok(())
     }
@@ -315,15 +368,15 @@ impl Transmission {
             .to_string();
 
         log_info!("signature {:#?}", &signature);
-        log_info!(
-            "params {:#?}",
-            signature_result
-                .get("params")
-                .unwrap()
-                .as_str()
-                .unwrap()
-                .to_string()
-        );
+        // log_info!(
+        //     "params {:#?}",
+        //     signature_result
+        //         .get("params")
+        //         .unwrap()
+        //         .as_str()
+        //         .unwrap()
+        //         .to_string()
+        // );
 
         let form = multipart::Form::new()
             .text(

@@ -49,7 +49,7 @@ struct SeriesInfo {
 impl Metadata {
     /// Update the study metadata JSON file with study_uid as the key
     pub async fn update_study_metadata_json(
-        study_path: &Path,
+        out_path: &Path,
         obj: &InMemDicomObject,
     ) -> Result<(), Box<dyn std::error::Error>> {
         // Extract required tags for study and series info
@@ -57,7 +57,8 @@ impl Metadata {
         let series_uid = DICOMServer::extract_string_tag(obj, tags::SERIES_INSTANCE_UID)?;
 
         // Path to the JSON metadata file
-        let json_path = study_path.join("metadata.json");
+        let study_path = out_path.join(study_uid.clone());
+        let json_path = out_path.join(study_uid.clone() + ".json");
 
         // Create new HashMap for studies if no file exists or load existing
         let mut studies_map: HashMap<String, StudyInfo> = if json_path.exists() {
@@ -217,11 +218,14 @@ impl Metadata {
 
     /// Update the study metadata JSON file with study_uid as the key
     pub async fn update_study_metadata_status(
-        study_path: &Path,
+        out_path: &Path,
+        study_uid: String,
         status: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
         // Path to the JSON metadata file
-        let json_path = study_path.join("metadata.json");
+        // let study_path = out_path.join(study_uid.clone());
+
+        let json_path = out_path.join(study_uid.clone() + ".json");
 
         // Create new HashMap for studies if no file exists or load existing
         let studies_map: HashMap<String, StudyInfo> = if json_path.exists() {

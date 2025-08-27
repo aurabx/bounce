@@ -52,7 +52,7 @@ impl AuraApi {
 
         let config = load_config(self.app_handle.clone());
         let study_path = config.resolve_study_path(&study_uid);
-        let json_path = study_path.join("metadata.json");
+        let json_path = config.resolve_metadata_path(&study_uid);
 
         let json_content = fs::read_to_string(&json_path)?;
         let json_value: Value = serde_json::from_str::<Value>(&json_content)?;

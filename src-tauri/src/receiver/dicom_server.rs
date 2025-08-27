@@ -308,7 +308,7 @@ impl DICOMServer {
                                     let mut file_path = out_dir.clone();
 
                                     file_path.push(study_uid.trim_end_matches('\0').to_string());
-                                    let study_dir = file_path.clone();
+                                    // let study_dir = file_path.clone();
 
                                     file_path.push(series_uid.trim_end_matches('\0').to_string());
                                     let series_dir = file_path.clone();
@@ -330,7 +330,7 @@ impl DICOMServer {
                                     log_info!("Stored {}", file_path.display());
 
                                     if let Err(err) = Metadata::update_study_metadata_json(
-                                        study_dir.as_path(),
+                                        out_dir.as_path(),
                                         &obj,
                                     )
                                     .await
@@ -349,25 +349,7 @@ impl DICOMServer {
                                     self.app_handle.emit("queue-study", QueueUpload {
                                         study_uid: &study_uid,
                                     }).unwrap();
-                                    
-                                    // state
-                                    //     .tx_manager
-                                    //     .send_command(TransmissionCommand::ScheduleStudy {
-                                    //         study_uid,
-                                    //     })
-                                    //     .await;
-
-                                    // state
-                                    //     .transmission
-                                    //     .schedule_study_push(study_uid)
-                                    //     .await
-                                    //     .expect("schedule_study_push panic");
-                                    
-                                    // state
-                                    //     .tx_manager
-                                    //     .schedule_study(study_uid)
-                                    //     .await;
-
+                                 
                                     // send C-STORE-RSP object
                                     // commands are always in implict VR LE
                                     let ts =

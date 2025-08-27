@@ -74,13 +74,16 @@ export default function Page() {
                                         </div>
                                     </div>
                                     <div className="flex flex-none items-center gap-x-4">
-                                        <a
-                                            href="#"
-                                            onClick={() => sendStudy(study)}
-                                            className="hidden rounded-md bg-white px-2.5 py-1.5 text-sm font-semibold text-gray-900 ring-1 shadow-xs ring-gray-300 ring-inset hover:bg-gray-50 sm:block"
-                                        >
-                                            Send study <span className="sr-only">, {study.study_description}</span>
-                                        </a>
+                                        {study.exists && (
+                                            <a
+                                                href="#"
+                                                onClick={() => sendStudy(study)}
+                                                className="hidden rounded-md bg-white px-2.5 py-1.5 text-sm font-semibold text-gray-900 ring-1 shadow-xs ring-gray-300 ring-inset hover:bg-gray-50 sm:block"
+                                            >
+                                                Send study <span className="sr-only">, {study.study_description}</span>
+                                            </a>
+                                        )}
+
                                         <Menu as="div" className="relative flex-none">
                                             <MenuButton className="-m-2.5 block p-2.5 text-gray-500 hover:text-gray-900">
                                                 <span className="sr-only">Open options</span>

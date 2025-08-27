@@ -8,6 +8,8 @@ export const fieldKeys = [
     'base_dir',
     'ae_title',
     'ip_address',
+    'delete_after_success',
+    'send_logs',
     'setup_complete',
 ]
 
@@ -48,5 +50,27 @@ export const fields = [{
         readOnly: true,
     },
     component: TextInput
+},{
+    config: {
+        label: 'Delete after upload',
+        key: 'delete_after_success',
+        help: 'Delete study from storage directory after successful upload',
+        options: {
+            'no' : 'No',
+            'yes' : 'Yes',
+        }
+    },
+    component: SelectInput
+},{
+    config: {
+        label: 'Send logs to Aurabox team',
+        key: 'send_logs',
+        help: 'Help us by sending logs to Aurabox team',
+        options: {
+            'no' : 'No',
+            'yes' : 'Yes',
+        }
+    },
+    component: SelectInput
 }];
 
