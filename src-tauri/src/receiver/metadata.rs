@@ -344,17 +344,5 @@ impl Metadata {
         }
         image_count
     }
-
-    /// Delete study from database
-    pub async fn delete_study(
-        app_handle: &AppHandle,
-        study_uid: String,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let database = app_handle.state::<Database>();
-
-        database.delete_study(&study_uid).await?;
-        log_info!("Deleted study from database: {}", study_uid);
-
-        Ok(())
-    }
+    
 }

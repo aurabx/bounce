@@ -205,28 +205,6 @@ impl Database {
         Ok(())
     }
 
-    pub async fn update_study_counts(&self, study_id: i64) -> Result<()> {
-        // Update series count
-        let series_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM series WHERE study_id = ?"
-        )
-            .bind(study_id)
-            .fetch_one(&self.pool)
-            .await?;
-
-        // For image count, we'll need to count files in the filesystem
-        // or maintain a separate images table if needed
-        sqlx::query(
-            "UPDATE studies SET series_count = ? WHERE id = ?"
-        )
-            .bind(series_count)
-            .bind(study_id)
-            .execute(&self.pool)
-            .await?;
-
-        Ok(())
-    }
-
     pub async fn update_study_image_count(&self, study_uid: &str, image_count: i64) -> Result<()> {
         sqlx::query(
             "UPDATE studies SET images = ? WHERE study_uid = ?"
@@ -256,6 +234,28 @@ impl Database {
 
         tx.commit().await?;
         Ok(())
+    }
+
+    /// Clear all studies from the database
+    /// This will delete all studies and their associated series
+    pub async fn clear_studies(&self) -> Result<usize> {
+        let mut tx = self.pool.begin().await?;
+
+        // First get the count of studies that will be deleted
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM studies")
+            .fetch_one(&mut *tx)
+            .await?;
+
+        // Delete all studies
+        sqlx::query("DELETE FROM studies")
+            .execute(&mut *tx)
+            .await?;
+
+        tx.commit().await?;
+
+        log_info!("Cleared {} studies from database", count);
+
+        Ok(count as usize)
     }
 
 }

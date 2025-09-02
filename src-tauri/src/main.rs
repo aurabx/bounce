@@ -35,6 +35,16 @@ fn send_log(app: AppHandle, log: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn reset_app(app: AppHandle) -> Result<(), String> {
+
+    let database = app.state::<Database>();
+
+    database.clear_studies();
+
+    Ok(())
+}
+
+#[tauri::command]
 async fn api_start_upload(
     app: AppHandle,
     study_uid: String,
@@ -71,7 +81,7 @@ async fn send_study(app: AppHandle, study_uid: String) -> Result<(), String> {
 
 #[tauri::command]
 async fn delete_study(app: AppHandle, study_uid: String) -> Result<(), String> {
-    let transmission = Transmission::new(app);
+    let transmission = Transmission::new(app.clone());
     let database = app.state::<Database>();
 
     transmission
@@ -230,6 +240,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             receiver_start,
             receiver_stop,
+            reset_app,
             send_log,
             send_study,
             delete_study,

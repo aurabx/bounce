@@ -8,6 +8,8 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { useRouter } from 'next/navigation'
 import {useSetupComplete} from "@/app/lib/customHooks";
 import {classNames} from "@/app/lib/helpers";
+import {invoke} from "@tauri-apps/api/core";
+import { relaunch } from '@tauri-apps/plugin-process';
 
 export default function Settings() {
 
@@ -17,6 +19,8 @@ export default function Settings() {
     const [env, setEnv] = useState<string|null>(null);
     const router = useRouter();
     const { setupComplete } = useSetupComplete();
+
+
 
     const save = async (e: any) => {
         e.preventDefault();
@@ -90,6 +94,15 @@ export default function Settings() {
         let store =  await load('store.json', { autoSave: false });
         await store.clear()
         await store.reset()
+
+        try {
+            await invoke('reset_app'); // Pass the port to Tauri
+        } catch (error) {
+            console.error('Error resetting app:', error);
+            alert(`Error resetting app: ${error}`);
+        }
+
+        await relaunch()
 
         router.push('/')
         window.location.reload();
