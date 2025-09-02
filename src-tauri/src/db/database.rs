@@ -113,7 +113,7 @@ impl Database {
 
     pub async fn get_studies(&self) -> Result<Vec<Study>> {
         let studies = sqlx::query_as::<_, Study>(
-            "SELECT * FROM studies ORDER BY created_at DESC"
+            "SELECT * FROM studies ORDER BY created_at DESC LIMIT 100"
         )
             .fetch_all(&self.pool)
             .await?;
@@ -219,12 +219,6 @@ impl Database {
 
     pub async fn delete_study(&self, study_uid: String) -> Result<()> {
         let mut tx = self.pool.begin().await?;
-
-        // Delete series first (due to foreign key constraint)
-        sqlx::query("DELETE FROM series WHERE study_instance_uid = ?")
-            .bind(study_uid.clone())
-            .execute(&mut *tx)
-            .await?;
 
         // Delete study
         sqlx::query("DELETE FROM studies WHERE study_uid = ?")

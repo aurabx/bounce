@@ -35,11 +35,20 @@ fn send_log(app: AppHandle, log: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn reset_app(app: AppHandle) -> Result<(), String> {
-
+async fn reset_app(app: AppHandle) -> Result<(), String> {
     let database = app.state::<Database>();
 
-    database.clear_studies();
+    database
+        .clear_studies()
+        .await
+        .expect("clear studies panic");
+
+    let transmission = Transmission::new(app);
+
+    transmission
+        .clear_storage()
+        .await
+        .expect("clear study panic");
 
     Ok(())
 }
