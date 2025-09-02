@@ -122,7 +122,7 @@ impl Transmission {
     pub async fn delete_study(&self, study_uid: String) -> Result<()> {
         self.delete_local_study_files(study_uid.clone()).await?;
         self.delete_local_compressed_study(study_uid.clone()).await?;
-
+        self.delete_local_study_meta(study_uid.clone()).await?;
 
         log_info!("Deleted local study files and archive for {}", study_uid);
 
@@ -209,7 +209,7 @@ impl Transmission {
         }
 
         if let Err(err) = Metadata::update_study_metadata_status(
-            path.as_path(),
+            &self.app_handle,
             study_uid,
             "SENT",
         ).await {
@@ -354,6 +354,73 @@ impl Transmission {
                 .context("Failed to delete local study meta file")?;
         }
 
+        Ok(())
+    }
+
+    pub async fn clear_storage(&self) -> Result<()> {
+        let config = load_config(self.app_handle.clone());
+
+        let file_path = PathBuf::from(config.get_base_dir());
+
+        // Check if the directory exists
+        if !file_path.exists() {
+            log_info!("Storage directory does not exist: {:?}", file_path);
+            return Ok(());
+        }
+
+        if !file_path.is_dir() {
+            return Err(anyhow!("Storage path is not a directory: {:?}", file_path));
+        }
+
+        // Read directory contents
+        let mut entries = fs::read_dir(&file_path).await
+            .context(format!("Failed to read directory: {:?}", file_path))?;
+
+        let mut deleted_count = 0;
+        let mut error_count = 0;
+
+        // Iterate through all entries in the directory
+        while let Some(entry) = entries.next_entry().await
+            .context("Failed to read directory entry")? {
+
+            let entry_path = entry.path();
+            let entry_name = entry_path.file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("unknown");
+
+            if entry_path.is_dir() {
+                // Remove directory and all its contents
+                match fs::remove_dir_all(&entry_path).await {
+                    Ok(_) => {
+                        log_info!("Deleted directory: {}", entry_name);
+                        deleted_count += 1;
+                    }
+                    Err(e) => {
+                        log_error!("Failed to delete directory {}: {}", entry_name, e);
+                        error_count += 1;
+                    }
+                }
+            } else if entry_path.is_file() {
+                // Remove file
+                match fs::remove_file(&entry_path).await {
+                    Ok(_) => {
+                        log_info!("Deleted file: {}", entry_name);
+                        deleted_count += 1;
+                    }
+                    Err(e) => {
+                        log_error!("Failed to delete file {}: {}", entry_name, e);
+                        error_count += 1;
+                    }
+                }
+            }
+        }
+
+        if error_count > 0 {
+            log_error!("Storage clearing completed with {} errors. {} items deleted.", error_count, deleted_count);
+            return Err(anyhow!("Failed to delete {} items from storage", error_count));
+        }
+
+        log_info!("Successfully cleared storage directory. {} items deleted.", deleted_count);
         Ok(())
     }
 

@@ -7,6 +7,9 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
+use tauri::{AppHandle, Manager};
+use crate::db::database::Database;
+use crate::db::models::Study;
 
 #[derive(Debug, Clone)]
 pub struct Metadata {}
@@ -49,6 +52,7 @@ struct SeriesInfo {
 impl Metadata {
     /// Update the study metadata JSON file with study_uid as the key
     pub async fn update_study_metadata_json(
+        app_handle: &AppHandle,
         out_path: &Path,
         obj: &InMemDicomObject,
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -141,8 +145,10 @@ impl Metadata {
         // Add or update the series info
         study_info.series.insert(series_uid, series_info);
 
+        let series_count = study_info.series.len();
+
         // Update counts
-        study_info.series_count = study_info.series.len();
+        study_info.series_count = series_count.clone();
 
         // Count images (one approach is to count DCM files in the study directory)
         let mut image_count = 0;
@@ -161,6 +167,37 @@ impl Metadata {
             "status": "IN-PROGRESS",
         });
 
+        // Get database from app state
+        let database = app_handle.state::<Database>();
+
+        // Create or update a study
+        let new_study = Study {
+            id: None,
+            study_uid: study_uid.clone(),
+            study_description: DICOMServer::extract_string_tag_optional(obj, tags::STUDY_DESCRIPTION),
+            institution_name: DICOMServer::extract_string_tag_optional(obj, tags::INSTITUTION_NAME),
+            institution_address: DICOMServer::extract_string_tag_optional(obj, tags::INSTITUTION_ADDRESS),
+            patient_id: DICOMServer::extract_string_tag_optional(obj, tags::PATIENT_ID),
+            other_patient_ids: DICOMServer::extract_string_tag_optional(obj, tags::OTHER_PATIENT_NAMES),
+            accession_no: DICOMServer::extract_string_tag_optional(obj, tags::ACCESSION_NUMBER),
+            patient_name: DICOMServer::extract_string_tag_optional(obj, tags::PATIENT_NAME),
+            issuer_of_patient_id: DICOMServer::extract_string_tag_optional(obj, tags::ISSUER_OF_PATIENT_ID),
+            patient_birth_date: DICOMServer::extract_string_tag_optional(obj, tags::PATIENT_BIRTH_DATE),
+            patient_sex: DICOMServer::extract_string_tag_optional(obj, tags::PATIENT_SEX),
+            referring_physician_name: DICOMServer::extract_string_tag_optional(obj, tags::REFERRING_PHYSICIAN_NAME),
+            study_date: DICOMServer::extract_string_tag_optional(obj, tags::STUDY_DATE),
+            study_time: DICOMServer::extract_string_tag_optional(obj, tags::STUDY_TIME),
+            tz_offset: None, // TZ offset isn't directly in standard DICOM tags
+            images: image_count as i64,
+            series_count: series_count as i64,
+            status: "".to_string(),
+            created_at: Default::default(),
+            updated_at: Default::default(),
+            sent_at: None,
+        };
+
+        let study = database.create_or_update_study(new_study).await?;
+        log_info!("Created/updated study: {}", study.study_uid);
 
         // Write the JSON to file
         fs::write(&json_path, serde_json::to_string_pretty(&json_obj)?)
@@ -218,59 +255,45 @@ impl Metadata {
 
     /// Update the study metadata JSON file with study_uid as the key
     pub async fn update_study_metadata_status(
-        out_path: &Path,
+        app_handle: &AppHandle,
         study_uid: String,
         status: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        // Path to the JSON metadata file
-        // let study_path = out_path.join(study_uid.clone());
 
-        let json_path = out_path.join(study_uid.clone() + ".json");
+        let database = app_handle.state::<Database>();
 
-        // Create new HashMap for studies if no file exists or load existing
-        let studies_map: HashMap<String, StudyInfo> = if json_path.exists() {
-            // Read and parse existing JSON file
-            let json_content = fs::read_to_string(&json_path)
-                .map_err(|e| format!("Failed to read study metadata file: {}", e))?;
-
-            let json_value: Value = serde_json::from_str(&json_content)
-                .map_err(|e| format!("Failed to parse study metadata JSON: {}", e))?;
-
-            // Extract the studies object
-            if let Some(studies) = json_value.get("studies").and_then(|s| s.as_object()) {
-                // Convert to our HashMap
-                let mut map = HashMap::new();
-                for (study_id, study_value) in studies {
-                    match serde_json::from_value::<StudyInfo>(study_value.clone()) {
-                        Ok(study_info) => {
-                            map.insert(study_id.clone(), study_info);
-                        }
-                        Err(e) => {
-                            log_error!("Failed to deserialize study info for {}: {}", study_id, e);
-                            // Continue with other studies
-                        }
-                    }
-                }
-                map
-            } else {
-                HashMap::new()
-            }
-        } else {
-            HashMap::new()
-        };
-
-        // Create the final JSON object with the studies map
-        let json_obj = json!({
-            "studies": studies_map,
-            "status": status,
-        });
-
-        // Write the JSON to file
-        fs::write(&json_path, serde_json::to_string_pretty(&json_obj)?)
-            .map_err(|e| format!("Failed to write study metadata file: {}", e))?;
-
-        log_info!("Updated study metadata status JSON: {}", json_path.display());
+        database.update_study_status(&study_uid, status).await?;
+        log_info!("Updated study status: {} -> {}", study_uid, status);
 
         Ok(())
     }
+
+
+    /// Update te study image count in the database
+    pub async fn update_study_image_count(
+        app_handle: &AppHandle,
+        study_uid: String,
+        image_count: i64,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let database = app_handle.state::<Database>();
+
+        database.update_study_image_count(&study_uid, image_count).await?;
+        log_info!("Updated study image count: {} -> {}", study_uid, image_count);
+
+        Ok(())
+    }
+
+    /// Count images in a study directory (for updating image count)
+    pub fn count_images_in_study_path(study_path: &Path) -> i64 {
+        let mut image_count = 0;
+        for _entry in walkdir::WalkDir::new(study_path)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().map_or(false, |ext| ext == "dcm"))
+        {
+            image_count += 1;
+        }
+        image_count
+    }
+
 }

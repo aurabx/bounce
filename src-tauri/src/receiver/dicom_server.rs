@@ -137,7 +137,6 @@ impl DICOMServer {
             println!("Failed to emit log event: {}", e);
         });
 
-
         loop {
             match association.receive() {
                 Ok(mut pdu) => {
@@ -330,6 +329,7 @@ impl DICOMServer {
                                     log_info!("Stored {}", file_path.display());
 
                                     if let Err(err) = Metadata::update_study_metadata_json(
+                                        &self.app_handle,
                                         out_dir.as_path(),
                                         &obj,
                                     )
