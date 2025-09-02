@@ -121,65 +121,113 @@ impl Database {
         Ok(studies)
     }
 
-    pub async fn current_studies(&self) -> Value {
+
+    pub async fn current_studies(&self, page: u32, limit: u32) -> Value {
         let config = load_config(self.app_handle.clone());
 
-        match self.get_studies().await {
-            Ok(studies) => {
+        // Calculate offset
+        let offset = (page.saturating_sub(1)) * limit;
+
+        match self.get_studies_paginated(offset as i64, limit as i64).await {
+            Ok((studies, total_count)) => {
                 let mut studies_json = Vec::new();
 
                 for study in studies {
-
                     // Check if the study directory exists
                     let study_path = config.resolve_study_path(&study.study_uid);
                     let exists = study_path.exists();
 
                     let study_json = serde_json::json!({
-                        "study_uid": study.study_uid,
-                        "study_description": study.study_description.unwrap_or_else(|| "No study description".to_string()),
-                        "study_date": study.study_date.unwrap_or_else(|| "No study date".to_string()),
-                        "study_time": study.study_time.unwrap_or_else(|| "No study time".to_string()),
-                        "patient_name": study.patient_name.unwrap_or_else(|| "No patient name".to_string()),
-                        "patient_id": study.patient_id.unwrap_or_else(|| "No patient ID".to_string()),
-                        "institution_name": study.institution_name.unwrap_or_else(|| "No institution".to_string()),
-                        "accession_no": study.accession_no.unwrap_or_else(|| "No accession number".to_string()),
-                        "patient_sex": study.patient_sex.unwrap_or_else(|| "Unknown".to_string()),
-                        "patient_birth_date": study.patient_birth_date.unwrap_or_else(|| "Unknown".to_string()),
-                        "referring_physician_name": study.referring_physician_name.unwrap_or_else(|| "Unknown".to_string()),
-                        "series_count": study.series_count,
-                        "images": study.images,
-                        "status": study.status,
-                        "created_at": study.created_at,
-                        "updated_at": study.updated_at,
-                        "sent_at": study.sent_at,
-                        "exists": exists,
-                        "path": study_path.to_string_lossy(),
-                    });
+                    "study_uid": study.study_uid,
+                    "study_description": study.study_description.unwrap_or_else(|| "No study description".to_string()),
+                    "study_date": study.study_date.unwrap_or_else(|| "No study date".to_string()),
+                    "study_time": study.study_time.unwrap_or_else(|| "No study time".to_string()),
+                    "patient_name": study.patient_name.unwrap_or_else(|| "No patient name".to_string()),
+                    "patient_id": study.patient_id.unwrap_or_else(|| "No patient ID".to_string()),
+                    "institution_name": study.institution_name.unwrap_or_else(|| "No institution".to_string()),
+                    "accession_no": study.accession_no.unwrap_or_else(|| "No accession number".to_string()),
+                    "patient_sex": study.patient_sex.unwrap_or_else(|| "Unknown".to_string()),
+                    "patient_birth_date": study.patient_birth_date.unwrap_or_else(|| "Unknown".to_string()),
+                    "referring_physician_name": study.referring_physician_name.unwrap_or_else(|| "Unknown".to_string()),
+                    "series_count": study.series_count,
+                    "images": study.images,
+                    "status": study.status,
+                    "created_at": study.created_at,
+                    "updated_at": study.updated_at,
+                    "sent_at": study.sent_at,
+                    "exists": exists,
+                    "path": study_path.to_string_lossy(),
+                });
 
                     studies_json.push(study_json);
                 }
 
-                let count = studies_json.len();
+                let total_pages = (total_count + limit as i64 - 1) / limit as i64;
+                let has_next_page = page < total_pages as u32;
+                let has_previous_page = page > 1;
 
                 let result = serde_json::json!({
-                    "studies": studies_json,
-                    "count": count
-                });
+                "studies": studies_json,
+                "pagination": {
+                    "current_page": page,
+                    "total_pages": total_pages,
+                    "total_items": total_count,
+                    "limit": limit,
+                    "offset": offset,
+                    "has_next_page": has_next_page,
+                    "has_previous_page": has_previous_page,
+                    "items_on_page": studies_json.len()
+                }
+            });
 
                 result
-            } Err(e) => {
-                log_error!("Error fetching studies from a database: {}", e);
+            }
+            Err(e) => {
+                log_error!("Error fetching paginated studies from database: {}", e);
 
                 let error_result = serde_json::json!({
-                    "studies": [],
-                    "count": 0,
-                    "error": e.to_string()
-                });
+                "studies": [],
+                "pagination": {
+                    "current_page": page,
+                    "total_pages": 0,
+                    "total_items": 0,
+                    "limit": limit,
+                    "offset": offset,
+                    "has_next_page": false,
+                    "has_previous_page": false,
+                    "items_on_page": 0
+                },
+                "error": e.to_string()
+            });
 
                 error_result
             }
         }
     }
+
+    pub async fn get_studies_paginated(&self, offset: i64, limit: i64) -> Result<(Vec<Study>, i64)> {
+        // First, get the total count
+        let total_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM studies"
+        )
+            .fetch_one(&self.pool)
+            .await
+            .context("Failed to get total studies count")?;
+
+        // Then get the paginated studies
+        let studies = sqlx::query_as::<_, Study>(
+            "SELECT * FROM studies ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        )
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(&self.pool)
+            .await
+            .context("Failed to fetch paginated studies")?;
+
+        Ok((studies, total_count))
+    }
+
+
 
 
     pub async fn update_study_status(&self, study_uid: &str, status: &str) -> Result<()> {

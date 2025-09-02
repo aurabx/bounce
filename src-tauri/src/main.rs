@@ -136,14 +136,14 @@ async fn receiver_stop(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn current_studies(app: AppHandle) -> Result<(), String> {
-    // let config = load_config(app.clone());
+async fn current_studies(app: AppHandle, page: Option<u32>, limit: Option<u32>) -> Result<(), String> {
+    let page = page.unwrap_or(1);
+    let limit = limit.unwrap_or(10);
     let database = app.state::<Database>();
 
-    let studies = database.current_studies().await;
+    let studies = database.current_studies(page, limit).await;
 
-    app.emit("current-studies", studies)
-        .unwrap();
+    app.emit("current-studies", studies).unwrap();
     Ok(())
 }
 
