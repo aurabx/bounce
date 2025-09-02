@@ -256,58 +256,9 @@ impl Metadata {
     /// Update the study metadata JSON file with study_uid as the key
     pub async fn update_study_metadata_status(
         app_handle: &AppHandle,
-        out_path: &Path,
         study_uid: String,
         status: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        // Path to the JSON metadata file
-        // let study_path = out_path.join(study_uid.clone());
-
-        let json_path = out_path.join(study_uid.clone() + ".json");
-
-        // Create new HashMap for studies if no file exists or load existing
-        let studies_map: HashMap<String, StudyInfo> = if json_path.exists() {
-            // Read and parse existing JSON file
-            let json_content = fs::read_to_string(&json_path)
-                .map_err(|e| format!("Failed to read study metadata file: {}", e))?;
-
-            let json_value: Value = serde_json::from_str(&json_content)
-                .map_err(|e| format!("Failed to parse study metadata JSON: {}", e))?;
-
-            // Extract the studies object
-            if let Some(studies) = json_value.get("studies").and_then(|s| s.as_object()) {
-                // Convert to our HashMap
-                let mut map = HashMap::new();
-                for (study_id, study_value) in studies {
-                    match serde_json::from_value::<StudyInfo>(study_value.clone()) {
-                        Ok(study_info) => {
-                            map.insert(study_id.clone(), study_info);
-                        }
-                        Err(e) => {
-                            log_error!("Failed to deserialize study info for {}: {}", study_id, e);
-                            // Continue with other studies
-                        }
-                    }
-                }
-                map
-            } else {
-                HashMap::new()
-            }
-        } else {
-            HashMap::new()
-        };
-
-        // Create the final JSON object with the studies map
-        let json_obj = json!({
-            "studies": studies_map,
-            "status": status,
-        });
-
-        // Write the JSON to file
-        fs::write(&json_path, serde_json::to_string_pretty(&json_obj)?)
-            .map_err(|e| format!("Failed to write study metadata file: {}", e))?;
-
-        log_info!("Updated study metadata status JSON: {}", json_path.display());
 
         let database = app_handle.state::<Database>();
 
@@ -344,5 +295,5 @@ impl Metadata {
         }
         image_count
     }
-    
+
 }

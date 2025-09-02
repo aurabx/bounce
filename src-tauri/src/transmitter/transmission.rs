@@ -210,7 +210,6 @@ impl Transmission {
 
         if let Err(err) = Metadata::update_study_metadata_status(
             &self.app_handle,
-            path.as_path(),
             study_uid,
             "SENT",
         ).await {
