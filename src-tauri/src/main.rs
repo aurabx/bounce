@@ -4,6 +4,7 @@ mod logger;
 mod receiver;
 mod store;
 mod transmitter;
+mod db;
 
 use crate::aura::aura_api::AuraApi;
 use crate::receiver::server::init_server_state;
@@ -13,6 +14,7 @@ use store::config::Config;
 use tauri::{AppHandle, Emitter, Listener, Manager, WindowEvent};
 use tauri_plugin_log::{Target, TargetKind};
 use tokio::sync::Mutex;
+use crate::db::database::Database;
 use crate::logger::{setup_logger_with_config, LogtailConfig};
 
 #[derive(Clone)]
@@ -70,6 +72,7 @@ async fn send_study(app: AppHandle, study_uid: String) -> Result<(), String> {
 #[tauri::command]
 async fn delete_study(app: AppHandle, study_uid: String) -> Result<(), String> {
     let transmission = Transmission::new(app);
+    let database = app.state::<Database>();
 
     transmission
         .delete_study(study_uid.clone())
@@ -78,6 +81,10 @@ async fn delete_study(app: AppHandle, study_uid: String) -> Result<(), String> {
 
     transmission
         .delete_local_study_meta(study_uid.clone())
+        .await
+        .expect("delete study meta panic");
+
+    database.delete_study(study_uid.clone())
         .await
         .expect("delete study meta panic");
 
@@ -110,9 +117,13 @@ async fn receiver_stop(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn current_studies(app: AppHandle) -> Result<(), String> {
-    let config = load_config(app.clone());
-    app.emit("current-studies", config.current_studies())
+async fn current_studies(app: AppHandle) -> Result<(), String> {
+    // let config = load_config(app.clone());
+    let database = app.state::<Database>();
+
+    let studies = database.current_studies().await;
+
+    app.emit("current-studies", studies)
         .unwrap();
     Ok(())
 }
@@ -136,6 +147,21 @@ fn main() {
 
             let handle = app.app_handle();
             let config = Config::load(handle.clone());
+
+            // Initialize database
+            let db_handle = handle.clone();
+            tauri::async_runtime::block_on(async move {
+                match Database::new(db_handle).await {
+                    Ok(database) => {
+                        handle.manage(database);
+                        log_info!("Database initialized successfully");
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to initialize database: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            });
 
             let logtail_config = LogtailConfig {
                 enable: config.send_logs == "yes",

@@ -122,7 +122,7 @@ impl Transmission {
     pub async fn delete_study(&self, study_uid: String) -> Result<()> {
         self.delete_local_study_files(study_uid.clone()).await?;
         self.delete_local_compressed_study(study_uid.clone()).await?;
-
+        self.delete_local_study_meta(study_uid.clone()).await?;
 
         log_info!("Deleted local study files and archive for {}", study_uid);
 
@@ -209,6 +209,7 @@ impl Transmission {
         }
 
         if let Err(err) = Metadata::update_study_metadata_status(
+            &self.app_handle,
             path.as_path(),
             study_uid,
             "SENT",
