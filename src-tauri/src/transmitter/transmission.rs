@@ -134,8 +134,6 @@ impl Transmission {
 
         let config = load_config(self.app_handle.clone());
         let delete_after_send = config.delete_after_success == "yes";
-        let out_dir = config.get_base_dir().clone();
-        let path = PathBuf::from(&out_dir);
 
         log_info!(
             "Starting send_study {} for upload: {}",
@@ -157,18 +155,33 @@ impl Transmission {
         log_info!("study_uid: {}", study_uid.clone());
         log_info!("upload_id: {}", upload_id.to_string());
 
+        // === Upload init
         self.aura_api
-            .upload_start(
+            .upload_init(
                 study_uid.clone(),
                 assembly.get("signature").unwrap().as_str().unwrap().to_string(),
                 upload_id.to_string(),
             )
             .await
+            .expect("Error sending upload init api message");
+
+        log_info!("Sent upload init to aura");
+
+        self.app_handle.emit("log", format!("Study data send to aurabox {}", study_uid.clone())).unwrap();
+
+        // === Upload start
+        // This would normally run just after the upload starts in uppy
+        // so we run it here before upload starts.
+        self.aura_api
+            .upload_save(
+                upload_id.clone().to_string(),
+                assembly.get("assembly_id").unwrap().as_str().unwrap().to_string(),
+                "start",
+            )
+            .await
             .expect("Error sending upload start api message");
 
         log_info!("Sent upload start to aura");
-
-        self.app_handle.emit("log", format!("Study data send to aurabox {}", study_uid.clone())).unwrap();
 
         // === Upload via TUS
         self.upload_via_tus(&assembly, &archive_path).await?;
@@ -179,17 +192,7 @@ impl Transmission {
 
         self.app_handle.emit("log", format!("Dicom send to aurabox storage {}", study_uid.clone())).unwrap();
 
-        self.aura_api
-            .upload_save(
-                upload_id.clone().to_string(),
-                assembly.get("assembly_id").unwrap().as_str().unwrap().to_string(),
-                "update",
-            )
-            .await
-            .expect("Error sending upload update api message");
-
-        log_info!("Sent upload update to aura");
-
+        // === Upload complete
         self.aura_api
             .upload_save(
                 upload_id.clone().to_string(),
@@ -197,7 +200,7 @@ impl Transmission {
                 "complete",
             )
             .await
-            .expect("Error sending complete update api message");
+            .expect("Error sending complete api message");
 
         log_info!("Sent upload complete to aura");
 
