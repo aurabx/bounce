@@ -1,4 +1,4 @@
-use sqlx::{migrate::MigrationType, Sqlite, SqlitePool};
+use sqlx::{SqlitePool};
 use anyhow::Result;
 
 pub async fn run_migrations(pool: &SqlitePool) -> Result<()> {

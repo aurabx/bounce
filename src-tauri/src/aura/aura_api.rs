@@ -39,6 +39,26 @@ impl AuraApi {
         Self::handle_response(response).await
     }
 
+    pub async fn upload_config(&self) -> anyhow::Result<Value> {
+        let config = load_config(self.app_handle.clone());
+
+        let url = format!("{}/api/bounce/config", config.get_api_endpoint());
+
+        println!("pulling uploader config (url: {})", url);
+
+        let response = self
+            .client
+            .get(&url)
+            .header("Content-Type", "application/json")
+            .header("Authorization", format!("Bearer {}", config.api_key))
+            .send()
+            .await?;
+
+        log_info!("uploader config status {}", response.status());
+
+        Self::handle_response(response).await
+    }
+
     pub async fn upload_init(
         &self,
         study_uid: String,

@@ -1,8 +1,7 @@
 use crate::db::{migrations, models::*};
 use anyhow::{Context, Result};
-use chrono::{DateTime, Utc};
-use sqlx::{Row, SqlitePool};
-use std::path::Path;
+use chrono::{Utc};
+use sqlx::{ SqlitePool};
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager};
 use crate::{load_config, log_error, log_info};

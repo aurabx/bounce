@@ -4,7 +4,7 @@ use anyhow::{anyhow, Context, Result};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use reqwest::{multipart, Client};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::io::{Seek, Write};
 use std::path::{Path, PathBuf};
 use std::{collections::HashMap, sync::Arc};
@@ -149,17 +149,29 @@ impl Transmission {
         log_info!("Preparing to send study zip: {:?}", archive_path);
 
         // === Create an Assembly on Transloadit, get the TUS URL back
-        let assembly = self.create_transloadit_assembly(&upload_id).await?;
+        // let assembly = self.create_transloadit_assembly(&upload_id).await?;
 
-        log_info!("signature: {}", assembly.get("signature").unwrap().as_str().unwrap().to_string());
+        // === Get upload config from aura
+        let upload_config = self.fetch_uploader_config(&upload_id).await?;
+
         log_info!("study_uid: {}", study_uid.clone());
         log_info!("upload_id: {}", upload_id.to_string());
+
+        let endpoint = upload_config.get("endpoint").unwrap().as_str().unwrap().to_string();
+        let token = upload_config.get("token").unwrap().as_str().unwrap().to_string();
+        let bucket = upload_config.get("bucket").unwrap().as_str().unwrap().to_string();
+        let assembly_id = upload_config.get("assembly_id").unwrap().as_str().unwrap().to_string();
+
+        log_info!("endpoint: {}", endpoint.clone());
+        log_info!("token: {}", token.to_string());
+        log_info!("bucket: {}", bucket.to_string());
+
 
         // === Upload init
         self.aura_api
             .upload_init(
                 study_uid.clone(),
-                assembly.get("signature").unwrap().as_str().unwrap().to_string(),
+                upload_config.get("endpoint").unwrap().as_str().unwrap().to_string(),
                 upload_id.to_string(),
             )
             .await
@@ -175,7 +187,7 @@ impl Transmission {
         self.aura_api
             .upload_save(
                 upload_id.clone().to_string(),
-                assembly.get("assembly_id").unwrap().as_str().unwrap().to_string(),
+                assembly_id.to_string(),
                 "start",
             )
             .await
@@ -184,10 +196,10 @@ impl Transmission {
         log_info!("Sent upload start to aura");
 
         // === Upload via TUS
-        self.upload_via_tus(&assembly, &archive_path).await?;
+        self.upload_via_tus(&upload_config, &archive_path).await?;
         log_info!(
             "Study sent successfully via TUS to {}",
-            assembly.get("tus_url").unwrap().as_str().unwrap().to_string()
+            endpoint
         );
 
         self.app_handle.emit("log", format!("Dicom send to aurabox storage {}", study_uid.clone())).unwrap();
@@ -196,7 +208,7 @@ impl Transmission {
         self.aura_api
             .upload_save(
                 upload_id.clone().to_string(),
-                assembly.get("assembly_id").unwrap().as_str().unwrap().to_string(),
+                assembly_id.to_string(),
                 "complete",
             )
             .await
@@ -524,10 +536,37 @@ impl Transmission {
         Ok(resp_json)
     }
 
+
+    /// Create a Transloadit Assembly and return its TUS upload URL.
+    async fn fetch_uploader_config(&self, upload_id: &Uuid) -> Result<Value> {
+        let upload_config = self.aura_api.upload_config().await?;
+
+        let lift_config = upload_config
+            .get("lift")
+            .unwrap();
+
+        let bucket = lift_config.get("bucket").unwrap().as_str();
+        let endpoint = lift_config.get("endpoint").unwrap().as_str();
+
+        log_info!("Uploader config bucket: {:#?}", bucket);
+        log_info!("Uploader config endpoint: {:#?}", endpoint);
+
+        let resp_json = json!({
+            "bucket": bucket,
+            "endpoint": endpoint,
+            "token": lift_config.get("token").unwrap().as_str(),
+            "assembly_id": lift_config.get("assembly_id").unwrap().as_str(),
+            "type": upload_config.get("type").unwrap().as_str(),
+            "mode": upload_config.get("mode").unwrap().as_str(),
+        });
+
+        Ok(resp_json)
+    }
+
     /// A simple TUS upload example.
     /// In a real TUS workflow, you might handle chunking, resume, or partial patches,
     /// but here we just do a single-chunk approach or a small streaming approach.
-    async fn upload_via_tus(&self, assembly: &Value, file_path: &Path) -> Result<()> {
+    async fn upload_via_tus(&self, upload_config: &Value, file_path: &Path) -> Result<()> {
         let file_size = fs::metadata(file_path)
             .await
             .context("Could not get metadata for file")?
@@ -538,13 +577,12 @@ impl Transmission {
             .and_then(|s| s.to_str())
             .unwrap_or("file.dcm.zip");
 
-        let tus_url = assembly.get("tus_url").unwrap().as_str().unwrap();
-        let assembly_url = assembly.get("assembly_url").unwrap().as_str().unwrap();
+        let endpoint = upload_config.get("endpoint").unwrap().as_str().unwrap();
+        let token = upload_config.get("token").unwrap().as_str().unwrap();
 
         let metadata_fields = vec![
             ("name", file_name),
             ("type", "application/zip"),
-            ("assembly_url", assembly_url),
             ("filename", file_name),
             ("fieldname", "file"),
             ("filetype", "application/zip"),
@@ -563,10 +601,11 @@ impl Transmission {
         // === 1) Create the TUS file on the server (POST ...)
         let create_req = self
             .client
-            .post(tus_url) // Transloadit’s TUS endpoint from assembly
+            .post(endpoint) // Transloadit’s TUS endpoint from assembly
             .header("Tus-Resumable", "1.0.0")
             .header("Upload-Length", file_size.to_string())
             .header("Upload-Metadata", upload_metadata)
+            .header("Authorization", format!("Bearer {}", token))
             .send()
             .await
             .context("Failed TUS file creation (POST)")?;
