@@ -87,6 +87,7 @@ impl AuraApi {
             .json(&json!({
                 "studies" : json_value.get("studies").unwrap(),
                 "mode" : "bulk",
+                "type": "lift",
                 "signature" : signature,
                 "upload_id" : upload_id,
             }))
@@ -131,6 +132,7 @@ impl AuraApi {
             .post(&url)
             .json(&json!({
                 "assembly_id" : assembly_id,
+                "type": "lift",
                 "upload_id" : upload_id,
             }))
             .header("Content-Type", "application/json")

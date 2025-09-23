@@ -171,7 +171,7 @@ impl Transmission {
         self.aura_api
             .upload_init(
                 study_uid.clone(),
-                upload_config.get("endpoint").unwrap().as_str().unwrap().to_string(),
+                assembly_id.to_string(),
                 upload_id.to_string(),
             )
             .await
