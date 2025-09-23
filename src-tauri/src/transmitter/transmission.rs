@@ -605,6 +605,7 @@ impl Transmission {
             .header("Tus-Resumable", "1.0.0")
             .header("Upload-Length", file_size.to_string())
             .header("Upload-Metadata", upload_metadata)
+            .header("Content-Length", "0")  // ← ADD THIS LINE
             .header("Authorization", format!("Bearer {}", token))
             .send()
             .await
@@ -647,6 +648,7 @@ impl Transmission {
             .header("Tus-Resumable", "1.0.0")
             .header("Upload-Offset", 0.to_string())
             .header("Content-Type", "application/offset+octet-stream")
+            .header("Authorization", format!("Bearer {}", token))
             .body(file_data)
             .send()
             .await
