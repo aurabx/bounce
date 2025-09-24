@@ -6,7 +6,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use reqwest::{multipart, Client};
 use serde_json::{json, Value};
-use std::io::{Seek, Write};
+use std::io::{Seek, Write, Cursor};
 use std::path::{Path, PathBuf};
 use std::{collections::HashMap, sync::Arc};
 use serde::{Deserialize, Serialize};
@@ -152,7 +152,7 @@ impl Transmission {
         // let assembly = self.create_transloadit_assembly(&upload_id).await?;
 
         // === Get upload config from aura
-        let upload_config = self.fetch_uploader_config(&upload_id).await?;
+        let upload_config = self.fetch_uploader_config().await?;
 
         log_info!("study_uid: {}", study_uid.clone());
         log_info!("upload_id: {}", upload_id.to_string());
@@ -467,8 +467,6 @@ impl Transmission {
     }
 
     /// A simple TUS upload example.
-    /// In a real TUS workflow, you might handle chunking, resume, or partial patches,
-    /// but here we just do a single-chunk approach or a small streaming approach.
     async fn upload_via_tus(&self, upload_config: &Value, file_path: &Path, upload_id: &Uuid) -> Result<()> {
         let file_size = fs::metadata(file_path)
             .await
@@ -497,7 +495,6 @@ impl Transmission {
             ("filetype", "application/zip"),
         ];
 
-        // 5) Convert them into "key <base64-of-value>" lines, then join with commas
         let encoded_metadata: Vec<String> = metadata_fields
             .into_iter()
             .map(|(k, v)| format!("{} {}", k, BASE64.encode(v)))
@@ -510,7 +507,7 @@ impl Transmission {
         // === 1) Create the TUS file on the server (POST ...)
         let create_req = self
             .client
-            .post(endpoint) // Transloadit’s TUS endpoint from assembly
+            .post(endpoint)
             .header("Tus-Resumable", "1.0.0")
             .header("Upload-Length", file_size.to_string())
             .header("Upload-Metadata", upload_metadata.clone())
@@ -533,7 +530,6 @@ impl Transmission {
             ));
         }
 
-        // TUS server responds with a `Location` header: the unique upload URL for this file
         let location_header = create_req
             .headers()
             .get("Location")
@@ -545,22 +541,22 @@ impl Transmission {
             .to_owned();
 
         // === 2) PATCH the file data (the actual upload)
-        // For large files, you might want to chunk this in a loop.
-        // For smaller files, we can read all into memory or do a stream approach with partial patching.
-        const CHUNK_SIZE: usize = 1024 * 1024 * 5; // 5MB chunks (adjust as needed)
+        const CHUNK_SIZE: usize = 1024 * 1024 * 5; // 5MB chunks
 
-        let mut file = fs::read(file_path)
+        // Read the entire file into memory and create a cursor
+        let file_data = fs::read(file_path)
             .await
             .context("Could not read archive to memory")?;
 
+        let mut cursor = Cursor::new(file_data);
         let mut uploaded_bytes = 0u64;
         let mut chunk_buffer = vec![0u8; CHUNK_SIZE];
 
         log_info!("Starting chunked upload of {} bytes in {}MB chunks", file_size, CHUNK_SIZE / 1024 / 1024);
 
         loop {
-            // Read next chunk using AsyncReadExt::read
-            let bytes_read = file.read(&mut chunk_buffer)
+            // Read next chunk using AsyncReadExt::read on the cursor
+            let bytes_read = cursor.read(&mut chunk_buffer)
                 .await
                 .context("Failed to read file chunk")?;
 
@@ -591,25 +587,24 @@ impl Transmission {
                 let body = patch_resp.text().await.ok();
                 log_error!("TUS chunk upload failed. Status: {}, Body: {:?}", status, body);
                 return Err(anyhow!(
-                "TUS upload patch failed. Status: {}, Body: {:?}",
-                status,
-                body
-            ));
+                    "TUS upload patch failed. Status: {}, Body: {:?}",
+                    status,
+                    body
+                ));
             }
 
             uploaded_bytes += bytes_read as u64;
 
-            // Optional: Report progress
+            // Report progress
             let progress = (uploaded_bytes as f64 / file_size as f64 * 100.0) as u32;
             if uploaded_bytes % (CHUNK_SIZE as u64 * 10) == 0 || uploaded_bytes == file_size {
                 log_info!("Upload progress: {}% ({}/{})", progress, uploaded_bytes, file_size);
 
-                // Emit progress event to frontend
-            if let Err(e) = self.app_handle.emit("upload-progress", json!({
-                "uploaded": uploaded_bytes,
-                "total": file_size,
-                "progress": progress
-            })) {
+                if let Err(e) = self.app_handle.emit("upload-progress", json!({
+                    "uploaded": uploaded_bytes,
+                    "total": file_size,
+                    "progress": progress
+                })) {
                     log_error!("Failed to emit progress event: {}", e);
                 }
             }
@@ -617,13 +612,12 @@ impl Transmission {
 
         log_info!("Upload completed successfully: {} bytes", uploaded_bytes);
 
-        // Verify we uploaded everything
         if uploaded_bytes != file_size {
             return Err(anyhow!(
-            "Upload incomplete: expected {} bytes, uploaded {} bytes",
-            file_size,
-            uploaded_bytes
-        ));
+                "Upload incomplete: expected {} bytes, uploaded {} bytes",
+                file_size,
+                uploaded_bytes
+            ));
         }
 
         Ok(())

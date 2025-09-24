@@ -46,11 +46,11 @@ impl DICOMServer {
         let ip_address: Result<Ipv4Addr, _> = server.config.ip_address.clone().parse();
         // let listen_addr = SocketAddrV4::new(Ipv4Addr::from(0), port);
         let listen_addr = SocketAddrV4::new(ip_address.unwrap(), port);
-        let listener = TcpListener::bind(listen_addr)?;
+        let listener = tokio::net::TcpListener::bind(listen_addr).await?;
         log_info!("listening on: tcp://{}", listen_addr);
 
         // Convert to tokio listener - this lets us use accept_async
-        let listener = tokio::net::TcpListener::from_std(listener)?;
+        // let listener = tokio::net::TcpListener::from_std(listener)?;
 
         let current_path = path.clone();
 
@@ -67,6 +67,8 @@ impl DICOMServer {
                 Ok(Ok((scu_stream, _addr))) => {
                     // Convert to std TcpStream for your DICOM library
                     let std_stream = scu_stream.into_std()?;
+
+                    std_stream.set_nonblocking(false)?;
 
                     // Process the connection
                     if let Err(e) = server.run_store_sync(std_stream, &current_path).await {
