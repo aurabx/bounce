@@ -40,9 +40,9 @@ impl Database {
         Ok(Self { pool, app_handle })
     }
 
-    pub fn pool(&self) -> &SqlitePool {
-        &self.pool
-    }
+    // pub fn pool(&self) -> &SqlitePool {
+    //     &self.pool
+    // }
 
     // Study operations
     pub async fn create_or_update_study(&self, new_study: Study) -> Result<Study> {

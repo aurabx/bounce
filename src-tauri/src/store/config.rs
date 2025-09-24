@@ -140,7 +140,7 @@ impl Config {
 
         match mode.as_str() {
             "staging" => "https://staging-5em2ouy-pghszvpk65pns.au.platformsh.site".to_string(),
-            "development" => "https://dev-54ta5gq-pghszvpk65pns.au.platformsh.site".to_string(),
+            "dev" => "https://dev-54ta5gq-pghszvpk65pns.au.platformsh.site".to_string(),
             "local" => "https://aura.lndo.site".to_string(),
             _ => format!("https://{}.aurabox.app", region),
         }
@@ -162,87 +162,5 @@ impl Config {
         file_path
     }
 
-    pub fn current_studies(&self) -> Value {
-        let storage_dir = self.get_base_dir().clone();
-        let storage_dir = storage_dir.as_str();
 
-        // Create a path to the storage directory
-        let path = std::path::Path::new(storage_dir);
-
-        // Initialize an empty array to store our results
-        let mut studies = Value::Array(Vec::new());
-
-        // Check if the directory exists
-        if path.exists() && path.is_dir() {
-            // Read the directory entries
-            if let Ok(entries) = std::fs::read_dir(path) {
-                // Process each entry in the directory
-                for entry in entries.filter_map(Result::ok) {
-                    let entry_path = entry.path();
-
-                    // Check if this is a directory
-                    if entry_path.is_file() && entry_path.extension() == Some(OsStr::new("json")) {
-                        // Look for metadata.json in this directory
-                        let metadata_path = entry_path.clone();
-
-                        log_info!("metadata_path {:?}", metadata_path);
-
-                        if metadata_path.exists() && metadata_path.is_file() {
-                            // Read and parse the metadata file
-                            if let Ok(metadata_content) = std::fs::read_to_string(&metadata_path) {
-                                if let Ok(metadata) =
-                                    serde_json::from_str::<Value>(&metadata_content)
-                                {
-                                    let status = metadata
-                                        .get("status")
-                                        .and_then(|s| s.as_str())
-                                        .unwrap_or("UNKNOWN")
-                                        .to_string();
-
-                                    // Extract information from the metadata
-                                    if let Some(studies_data) = metadata.get("studies") {
-                                        // Iterate through each study in the metadata
-                                        if let Some(studies_obj) = studies_data.as_object() {
-                                            for (_, study_info) in studies_obj {
-                                                let study_uid = Self::extract_field(study_info, "study_uid");
-                                                // Create a study object with extracted information
-                                                let study = json!({
-                                                    "study_uid": study_uid,
-                                                    "study_description": Self::extract_field(study_info, "study_description"),
-                                                    "study_date": Self::extract_field(study_info, "study_date"),
-                                                    "study_time": Self::extract_field(study_info, "study_time"),
-                                                    "path": entry_path.to_string_lossy(),
-                                                    "exists": path.join(study_uid).exists(),
-                                                    "status": status,
-                                                });
-
-                                                // Add the study to our array
-                                                studies.as_array_mut().unwrap().push(study);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        let count = studies.as_array().unwrap().len();
-
-        // Return the array as a JSON value
-        Value::Object(serde_json::Map::from_iter([
-            ("studies".to_string(), studies),
-            ("count".to_string(), Value::from(count)),
-        ]))
-    }
-
-    fn extract_field(study_info: &Value, index: &str) -> String {
-        study_info
-            .get(index)
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-            .unwrap_or(format!("No {}", index))
-    }
 }
