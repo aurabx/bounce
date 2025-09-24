@@ -39,7 +39,27 @@ impl AuraApi {
         Self::handle_response(response).await
     }
 
-    pub async fn upload_start(
+    pub async fn upload_config(&self) -> anyhow::Result<Value> {
+        let config = load_config(self.app_handle.clone());
+
+        let url = format!("{}/api/bounce/config", config.get_api_endpoint());
+
+        println!("pulling uploader config (url: {})", url);
+
+        let response = self
+            .client
+            .get(&url)
+            .header("Content-Type", "application/json")
+            .header("Authorization", format!("Bearer {}", config.api_key))
+            .send()
+            .await?;
+
+        log_info!("uploader config status {}", response.status());
+
+        Self::handle_response(response).await
+    }
+
+    pub async fn upload_init(
         &self,
         study_uid: String,
         signature: String,
@@ -51,14 +71,13 @@ impl AuraApi {
         );
 
         let config = load_config(self.app_handle.clone());
-        let study_path = config.resolve_study_path(&study_uid);
         let json_path = config.resolve_metadata_path(&study_uid);
 
         let json_content = fs::read_to_string(&json_path)?;
         let json_value: Value = serde_json::from_str::<Value>(&json_content)?;
 
         let url = format!(
-            "{}/api/bounce/upload/start",
+            "{}/api/bounce/upload/init",
             config.get_api_endpoint()
         );
 
@@ -67,7 +86,8 @@ impl AuraApi {
             .post(&url)
             .json(&json!({
                 "studies" : json_value.get("studies").unwrap(),
-                "mode" : "supplier",
+                "mode" : "bulk",
+                "type": "lift",
                 "signature" : signature,
                 "upload_id" : upload_id,
             }))
@@ -94,7 +114,7 @@ impl AuraApi {
         let config = load_config(self.app_handle.clone());
         let path = match method {
             "complete" => "complete".to_string(),
-            _ => "update".to_string(),
+            _ => "start".to_string(),
         };
 
         let url = format!(
@@ -112,6 +132,7 @@ impl AuraApi {
             .post(&url)
             .json(&json!({
                 "assembly_id" : assembly_id,
+                "type": "lift",
                 "upload_id" : upload_id,
             }))
             .header("Content-Type", "application/json")

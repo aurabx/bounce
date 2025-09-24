@@ -41,7 +41,7 @@ storescu -aec BOUNCE 127.0.0.1 104 /path/to/test.dcm
 ### Build
 
 1. Install and run
-```shell
+```bash
 npm install
 npx tauri dev
 ```
@@ -49,19 +49,27 @@ npx tauri dev
 ### Build the UI
 
 1. Build the UI
-```
-$ npm run build
+```bash
+npm run build
 ```
 
 2. Run Tauri locally
 
-```
-$ next dev
+```bash
+next dev
 ```
 
 3. Or, build the app
 
-```
+```bash
 npm install
 npm run tauri dev
+```
+
+### Build for release
+
+1. Update the version number in package.json, Cargo.toml and tauri.conf.json, e.g.
+
+```bash
+./update-version.sh 1.0.0
 ```

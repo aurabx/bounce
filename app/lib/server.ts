@@ -12,7 +12,6 @@ export const receiverStart = async () => {
 };
 
 export const receiverStop = async () => {
-
     try {
         await invoke('receiver_stop'); // Pass the port to Tauri
         console.info(`Dicom server stopped`);

@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.9.0"
+version = "1.0.0"
 description = "Bounce"
 authors = ["Aurabox"]
 license = ""
@@ -8,6 +8,7 @@ repository = ""
 default-run = "app"
 edition = "2021"
 rust-version = "1.60"
+
 
 [build]
 rustflags = ["--cfg", "tokio_allow_from_blocking_fd"]
@@ -20,7 +21,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2.4.0", features = ["tray-icon", "image-ico", "image-png", "unstable"] }
 
 # Async runtime
-tokio = { version = "1.43.0", features = ["full"] }
+tokio = { version = "1.43.2", features = ["full"] }
 
 # DICOM library
 dicom = { version = "0.8.0" }
@@ -41,7 +42,7 @@ chrono = { version = "0.4", features = ["serde"] }
 
 # Miscellaneous utilities
 anyhow = "1.0.79"
-zip = "2.2.1"
+zip = "5.1.1"
 walkdir = "2.5.0"
 snafu = "0.8"
 tauri-plugin-store = "2"
