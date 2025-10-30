@@ -1,0 +1,774 @@
+# Development Guide
+
+This guide provides detailed instructions for developers contributing to or working with the Bounce codebase.
+
+## Table of Contents
+
+- [Getting Started](#getting-started)
+- [Development Environment](#development-environment)
+- [Project Structure](#project-structure)
+- [Development Workflow](#development-workflow)
+- [Building](#building)
+- [Testing](#testing)
+- [Debugging](#debugging)
+- [Code Style](#code-style)
+- [Common Tasks](#common-tasks)
+- [Troubleshooting](#troubleshooting)
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+Before you begin, ensure you have the following installed:
+
+#### Required
+
+- **Node.js** 18+ and npm
+  ```bash
+  node --version  # Should be 18.x or higher
+  npm --version
+  ```
+
+- **Rust** (latest stable) and Cargo
+  ```bash
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+  rustc --version  # Should be 1.60 or higher
+  ```
+
+- **Tauri CLI** (installed via npm)
+  ```bash
+  npm install --save-dev @tauri-apps/cli
+  ```
+
+#### Platform-Specific Dependencies
+
+**Linux** (Ubuntu/Debian):
+```bash
+sudo apt update
+sudo apt install libwebkit2gtk-4.1-dev \
+  build-essential \
+  curl \
+  wget \
+  file \
+  libssl-dev \
+  libsqlite3-dev \
+  libgtk-3-dev \
+  libayatana-appindicator3-dev \
+  librsvg2-dev
+```
+
+**macOS**:
+```bash
+xcode-select --install
+```
+
+**Windows**:
+- Install [Microsoft Visual Studio C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
+- Install [WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (usually pre-installed on Windows 11)
+
+### Initial Setup
+
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/aurabx/bounce.git
+   cd bounce
+   ```
+
+2. **Install Node dependencies**:
+   ```bash
+   npm install
+   ```
+
+3. **Build Rust dependencies** (optional, happens automatically):
+   ```bash
+   cd src-tauri
+   cargo build
+   cd ..
+   ```
+
+4. **Run the application in development mode**:
+   ```bash
+   npm run tauri:dev
+   ```
+
+The application will launch with hot-reload enabled for both frontend and backend changes.
+
+---
+
+## Development Environment
+
+### Recommended IDE Setup
+
+#### Visual Studio Code
+
+**Extensions**:
+- [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer) - Rust language support
+- [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) - Tauri development tools
+- [ESLint](https://marketplace.visualstudio.com/items?itemName=dbaeumer.vscode-eslint) - JavaScript/TypeScript linting
+- [Prettier](https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode) - Code formatting
+- [Tailwind CSS IntelliSense](https://marketplace.visualstudio.com/items?itemName=bradlc.vscode-tailwindcss) - Tailwind autocomplete
+
+**Workspace Settings** (`.vscode/settings.json`):
+```json
+{
+  "rust-analyzer.cargo.features": "all",
+  "rust-analyzer.checkOnSave.command": "clippy",
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": true
+  },
+  "[rust]": {
+    "editor.defaultFormatter": "rust-lang.rust-analyzer"
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  }
+}
+```
+
+#### IntelliJ IDEA / CLion
+
+- Install Rust plugin
+- Install JavaScript plugin
+- Configure Cargo to use nightly (optional)
+
+---
+
+## Project Structure
+
+```
+bounce/
+├── app/                          # Next.js frontend
+│   ├── components/               # React components
+│   │   ├── Fields/              # Form field components
+│   │   │   ├── Alert.tsx
+│   │   │   ├── SelectInput.tsx
+│   │   │   └── TextInput.tsx
+│   │   ├── CurrentStatus.tsx    # Server status widget
+│   │   ├── EventHandler.tsx     # Backend event listener
+│   │   ├── MenuItem.tsx         # Navigation menu item
+│   │   ├── PageLayout.tsx       # App layout wrapper
+│   │   ├── PageTitle.tsx        # Page header
+│   │   ├── Providers.tsx        # Redux provider
+│   │   ├── Settings.tsx         # Settings form
+│   │   ├── Sidebar.tsx          # Navigation sidebar
+│   │   └── Tray.tsx             # System tray component
+│   ├── lib/                     # Frontend utilities
+│   │   ├── customHooks.ts       # Custom React hooks
+│   │   ├── fields.ts            # Form field definitions
+│   │   ├── helpers.ts           # Helper functions
+│   │   ├── hook.ts              # Additional hooks
+│   │   ├── menu.ts              # Menu configuration
+│   │   ├── server.ts            # Server utilities
+│   │   ├── store.ts             # Redux store
+│   │   └── types.ts             # TypeScript types
+│   ├── logs/                    # Logs page
+│   │   └── page.tsx
+│   ├── settings/                # Settings page
+│   │   └── page.tsx
+│   ├── studies/                 # Studies page
+│   │   └── page.tsx
+│   ├── tools/                   # Tools page
+│   │   └── page.tsx
+│   ├── favicon.ico
+│   ├── globals.css              # Global styles
+│   ├── layout.tsx               # Root layout
+│   └── page.tsx                 # Home page
+│
+├── src-tauri/                   # Rust backend
+│   ├── src/
+│   │   ├── aura/                # Aurabox API client
+│   │   │   ├── aura_api.rs      # HTTP API client
+│   │   │   └── mod.rs
+│   │   ├── db/                  # Database layer
+│   │   │   ├── database.rs      # DB connection & queries
+│   │   │   ├── migrations.rs    # Schema migrations
+│   │   │   ├── models.rs        # Data models
+│   │   │   └── mod.rs
+│   │   ├── receiver/            # DICOM receiver
+│   │   │   ├── dicom_server.rs  # DICOM C-STORE SCP
+│   │   │   ├── enums.rs         # DICOM constants
+│   │   │   ├── metadata.rs      # Metadata extraction
+│   │   │   ├── server.rs        # Server lifecycle
+│   │   │   └── mod.rs
+│   │   ├── transmitter/         # Upload manager
+│   │   │   ├── background.rs    # Background tasks
+│   │   │   ├── transmission.rs  # Upload logic
+│   │   │   └── mod.rs
+│   │   ├── store/               # Configuration
+│   │   │   ├── config.rs        # Config management
+│   │   │   └── mod.rs
+│   │   ├── lib/                 # Utilities
+│   │   │   ├── tray_icon.rs     # System tray
+│   │   │   └── mod.rs
+│   │   ├── logger.rs            # Logging setup
+│   │   └── main.rs              # Entry point
+│   ├── build.rs                 # Build script
+│   ├── Cargo.toml               # Rust dependencies
+│   └── tauri.conf.json          # Tauri configuration
+│
+├── docs/                        # Documentation
+│   ├── ARCHITECTURE.md
+│   ├── API.md
+│   ├── CONFIGURATION.md
+│   └── DEVELOPMENT.md (this file)
+│
+├── public/                      # Static assets
+├── .gitignore
+├── next.config.js               # Next.js config
+├── package.json                 # Node dependencies
+├── postcss.config.js            # PostCSS config
+├── tailwind.config.ts           # Tailwind config
+├── tsconfig.json                # TypeScript config
+└── README.md
+```
+
+---
+
+## Development Workflow
+
+### Running the Development Server
+
+```bash
+# Start Tauri app with hot-reload (recommended)
+npm run tauri:dev
+
+# Or, run frontend and backend separately:
+npm run dev          # Frontend only (Next.js)
+cargo run --manifest-path=src-tauri/Cargo.toml  # Backend only
+```
+
+### Making Changes
+
+#### Frontend Changes
+
+1. Edit files in `app/` directory
+2. Changes will hot-reload automatically
+3. Check browser console for errors
+4. Use React DevTools for component debugging
+
+#### Backend Changes
+
+1. Edit files in `src-tauri/src/`
+2. Save the file
+3. Backend will recompile and restart automatically
+4. Check terminal output for compile errors
+
+### Adding Dependencies
+
+**Frontend (npm)**:
+```bash
+npm install <package-name>
+npm install --save-dev <dev-package-name>
+```
+
+**Backend (Cargo)**:
+```bash
+cd src-tauri
+cargo add <crate-name>
+cargo add --dev <dev-crate-name>
+cd ..
+```
+
+---
+
+## Building
+
+### Development Build
+
+```bash
+npm run tauri dev
+```
+
+### Production Build
+
+```bash
+# Build frontend
+npm run build
+
+# Build Tauri app (includes frontend build)
+npm run tauri:build
+```
+
+Output locations:
+- **macOS**: `src-tauri/target/release/bundle/dmg/`
+- **Windows**: `src-tauri/target/release/bundle/msi/`
+- **Linux**: `src-tauri/target/release/bundle/deb/` or `appimage/`
+
+### Build for Specific Platform
+
+```bash
+# Build for current platform only
+npm run tauri:build
+
+# Build with custom target (advanced)
+cd src-tauri
+cargo build --release --target x86_64-pc-windows-msvc
+```
+
+---
+
+## Testing
+
+### Frontend Tests
+
+Currently, the project doesn't have a test suite set up. To add testing:
+
+```bash
+npm install --save-dev @testing-library/react @testing-library/jest-dom jest
+```
+
+### Backend Tests
+
+**Unit tests**:
+```bash
+cd src-tauri
+cargo test
+```
+
+**Integration tests**: Add to `src-tauri/tests/`
+
+### Manual Testing
+
+#### Test DICOM Receiver
+
+1. Start the app in dev mode
+2. Configure settings (API key, port, etc.)
+3. Start the DICOM server
+4. Use DCMTK to send test files:
+
+```bash
+# C-ECHO (connectivity test)
+echoscu -v -aec BOUNCE localhost 104
+
+# C-STORE (send DICOM file)
+storescu -v -aec BOUNCE localhost 104 test.dcm
+```
+
+#### Test File Upload
+
+1. Send DICOM files via C-STORE
+2. Wait 10 seconds (debounce period)
+3. Check Studies page for upload status
+4. Verify file appears in Aurabox
+
+---
+
+## Debugging
+
+### Frontend Debugging
+
+**Chrome DevTools**:
+- Open the application
+- Right-click → "Inspect Element"
+- Use Console, Network, and React DevTools tabs
+
+**Console Logging**:
+```typescript
+console.log('Debug info:', variable);
+```
+
+### Backend Debugging
+
+**Print Debugging**:
+```rust
+println!("Debug: {:?}", value);
+```
+
+**Logging**:
+```rust
+use crate::{log_info, log_error};
+
+log_info!("Server started on port {}", port);
+log_error!("Failed to connect: {}", error);
+```
+
+**Rust Debugger (LLDB/GDB)**:
+
+Add to `src-tauri/.cargo/config.toml`:
+```toml
+[build]
+target-dir = "target"
+
+[profile.dev]
+split-debuginfo = "unpacked"
+```
+
+Then use VS Code's CodeLLDB extension or command line:
+```bash
+rust-lldb target/debug/app
+```
+
+**Check Logs**:
+- Application logs are written to: `~/.local/share/com.aurabox.bounce/logs/` (Linux)
+- Or: `~/Library/Application Support/com.aurabox.bounce/logs/` (macOS)
+- Or: `%APPDATA%\com.aurabox.bounce\logs\` (Windows)
+
+---
+
+## Code Style
+
+### Rust Code Style
+
+Follow standard Rust conventions:
+
+```bash
+# Format code
+cargo fmt
+
+# Lint code
+cargo clippy
+
+# Fix lints automatically
+cargo clippy --fix
+```
+
+**Conventions**:
+- Use `snake_case` for functions and variables
+- Use `PascalCase` for types and traits
+- Add documentation comments (`///`) for public APIs
+- Use `Result` and `?` for error handling
+- Prefer `async/await` over callbacks
+
+**Example**:
+```rust
+/// Processes a DICOM study and uploads it to the cloud.
+///
+/// # Arguments
+/// * `study_uid` - The unique identifier for the study
+///
+/// # Returns
+/// * `Ok(())` if successful
+/// * `Err` if upload fails
+pub async fn process_study(study_uid: String) -> Result<()> {
+    let study = load_study(&study_uid).await?;
+    let archive = compress_study(&study).await?;
+    upload_archive(&archive).await?;
+    Ok(())
+}
+```
+
+### TypeScript/React Code Style
+
+```bash
+# Lint code
+npm run lint
+
+# Format code (if Prettier is configured)
+npx prettier --write .
+```
+
+**Conventions**:
+- Use `camelCase` for variables and functions
+- Use `PascalCase` for components and types
+- Use functional components with hooks
+- Add JSDoc comments for complex functions
+- Prefer `const` over `let`
+
+**Example**:
+```typescript
+/**
+ * Displays the current status of the DICOM receiver
+ */
+export function CurrentStatus() {
+  const [status, setStatus] = useState<string>('stopped');
+  
+  useEffect(() => {
+    // Subscribe to status events
+    const unlisten = listen('server-status', (event) => {
+      setStatus(event.payload as string);
+    });
+    
+    return () => { unlisten(); };
+  }, []);
+  
+  return (
+    <div className="status-widget">
+      <span>Status: {status}</span>
+    </div>
+  );
+}
+```
+
+---
+
+## Common Tasks
+
+### Adding a New Tauri Command
+
+1. **Define the command in `src-tauri/src/main.rs`**:
+
+```rust
+#[tauri::command]
+async fn my_new_command(app: AppHandle, param: String) -> Result<String, String> {
+    println!("Received: {}", param);
+    Ok(format!("Processed: {}", param))
+}
+```
+
+2. **Register the command**:
+
+```rust
+fn main() {
+    tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![
+            receiver_start,
+            receiver_stop,
+            my_new_command,  // Add here
+            // ... other commands
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
+```
+
+3. **Call from frontend**:
+
+```typescript
+import { invoke } from '@tauri-apps/api/core';
+
+const result = await invoke<string>('my_new_command', { param: 'test' });
+console.log(result);
+```
+
+### Adding a New Page
+
+1. **Create page file**: `app/my-page/page.tsx`
+
+```typescript
+export default function MyPage() {
+  return (
+    <div>
+      <h1>My New Page</h1>
+    </div>
+  );
+}
+```
+
+2. **Add to menu**: Update `app/lib/menu.ts`
+
+```typescript
+export const menuItems = [
+  // ... existing items
+  { name: 'My Page', href: '/my-page', icon: DocumentIcon },
+];
+```
+
+### Adding a New Database Table
+
+1. **Create migration in `src-tauri/src/db/migrations.rs`**:
+
+```rust
+pub async fn run_migrations(pool: &SqlitePool) -> Result<()> {
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS my_table (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )"
+    )
+    .execute(pool)
+    .await?;
+    
+    Ok(())
+}
+```
+
+2. **Add model in `src-tauri/src/db/models.rs`**:
+
+```rust
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MyModel {
+    pub id: i64,
+    pub name: String,
+    pub created_at: String,
+}
+```
+
+3. **Add queries in `src-tauri/src/db/database.rs`**:
+
+```rust
+impl Database {
+    pub async fn insert_my_model(&self, name: String) -> Result<i64> {
+        let result = sqlx::query("INSERT INTO my_table (name) VALUES (?)")
+            .bind(name)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.last_insert_rowid())
+    }
+}
+```
+
+### Updating Application Version
+
+Use the provided script:
+
+```bash
+./update-version.sh 1.2.3
+```
+
+This updates:
+- `package.json`
+- `src-tauri/Cargo.toml`
+- `src-tauri/tauri.conf.json`
+
+---
+
+## Troubleshooting
+
+### Build Fails with Rust Errors
+
+**Problem**: Cargo build fails with dependency errors
+
+**Solution**:
+```bash
+cd src-tauri
+cargo clean
+cargo update
+cargo build
+```
+
+### Frontend Hot Reload Not Working
+
+**Problem**: Changes to React components don't reflect
+
+**Solution**:
+1. Stop the dev server (Ctrl+C)
+2. Clear Next.js cache: `rm -rf .next`
+3. Restart: `npm run tauri:dev`
+
+### DICOM Server Won't Bind to Port
+
+**Problem**: "Address already in use" error
+
+**Solution**:
+```bash
+# Check what's using port 104
+sudo lsof -i :104
+
+# Kill the process if needed
+sudo kill -9 <PID>
+
+# Or use a different port in Settings
+```
+
+### WebView Not Loading on Linux
+
+**Problem**: Blank window on Linux
+
+**Solution**:
+```bash
+# Install WebKit dependencies
+sudo apt install webkit2gtk-4.1-dev
+
+# If still failing, check:
+ldd src-tauri/target/debug/app
+```
+
+### Database Migration Fails
+
+**Problem**: SQLite errors on startup
+
+**Solution**:
+```bash
+# Delete database and let it recreate
+rm ~/.local/share/com.aurabox.bounce/bounce.db
+
+# Restart app
+```
+
+### TypeScript Type Errors
+
+**Problem**: Type mismatches in frontend code
+
+**Solution**:
+```bash
+# Regenerate types
+npm run build
+
+# Or ignore temporarily (not recommended)
+// @ts-ignore
+```
+
+---
+
+## CI/CD
+
+### GitHub Actions (Example)
+
+Create `.github/workflows/build.yml`:
+
+```yaml
+name: Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        platform: [ubuntu-latest, windows-latest, macos-latest]
+    
+    runs-on: ${{ matrix.platform }}
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+      
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      
+      - name: Install dependencies (Ubuntu)
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          sudo apt update
+          sudo apt install -y libwebkit2gtk-4.1-dev libssl-dev libsqlite3-dev
+      
+      - name: Install npm dependencies
+        run: npm install
+      
+      - name: Build frontend
+        run: npm run build
+      
+      - name: Build Tauri app
+        run: npm run tauri:build
+```
+
+---
+
+## Resources
+
+- [Tauri Documentation](https://tauri.app/v1/guides/)
+- [Next.js Documentation](https://nextjs.org/docs)
+- [Rust Book](https://doc.rust-lang.org/book/)
+- [DICOM Standard](https://www.dicomstandard.org/)
+- [TUS Protocol](https://tus.io/)
+
+---
+
+## Getting Help
+
+If you encounter issues not covered here:
+
+1. Check existing [GitHub Issues](https://github.com/aurabx/bounce/issues)
+2. Review application logs
+3. Search [Tauri Discord](https://discord.com/invite/tauri)
+4. Contact the team: dev@aurabox.cloud
