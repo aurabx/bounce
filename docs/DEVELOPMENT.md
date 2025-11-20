@@ -142,97 +142,6 @@ The application will launch with hot-reload enabled for both frontend and backen
 
 ---
 
-## Project Structure
-
-```
-bounce/
-├── app/                          # Next.js frontend
-│   ├── components/               # React components
-│   │   ├── Fields/              # Form field components
-│   │   │   ├── Alert.tsx
-│   │   │   ├── SelectInput.tsx
-│   │   │   └── TextInput.tsx
-│   │   ├── CurrentStatus.tsx    # Server status widget
-│   │   ├── EventHandler.tsx     # Backend event listener
-│   │   ├── MenuItem.tsx         # Navigation menu item
-│   │   ├── PageLayout.tsx       # App layout wrapper
-│   │   ├── PageTitle.tsx        # Page header
-│   │   ├── Providers.tsx        # Redux provider
-│   │   ├── Settings.tsx         # Settings form
-│   │   ├── Sidebar.tsx          # Navigation sidebar
-│   │   └── Tray.tsx             # System tray component
-│   ├── lib/                     # Frontend utilities
-│   │   ├── customHooks.ts       # Custom React hooks
-│   │   ├── fields.ts            # Form field definitions
-│   │   ├── helpers.ts           # Helper functions
-│   │   ├── hook.ts              # Additional hooks
-│   │   ├── menu.ts              # Menu configuration
-│   │   ├── server.ts            # Server utilities
-│   │   ├── store.ts             # Redux store
-│   │   └── types.ts             # TypeScript types
-│   ├── logs/                    # Logs page
-│   │   └── page.tsx
-│   ├── settings/                # Settings page
-│   │   └── page.tsx
-│   ├── studies/                 # Studies page
-│   │   └── page.tsx
-│   ├── tools/                   # Tools page
-│   │   └── page.tsx
-│   ├── favicon.ico
-│   ├── globals.css              # Global styles
-│   ├── layout.tsx               # Root layout
-│   └── page.tsx                 # Home page
-│
-├── src-tauri/                   # Rust backend
-│   ├── src/
-│   │   ├── aura/                # Aurabox API client
-│   │   │   ├── aura_api.rs      # HTTP API client
-│   │   │   └── mod.rs
-│   │   ├── db/                  # Database layer
-│   │   │   ├── database.rs      # DB connection & queries
-│   │   │   ├── migrations.rs    # Schema migrations
-│   │   │   ├── models.rs        # Data models
-│   │   │   └── mod.rs
-│   │   ├── receiver/            # DICOM receiver
-│   │   │   ├── dicom_server.rs  # DICOM C-STORE SCP
-│   │   │   ├── enums.rs         # DICOM constants
-│   │   │   ├── metadata.rs      # Metadata extraction
-│   │   │   ├── server.rs        # Server lifecycle
-│   │   │   └── mod.rs
-│   │   ├── transmitter/         # Upload manager
-│   │   │   ├── background.rs    # Background tasks
-│   │   │   ├── transmission.rs  # Upload logic
-│   │   │   └── mod.rs
-│   │   ├── store/               # Configuration
-│   │   │   ├── config.rs        # Config management
-│   │   │   └── mod.rs
-│   │   ├── lib/                 # Utilities
-│   │   │   ├── tray_icon.rs     # System tray
-│   │   │   └── mod.rs
-│   │   ├── logger.rs            # Logging setup
-│   │   └── main.rs              # Entry point
-│   ├── build.rs                 # Build script
-│   ├── Cargo.toml               # Rust dependencies
-│   └── tauri.conf.json          # Tauri configuration
-│
-├── docs/                        # Documentation
-│   ├── ARCHITECTURE.md
-│   ├── API.md
-│   ├── CONFIGURATION.md
-│   └── DEVELOPMENT.md (this file)
-│
-├── public/                      # Static assets
-├── .gitignore
-├── next.config.js               # Next.js config
-├── package.json                 # Node dependencies
-├── postcss.config.js            # PostCSS config
-├── tailwind.config.ts           # Tailwind config
-├── tsconfig.json                # TypeScript config
-└── README.md
-```
-
----
-
 ## Development Workflow
 
 ### Running the Development Server
@@ -347,10 +256,10 @@ cargo test
 
 ```bash
 # C-ECHO (connectivity test)
-echoscu -v -aec BOUNCE localhost 104
+echoscu -v -aec BOUNCE localhost 12345
 
 # C-STORE (send DICOM file)
-storescu -v -aec BOUNCE localhost 104 test.dcm
+storescu -v -aec BOUNCE localhost 12345 test.dcm
 ```
 
 #### Test File Upload
@@ -651,8 +560,8 @@ cargo build
 
 **Solution**:
 ```bash
-# Check what's using port 104
-sudo lsof -i :104
+# Check what's using port 12345
+sudo lsof -i :12345
 
 # Kill the process if needed
 sudo kill -9 <PID>
