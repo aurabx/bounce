@@ -4,7 +4,7 @@
 
 **A lightweight DICOM C-STORE receiver that securely forwards medical imaging to Aurabox**
 
-[![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
+[![License: BOUNCE EULA](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
 [![Platform: Windows | macOS | Linux](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue.svg)]()
 
 </div>
@@ -217,9 +217,7 @@ Bounce is designed for secure deployments in healthcare environments:
 
 ## 📝 License
 
-Copyright © 2024 Aurabox Pty Ltd. All rights reserved.
-
-This software is proprietary and confidential. Unauthorized copying, distribution, or use is strictly prohibited.
+See [BOUNCE EULA](LICENSE).
 
 ---
 
