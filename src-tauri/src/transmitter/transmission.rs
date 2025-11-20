@@ -4,13 +4,13 @@ use tokio::io::AsyncReadExt;
 use anyhow::{anyhow, Context, Result};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
-use reqwest::{multipart, Client};
+use reqwest::Client;
 use serde_json::{json, Value};
 use std::io::{Seek, Write, Cursor};
 use std::path::{Path, PathBuf};
 use std::{collections::HashMap, sync::Arc};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::{oneshot, Mutex};
 use tokio::time::{sleep, Duration};
 use tokio::{fs, fs::File};
@@ -18,7 +18,9 @@ use uuid::Uuid;
 use walkdir::{DirEntry, WalkDir};
 use zip::result::ZipError;
 use zip::{write::SimpleFileOptions, write::ZipWriter, CompressionMethod};
+use crate::db::database::Database;
 use crate::receiver::metadata::Metadata;
+// use tokio_util::io::ReaderStream;
 // use tokio_util::io::ReaderStream;
 
 #[derive(Debug)]
@@ -40,15 +42,18 @@ pub struct Transmission {
     scheduled_studies: Arc<Mutex<HashMap<String, ScheduledStudy>>>,
     aura_api: Arc<AuraApi>,
     app_handle: AppHandle,
+    database: Database,
 }
 
 impl Transmission {
     pub fn new(app_handle: AppHandle) -> Self {
+        let database = app_handle.state::<Database>().inner().clone();
         Self {
             client: Client::new(),
             scheduled_studies: Arc::new(Mutex::new(HashMap::new())),
             aura_api: Arc::new(AuraApi::new(app_handle.clone())),
-            app_handle
+            app_handle,
+            database,
         }
     }
 
@@ -224,7 +229,7 @@ impl Transmission {
         }
 
         if let Err(err) = Metadata::update_study_metadata_status(
-            &self.app_handle,
+            &self.database,
             study_uid,
             "SENT",
         ).await {
@@ -263,7 +268,7 @@ impl Transmission {
         file_path
     }
 
-    pub async fn zip_folder<T, I>(&self, it: I, prefix: &Path, writer: T) -> anyhow::Result<()>
+    pub async fn zip_folder<T, I>(it: I, prefix: &Path, writer: T) -> anyhow::Result<()>
     where
         T: Write + Seek,
         I: Iterator<Item = DirEntry> + Send,
@@ -328,7 +333,7 @@ impl Transmission {
         let it = walkdir.into_iter().filter_map(|e| e.ok());
 
         // Pass the iterator by value instead of a mutable reference
-        self.zip_folder(it, study_path, file).await?;
+        Self::zip_folder(it, study_path, file).await?;
 
         log_info!("zip path {archive_path:?}");
 

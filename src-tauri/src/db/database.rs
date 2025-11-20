@@ -3,12 +3,13 @@ use anyhow::{Context, Result};
 use chrono::{Utc};
 use sqlx::{ SqlitePool};
 use serde_json::Value;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 use crate::{load_config, log_error, log_info};
 
+#[derive(Clone, Debug)]
 pub struct Database {
     pool: SqlitePool,
-    app_handle: AppHandle,
+    app_handle: Option<AppHandle>,
 }
 
 impl Database {
@@ -37,7 +38,13 @@ impl Database {
             .await
             .context("Failed to run db migrations")?;
 
-        Ok(Self { pool, app_handle })
+        Ok(Self { pool, app_handle: Some(app_handle) })
+    }
+    
+    #[allow(dead_code)]
+    pub async fn new_for_test(pool: SqlitePool) -> Self {
+        migrations::run_migrations(&pool).await.expect("Failed to run migrations");
+        Self { pool, app_handle: None }
     }
 
     // pub fn pool(&self) -> &SqlitePool {
@@ -49,7 +56,7 @@ impl Database {
         let mut tx = self.pool.begin().await?;
 
         // Try to insert, if conflict then update
-        let result = sqlx::query(
+        let _result = sqlx::query(
             r#"
             INSERT INTO studies (
                 study_uid, study_description, institution_name, institution_address,
@@ -110,19 +117,18 @@ impl Database {
         Ok(study)
     }
 
-    pub async fn get_studies(&self) -> Result<Vec<Study>> {
-        let studies = sqlx::query_as::<_, Study>(
-            "SELECT * FROM studies ORDER BY created_at DESC LIMIT 100"
-        )
-            .fetch_all(&self.pool)
-            .await?;
-
-        Ok(studies)
-    }
-
-
     pub async fn current_studies(&self, page: u32, limit: u32) -> Value {
-        let config = load_config(self.app_handle.clone());
+        let config = if let Some(app_handle) = &self.app_handle {
+             load_config(app_handle.clone())
+        } else {
+             // In test mode, we can't load config from store, so we might need a workaround 
+             // or just return basic info. For now, let's panic if called in test 
+             // or return a default config if we can mock it?
+             // A better approach is to have the config passed in or return an error.
+             // But current_studies returns Value (JSON), so we can return an error JSON.
+             log_error!("current_studies called without app_handle");
+             return serde_json::json!({"error": "No app_handle available"});
+        };
 
         // Calculate offset
         let offset = (page.saturating_sub(1)) * limit;
@@ -245,18 +251,6 @@ impl Database {
         )
             .bind(status)
             .bind(sent_at)
-            .bind(study_uid)
-            .execute(&self.pool)
-            .await?;
-
-        Ok(())
-    }
-
-    pub async fn update_study_image_count(&self, study_uid: &str, image_count: i64) -> Result<()> {
-        sqlx::query(
-            "UPDATE studies SET images = ? WHERE study_uid = ?"
-        )
-            .bind(image_count)
             .bind(study_uid)
             .execute(&self.pool)
             .await?;

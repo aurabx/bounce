@@ -7,7 +7,6 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use tauri::{AppHandle, Manager};
 use crate::db::database::Database;
 use crate::db::models::Study;
 
@@ -15,44 +14,44 @@ use crate::db::models::Study;
 pub struct Metadata {}
 
 /// Represents a DICOM study in the JSON format
-#[derive(Debug, Serialize, Deserialize)]
-struct StudyInfo {
-    study_uid: String,
-    study_description: Option<String>,
-    institution_name: Option<String>,
-    institution_address: Option<String>,
-    patient_id: Option<String>,
-    other_patient_ids: Option<String>,
-    accession_no: Option<String>,
-    patient_name: Option<String>,
-    issuer_of_patient_id: Option<String>,
-    patient_birth_date: Option<String>,
-    patient_sex: Option<String>,
-    referring_physician_name: Option<String>,
-    study_date: Option<String>,
-    study_time: Option<String>,
-    tz_offset: Option<String>,
-    series: HashMap<String, self::SeriesInfo>,
-    images: usize,
-    series_count: usize,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StudyInfo {
+    pub study_uid: String,
+    pub study_description: Option<String>,
+    pub institution_name: Option<String>,
+    pub institution_address: Option<String>,
+    pub patient_id: Option<String>,
+    pub other_patient_ids: Option<String>,
+    pub accession_no: Option<String>,
+    pub patient_name: Option<String>,
+    pub issuer_of_patient_id: Option<String>,
+    pub patient_birth_date: Option<String>,
+    pub patient_sex: Option<String>,
+    pub referring_physician_name: Option<String>,
+    pub study_date: Option<String>,
+    pub study_time: Option<String>,
+    pub tz_offset: Option<String>,
+    pub series: HashMap<String, self::SeriesInfo>,
+    pub images: usize,
+    pub series_count: usize,
 }
 
 /// Represents a DICOM series in the JSON format
-#[derive(Debug, Serialize, Deserialize)]
-struct SeriesInfo {
-    study_instance_uid: String,
-    series_instance_uid: String,
-    modality: Option<String>,
-    series_description: Option<String>,
-    body_part_examined: Option<String>,
-    series_date: Option<String>,
-    series_time: Option<String>,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeriesInfo {
+    pub study_instance_uid: String,
+    pub series_instance_uid: String,
+    pub modality: Option<String>,
+    pub series_description: Option<String>,
+    pub body_part_examined: Option<String>,
+    pub series_date: Option<String>,
+    pub series_time: Option<String>,
 }
 
 impl Metadata {
     /// Update the study metadata JSON file with study_uid as the key
     pub async fn update_study_metadata_json(
-        app_handle: &AppHandle,
+        database: &Database,
         out_path: &Path,
         obj: &InMemDicomObject,
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -168,7 +167,7 @@ impl Metadata {
         });
 
         // Get database from app state
-        let database = app_handle.state::<Database>();
+        // let database = app_handle.state::<Database>();
 
         // Create or update a study
         let new_study = Study {
@@ -208,7 +207,7 @@ impl Metadata {
         Ok(())
     }
     /// Create a new StudyInfo object from a DICOM object
-    fn create_new_study_info(
+    pub fn create_new_study_info(
         obj: &InMemDicomObject,
         study_uid: &str,
     ) -> Result<StudyInfo, Box<dyn std::error::Error>> {
@@ -255,45 +254,17 @@ impl Metadata {
 
     /// Update the study metadata JSON file with study_uid as the key
     pub async fn update_study_metadata_status(
-        app_handle: &AppHandle,
+        database: &Database,
         study_uid: String,
         status: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
 
-        let database = app_handle.state::<Database>();
+        // let database = app_handle.state::<Database>();
 
         database.update_study_status(&study_uid, status).await?;
         log_info!("Updated study status: {} -> {}", study_uid, status);
 
         Ok(())
-    }
-
-
-    /// Update te study image count in the database
-    pub async fn update_study_image_count(
-        app_handle: &AppHandle,
-        study_uid: String,
-        image_count: i64,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let database = app_handle.state::<Database>();
-
-        database.update_study_image_count(&study_uid, image_count).await?;
-        log_info!("Updated study image count: {} -> {}", study_uid, image_count);
-
-        Ok(())
-    }
-
-    /// Count images in a study directory (for updating image count)
-    pub fn count_images_in_study_path(study_path: &Path) -> i64 {
-        let mut image_count = 0;
-        for _entry in walkdir::WalkDir::new(study_path)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().map_or(false, |ext| ext == "dcm"))
-        {
-            image_count += 1;
-        }
-        image_count
     }
 
 }

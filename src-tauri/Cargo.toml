@@ -9,10 +9,6 @@ default-run = "app"
 edition = "2021"
 rust-version = "1.60"
 
-
-[build]
-rustflags = ["--cfg", "tokio_allow_from_blocking_fd"]
-
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -59,6 +55,10 @@ tauri-plugin-opener = "2"
 tauri-plugin-os = "2"
 gethostname = "1.0.1"
 this = "0.3.0"
+
+[dev-dependencies]
+tempfile = "3.8"
+futures = "0.3"
 
 [features]
 # this feature is used for production builds or when `devPath` points to the filesystem and the built-in dev server is disabled.

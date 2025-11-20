@@ -1,11 +1,8 @@
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::ffi::OsStr;
 use std::path::PathBuf;
 use tauri::AppHandle;
 use tauri_plugin_store::{StoreExt};
-use crate::log_info;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {

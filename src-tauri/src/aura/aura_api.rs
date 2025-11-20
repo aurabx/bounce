@@ -19,26 +19,6 @@ impl AuraApi {
         }
     }
 
-    pub async fn generate_signature(&self) -> anyhow::Result<Value> {
-        let config = load_config(self.app_handle.clone());
-
-        let url = format!("{}/api/bounce/signature", config.get_api_endpoint());
-
-        println!("generate_signature (url: {})", url);
-
-        let response = self
-            .client
-            .get(&url)
-            .header("Content-Type", "application/json")
-            .header("Authorization", format!("Bearer {}", config.api_key))
-            .send()
-            .await?;
-
-        log_info!("generate_signature status {}", response.status());
-
-        Self::handle_response(response).await
-    }
-
     pub async fn upload_config(&self) -> anyhow::Result<Value> {
         let config = load_config(self.app_handle.clone());
 
