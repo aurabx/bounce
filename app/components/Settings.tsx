@@ -83,7 +83,13 @@ export default function Settings() {
 
         let data: { [key: string]: any } = {}
         for (const fieldKey of fieldKeys) {
-            data[fieldKey] = await store.get(fieldKey)
+            let val = await store.get(fieldKey)
+            if (val === null || val === undefined) {
+                if (fieldKey === 'ae_title') val = 'BOUNCE';
+                if (fieldKey === 'ip_address') val = '0.0.0.0';
+                if (fieldKey === 'send_logs') val = 'yes';
+            }
+            data[fieldKey] = val
         }
         setSettings(data)
     }

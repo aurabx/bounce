@@ -63,7 +63,7 @@ impl Config {
             },
 
             ae_title: match store.get("ae_title") {
-                None => "0.0.0.0".to_string(),
+                None => "BOUNCE".to_string(),
                 Some(value) => match value.as_str() {
                     Some(str_value) => str_value.parse().unwrap_or_else(|_| "BOUNCE".to_string()),
                     None => "BOUNCE".to_string(),
@@ -81,7 +81,7 @@ impl Config {
             },
 
             send_logs: match store.get("send_logs") {
-                None => "no".to_string(),
+                None => "yes".to_string(),
                 Some(value) => value.as_str().unwrap().parse().unwrap(),
             },
         }
