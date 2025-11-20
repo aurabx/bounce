@@ -7,6 +7,8 @@ import SelectInput from "@/app/components/Fields/SelectInput";
 import {useAppSelector} from "@/app/lib/hook";
 import {Study} from "@/app/lib/types";
 import { v4 as uuidv4 } from 'uuid';
+import { Card, CardContent, CardHeader, CardTitle } from "@/app/components/ui/card";
+import { Button } from "@/app/components/ui/button";
 
 type Commands = {
     [key: string]: string
@@ -63,81 +65,84 @@ export default function Page() {
 
     return (
         <>
-            <div className="bg-white shadow-lg rounded-lg p-6 w-full">
-                <Suspense fallback={<Loading />}>
-                {(loaded ? <>
-                    <SelectInput
-                        config={({
-                            label: 'Command',
-                            key: 'command',
-                            options: commands
-                        })}
-                        value={command}
-                        onChange={(e: any) => setCommand(e.target.value)}
-                    />
+            <Card>
+                <CardHeader>
+                     <CardTitle>Developer Tools</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <Suspense fallback={<Loading />}>
+                    {(loaded ? <>
+                        <SelectInput
+                            config={({
+                                label: 'Command',
+                                key: 'command',
+                                options: commands
+                            })}
+                            value={command}
+                            onChange={(e: any) => setCommand(e.target.value)}
+                        />
 
-                    <h3 className="my-3 font-bold text-lg">{commands[command] || 'Unknown command'}</h3>
+                        <h3 className="my-4 font-bold text-lg text-primary">{commands[command] || 'Unknown command'}</h3>
 
-                    <form onSubmit={testStartUpload}>
-                        <div className="space-y-6">
-                            <SelectInput
-                                config={({
-                                    label: 'Study UID',
-                                    key: 'study_uid',
-                                    options: studies.reduce((acc: {[key: string]: string}, study: Study) => {
-                                        acc[study.study_uid] = study.study_uid;
-                                        return acc;
-                                    }, {})
-                                })}
-                                value={study_uid}
-                                onChange={(e: any) => setStudyUid(e.target.value)}
-                            />
-
-                            {command === 'api_start_upload' && <>
-                                <TextInput
-                                    config={({label: 'Signature', key: 'signature'})}
-                                    value={signature}
-                                    onChange={(e: any) => setSignature(e.target.value)}
-                                />
-
-                                <TextInput
+                        <form onSubmit={testStartUpload}>
+                            <div className="space-y-6">
+                                <SelectInput
                                     config={({
-                                        label: 'Upload ID',
-                                        key: 'upload_id',
-                                        suffix_button: 'Generate'
+                                        label: 'Study UID',
+                                        key: 'study_uid',
+                                        options: studies.reduce((acc: {[key: string]: string}, study: Study) => {
+                                            acc[study.study_uid] = study.study_uid;
+                                            return acc;
+                                        }, {})
                                     })}
-                                    value={upload_id}
-                                    onSuffixClick={() => generateUploadId()}
-                                    onChange={(e: any) => setUploadId(e.target.value)}
+                                    value={study_uid}
+                                    onChange={(e: any) => setStudyUid(e.target.value)}
                                 />
 
-                                <TextInput
-                                    config={({
-                                        label: 'Assembly ID',
-                                        key: 'assembly_id',
-                                    })}
-                                    value={assembly_id}
-                                    onChange={(e: any) => setAssemblyId(e.target.value)}
-                                />
-                            </>}
-                            <div className="mb-4 flex justify-end">
-                                <button
-                                    type="submit"
-                                    className="inline-flex grow-0 transition ease-in-out text-center border shadow-sm font-medium rounded-md px-4 py-2 text-sm cursor-pointer text-white bg-indigo-400 hover:bg-indigo-500"
-                                >
-                                    Send
-                                </button>
+                                {command === 'api_start_upload' && <>
+                                    <TextInput
+                                        config={({label: 'Signature', key: 'signature'})}
+                                        value={signature}
+                                        onChange={(e: any) => setSignature(e.target.value)}
+                                    />
+
+                                    <TextInput
+                                        config={({
+                                            label: 'Upload ID',
+                                            key: 'upload_id',
+                                            suffix_button: 'Generate'
+                                        })}
+                                        value={upload_id}
+                                        onSuffixClick={() => generateUploadId()}
+                                        onChange={(e: any) => setUploadId(e.target.value)}
+                                    />
+
+                                    <TextInput
+                                        config={({
+                                            label: 'Assembly ID',
+                                            key: 'assembly_id',
+                                        })}
+                                        value={assembly_id}
+                                        onChange={(e: any) => setAssemblyId(e.target.value)}
+                                    />
+                                </>}
+                                <div className="mb-4 flex justify-end">
+                                    <Button
+                                        type="submit"
+                                    >
+                                        Send
+                                    </Button>
+                                </div>
                             </div>
-                        </div>
-                    </form>
-                </> : null)}
-                </Suspense>
-            </div>
+                        </form>
+                    </> : null)}
+                    </Suspense>
+                </CardContent>
+            </Card>
         </>
     );
 }
 
-
 function Loading() {
-    return <h2>🌀 Loading...</h2>;
+    return <h2>Loading...</h2>;
 }

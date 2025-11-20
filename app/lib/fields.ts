@@ -18,6 +18,7 @@ export const fields = [{
         label: 'Api Key',
         key: 'api_key',
         help: 'You can generate an api key in the account section of Aurabox',
+        fullWidth: true,
     },
     component: TextInput
 },{
@@ -48,6 +49,7 @@ export const fields = [{
         help: 'Local storage directory for bounce to use',
         suffix_button: 'Select a storage directory',
         readOnly: true,
+        fullWidth: true,
     },
     component: TextInput
 },{

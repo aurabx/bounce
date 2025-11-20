@@ -1,7 +1,7 @@
 "use client";
 
 import React, {useEffect, useState} from "react";
-import {items, NavigationItem} from "@/app/lib/menu";
+import {items} from "@/app/lib/menu";
 import MenuItem from "@/app/components/MenuItem";
 import CurrentStatus from "@/app/components/CurrentStatus";
 import { getVersion } from '@tauri-apps/api/app';
@@ -18,24 +18,29 @@ export default function Sidebar() {
         fetchVersion().then();
     }, []);
 
-    return <div className="fixed inset-y-0 flex w-48 flex-col bg-white">
-        <div className="flex grow flex-col overflow-y-auto bg-indigo-600 px-6 py-4">
+    return <div className="fixed inset-y-0 flex w-64 flex-col bg-background border-r">
+        <div className="flex h-16 shrink-0 items-center px-6 font-bold text-lg tracking-tight border-b text-primary">
+            Aurabox Bounce
+        </div>
+        <div className="flex grow flex-col gap-y-5 overflow-y-auto px-4 pb-4 pt-4">
             <nav className="flex flex-1 flex-col">
-                <ul role="list" className="flex flex-col">
+                <ul role="list" className="flex flex-1 flex-col gap-y-2">
                     <li>
-                        <ul role="list" className="space-y-2">
+                        <ul role="list" className="space-y-1">
                             {items.map(
                                 (item) => <MenuItem key={item.label} {...item}/>
                             )}
                         </ul>
                     </li>
+                    <li className="mt-auto">
+                        <CurrentStatus/>
+                        <div className="mt-4 px-2">
+                             <span className="text-xs font-medium text-muted-foreground">
+                                v{appVersion}
+                            </span>
+                        </div>
+                    </li>
                 </ul>
-                <CurrentStatus/>
-                <div>
-                    <span className="rounded-full px-3 py-2 text-xs text-indigo-200 font-semibold bg-indigo-500">
-                        v{appVersion}
-                    </span>
-                </div>
             </nav>
         </div>
     </div>;

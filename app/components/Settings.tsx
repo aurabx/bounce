@@ -3,11 +3,13 @@
 import {load} from '@tauri-apps/plugin-store';
 import {Suspense, useEffect, useState} from 'react'
 import {fields, fieldKeys} from "@/app/lib/fields";
-import Alert from "@/app/components/Fields/Alert";
+import { Alert, AlertTitle, AlertDescription } from "@/app/components/ui/alert";
+import { Button } from "@/app/components/ui/button";
+import { Card, CardContent } from "@/app/components/ui/card";
 import { open } from '@tauri-apps/plugin-dialog';
 import { useRouter } from 'next/navigation'
 import {useSetupComplete} from "@/app/lib/customHooks";
-import {classNames} from "@/app/lib/helpers";
+import {cn} from "@/app/lib/utils";
 import {invoke} from "@tauri-apps/api/core";
 import { relaunch } from '@tauri-apps/plugin-process';
 
@@ -137,48 +139,61 @@ export default function Settings() {
     }, [settings, env]);
 
     return (
-        <>
-            {(saved ? <Alert>Saved</Alert> : null)}
-            {(env ? <Alert type="warning">{env} environment</Alert> : null)}
-            <div className="bg-white shadow-lg rounded-lg p-6 w-full">
-                <Suspense fallback={<Loading />}>
-                    {(loaded ? <form onSubmit={save}>
-                        <div className="space-y-12">
-                            <div
-                                className="grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-3">
-                                {fields.map((field) => {
-                                    const FieldComponent: any = field.component;
-                                    return (<FieldComponent
-                                        key={field.config.key}
-                                        config={field.config}
-                                        settings={settings}
-                                        onSuffixClick={field.config.suffix_button ? (e: MouseEvent) => suffixClick(e, field.config.key) : () => null}
-                                        value={settings && settings[field.config.key] ? settings[field.config.key] : ''}
-                                        onChange={(e: any) => setField(field.config.key, e.target.value)}/>)
-                                })}
-                            </div>
-                            <div className={classNames("mb-4 flex", setupComplete ? 'justify-between' : 'justify-end')}>
-                                {setupComplete && (
-                                    <button
-                                        type="button"
-                                        onClick={resetApp}
-                                        className="inline-flex grow-0 transition ease-in-out text-center border shadow-sm font-medium rounded-md px-4 py-2 text-sm cursor-pointer border-slate-400 text-slate-600 bg-white hover:bg-slate-100"
+        <div className="space-y-4">
+            {saved && <Alert variant="default" className="bg-green-50 text-green-800 border-green-200">
+                <AlertTitle>Success</AlertTitle>
+                <AlertDescription>Settings saved successfully.</AlertDescription>
+            </Alert>}
+            {env && <Alert variant="destructive">
+                <AlertTitle>Environment Warning</AlertTitle>
+                <AlertDescription>You are connected to the {env} environment.</AlertDescription>
+            </Alert>}
+
+            <Card>
+                <CardContent className="pt-6">
+                    <Suspense fallback={<Loading />}>
+                        {(loaded ? <form onSubmit={save}>
+                            <div className="space-y-8">
+                                <div className="grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-2">
+                                    {fields.map((field) => {
+                                        const FieldComponent: any = field.component;
+                                        // @ts-ignore
+                                        const isFullWidth = field.config.fullWidth;
+                                        return (
+                                            <div key={field.config.key} className={isFullWidth ? "md:col-span-2" : ""}>
+                                                <FieldComponent
+                                                    config={field.config}
+                                                    settings={settings}
+                                                    onSuffixClick={field.config.suffix_button ? (e: MouseEvent) => suffixClick(e, field.config.key) : () => null}
+                                                    value={settings && settings[field.config.key] ? settings[field.config.key] : ''}
+                                                    onChange={(e: any) => setField(field.config.key, e.target.value)}
+                                                />
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                                <div className={cn("flex", setupComplete ? 'justify-between' : 'justify-end')}>
+                                    {setupComplete && (
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            onClick={resetApp}
+                                        >
+                                            Reset App
+                                        </Button>
+                                    )}
+                                    <Button
+                                        type="submit"
                                     >
-                                        Reset App
-                                    </button>
-                                )}
-                                <button
-                                    type="submit"
-                                    className="inline-flex grow-0 transition ease-in-out text-center border shadow-sm font-medium rounded-md px-4 py-2 text-sm cursor-pointer border-indigo-400 text-white bg-indigo-400 hover:bg-indigo-500"
-                                >
-                                    Save
-                                </button>
+                                        Save
+                                    </Button>
+                                </div>
                             </div>
-                        </div>
-                    </form> : null)}
-                </Suspense>
-            </div>
-        </>
+                        </form> : null)}
+                    </Suspense>
+                </CardContent>
+            </Card>
+        </div>
     );
 }
 

@@ -8,14 +8,14 @@ import {useSetupComplete} from "@/app/lib/customHooks";
 export default function PageLayout({children}: { children: React.ReactNode }) {
     const {setupComplete, isLoading} = useSetupComplete();
 
-    return <div className="h-full relative">
+    return <div className="h-full relative bg-muted/20">
         {setupComplete ? (
             <>
                 <Sidebar/>
-                <div className="pl-48 h-full">
-                    <main className="pb-4 h-full">
-                        <PageTitle/>
-                        <div className="p-4">{children}</div>
+                <div className="pl-64 h-full flex flex-col">
+                    <PageTitle/>
+                    <main className="flex-1 overflow-y-auto p-8">
+                        {children}
                     </main>
                 </div>
             </>

@@ -1,30 +1,43 @@
+import {
+    HomeIcon,
+    InboxStackIcon,
+    CommandLineIcon,
+    Cog6ToothIcon,
+    WrenchScrewdriverIcon
+} from '@heroicons/react/24/outline';
 
 export type NavigationItem = {
     label: string;
     href: string;
     title: string | false;
+    icon: any;
 };
 
 export const items: NavigationItem[] = [{
     label: "Dashboard",
     href: "/",
-    title: false
+    title: false,
+    icon: HomeIcon
 },{
     label: "Studies",
     href: "/studies",
-    title: "Studies"
+    title: "Studies",
+    icon: InboxStackIcon
 },{
     label: "Logs",
     href: "/logs",
-    title: "Logs"
+    title: "Logs",
+    icon: CommandLineIcon
 },{
     label: "Settings",
     href: "/settings",
-    title: "Settings"
+    title: "Settings",
+    icon: Cog6ToothIcon
 },{
     label: "Tools",
     href: "/tools",
-    title: "Tools"
+    title: "Tools",
+    icon: WrenchScrewdriverIcon
 }];
 
 

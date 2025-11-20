@@ -7,13 +7,16 @@ import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react'
 import { ChevronLeftIcon, ChevronRightIcon, EllipsisVerticalIcon, ArrowPathIcon } from '@heroicons/react/24/outline'
 import {classNames, formatDicomDateAndTime} from "@/app/lib/helpers";
 import {Study} from "@/app/lib/types";
+import { Button } from "@/app/components/ui/button";
+import { Card, CardContent } from "@/app/components/ui/card";
+import { Badge } from "@/app/components/ui/badge";
 
-const statuses = {
-    COMPLETE: 'text-green-700 bg-green-50 ring-green-600/20',
-    SENT: 'text-green-700 bg-green-50 ring-green-600/20',
-    "IN-PROGRESS": 'text-yellow-600 bg-yellow-50 ring-yellow-500/10',
-    ARCHIVED: 'text-blue-800 bg-blue-50 ring-blue-600/20',
-    UNKNOWN: 'text-gray-800 bg-gray-50 ring-gray-600/20',
+const statusMap: Record<string, { variant: "default" | "secondary" | "destructive" | "outline" | "success" | "warning", label: string }> = {
+    COMPLETE: { variant: 'success', label: 'Complete' },
+    SENT: { variant: 'success', label: 'Sent' },
+    "IN-PROGRESS": { variant: 'warning', label: 'In Progress' },
+    ARCHIVED: { variant: 'secondary', label: 'Archived' },
+    UNKNOWN: { variant: 'outline', label: 'Unknown' },
 }
 
 const ITEMS_PER_PAGE = 10;
@@ -119,25 +122,22 @@ export default function Page() {
     };
 
     return (
-        <div className="h-full flex flex-col">
+        <div className="h-full flex flex-col space-y-6">
             {/* Header with refresh button */}
-            <div className="mb-6 flex justify-between items-center">
-                <div className="text-sm text-gray-600">
+            <div className="flex justify-between items-center">
+                <div className="text-sm text-muted-foreground">
                     {totalItems > 0 && (
                         <span>
                             Showing {startIndex + 1} to {Math.min(endIndex, totalItems)} of {totalItems} studies
                         </span>
                     )}
                 </div>
-                <button
+                <Button
+                    variant="outline"
+                    size="sm"
                     onClick={refreshStudies}
                     disabled={isRefreshing}
-                    className={classNames(
-                        "inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md border shadow-sm",
-                        isRefreshing
-                            ? "border-gray-300 text-gray-400 bg-gray-50 cursor-not-allowed"
-                            : "border-gray-300 text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                    )}
+                    className="gap-2"
                 >
                     <ArrowPathIcon
                         className={classNames(
@@ -146,53 +146,52 @@ export default function Page() {
                         )}
                     />
                     {isRefreshing ? 'Refreshing...' : 'Refresh'}
-                </button>
+                </Button>
             </div>
 
             <div className="flex-1">
                 <Suspense fallback={<Loading/>}>
                     {loaded ? (
-                        <div className="h-full">
+                        <div className="space-y-4">
                             {currentStudies.length === 0 ? (
-                                <div className="bg-white shadow-lg rounded-lg p-12 w-full text-center">
-                                    <div className="text-gray-500">
-                                        <h3 className="text-lg font-medium mb-2">No studies found</h3>
-                                        <p className="text-sm">Studies will appear here once they are received via DICOM.</p>
-                                    </div>
-                                </div>
+                                <Card>
+                                    <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                                        <div className="text-muted-foreground">
+                                            <h3 className="text-lg font-medium mb-2">No studies found</h3>
+                                            <p className="text-sm">Studies will appear here once they are received via DICOM.</p>
+                                        </div>
+                                    </CardContent>
+                                </Card>
                             ) : (
                                 <>
-                                    <ul role="list" className="divide-y divide-gray-100 space-y-2 mb-6">
+                                    <div className="space-y-4">
                                         {currentStudies.map((study) => (
-                                            <li key={study.study_uid} className="flex items-center justify-between gap-x-6 py-5 bg-white shadow-lg rounded-lg p-6 w-full flex-grow">
+                                            <Card key={study.study_uid}>
+                                                <CardContent className="p-6 flex items-center justify-between gap-x-6">
                                                 <div className="min-w-0">
-                                                    <div className="flex items-start gap-x-3">
-                                                        <p className="text-sm/6 font-semibold text-gray-900">{study.study_description}</p>
-                                                        <p
-                                                            className={classNames(
-                                                                statuses.hasOwnProperty(study.status) ? statuses[study.status as keyof typeof statuses] : statuses.UNKNOWN,
-                                                                'mt-0.5 rounded-md px-1.5 py-0.5 text-xs font-medium whitespace-nowrap ring-1 ring-inset',
-                                                            )}
-                                                        >
+                                                    <div className="flex items-center gap-x-3 mb-1">
+                                                        <p className="text-sm font-semibold text-foreground">{study.study_description}</p>
+                                                        <Badge variant={statusMap[study.status]?.variant || 'outline'}>
                                                             {study.status}
-                                                        </p>
+                                                        </Badge>
                                                     </div>
-                                                    <div className="mt-1 flex flex-col items-start gap-x-2 text-xs/5 text-gray-500">
+                                                    <div className="flex flex-col items-start gap-x-2 text-xs text-muted-foreground">
                                                         <p className="whitespace-nowrap truncate w-full">
-                                                            Study Instance UID: {study.study_uid}
+                                                            UID: {study.study_uid}
                                                         </p>
-                                                        <p className="truncate w-full">Created at: {formatDicomDateAndTime(study.study_date, study.study_time)}</p>
+                                                        <p className="truncate w-full">Created: {formatDicomDateAndTime(study.study_date, study.study_time)}</p>
                                                     </div>
                                                 </div>
                                                 <div className="flex flex-none items-center gap-x-4">
                                                     {study.exists && (
-                                                        <a
-                                                            href="#"
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
                                                             onClick={() => sendStudy(study)}
-                                                            className="hidden rounded-md bg-white px-2.5 py-1.5 text-sm font-semibold text-gray-900 ring-1 shadow-xs ring-gray-300 ring-inset hover:bg-gray-50 sm:block"
+                                                            className="hidden sm:flex"
                                                         >
-                                                            Send study <span className="sr-only">, {study.study_description}</span>
-                                                        </a>
+                                                            Send study
+                                                        </Button>
                                                     )}
 
                                                     <Menu as="div" className="relative flex-none">
@@ -216,101 +215,49 @@ export default function Page() {
                                                         </MenuItems>
                                                     </Menu>
                                                 </div>
-                                            </li>
+                                                </CardContent>
+                                            </Card>
                                         ))}
-                                    </ul>
+                                    </div>
 
                                     {/* Pagination */}
                                     {totalPages > 1 && (
-                                        <div className="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6 rounded-lg shadow-lg">
-                                            <div className="flex-1 flex justify-between sm:hidden">
-                                                <button
-                                                    onClick={goToPrevious}
-                                                    disabled={currentPage === 1}
-                                                    className={classNames(
-                                                        "relative inline-flex items-center px-4 py-2 text-sm font-medium rounded-md",
-                                                        currentPage === 1
-                                                            ? "text-gray-400 bg-gray-50 cursor-not-allowed"
-                                                            : "text-gray-700 bg-white hover:bg-gray-50 border border-gray-300"
-                                                    )}
-                                                >
-                                                    Previous
-                                                </button>
-                                                <button
-                                                    onClick={goToNext}
-                                                    disabled={currentPage === totalPages}
-                                                    className={classNames(
-                                                        "ml-3 relative inline-flex items-center px-4 py-2 text-sm font-medium rounded-md",
-                                                        currentPage === totalPages
-                                                            ? "text-gray-400 bg-gray-50 cursor-not-allowed"
-                                                            : "text-gray-700 bg-white hover:bg-gray-50 border border-gray-300"
-                                                    )}
-                                                >
-                                                    Next
-                                                </button>
-                                            </div>
-                                            <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-                                                <div>
-                                                    <p className="text-sm text-gray-700">
-                                                        Showing <span className="font-medium">{startIndex + 1}</span> to{' '}
-                                                        <span className="font-medium">{Math.min(endIndex, totalItems)}</span> of{' '}
-                                                        <span className="font-medium">{totalItems}</span> results
-                                                    </p>
-                                                </div>
-                                                <div>
-                                                    <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
-                                                        <button
-                                                            onClick={goToPrevious}
-                                                            disabled={currentPage === 1}
-                                                            className={classNames(
-                                                                "relative inline-flex items-center px-2 py-2 rounded-l-md text-sm font-medium",
-                                                                currentPage === 1
-                                                                    ? "text-gray-300 bg-gray-50 cursor-not-allowed"
-                                                                    : "text-gray-500 bg-white hover:bg-gray-50 border border-gray-300"
-                                                            )}
-                                                        >
-                                                            <span className="sr-only">Previous</span>
-                                                            <ChevronLeftIcon className="h-5 w-5" aria-hidden="true" />
-                                                        </button>
+                                        <div className="flex items-center justify-center space-x-2 py-4">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={goToPrevious}
+                                                disabled={currentPage === 1}
+                                            >
+                                                Previous
+                                            </Button>
 
-                                                        {getPageNumbers().map((page, index) => (
-                                                            <span key={index}>
-                                                                {page === '...' ? (
-                                                                    <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
-                                                                        ...
-                                                                    </span>
-                                                                ) : (
-                                                                    <button
-                                                                        onClick={() => goToPage(page as number)}
-                                                                        className={classNames(
-                                                                            "relative inline-flex items-center px-4 py-2 text-sm font-medium border",
-                                                                            currentPage === page
-                                                                                ? "z-10 bg-indigo-50 border-indigo-500 text-indigo-600"
-                                                                                : "bg-white border-gray-300 text-gray-500 hover:bg-gray-50"
-                                                                        )}
-                                                                    >
-                                                                        {page}
-                                                                    </button>
-                                                                )}
-                                                            </span>
-                                                        ))}
-
-                                                        <button
-                                                            onClick={goToNext}
-                                                            disabled={currentPage === totalPages}
-                                                            className={classNames(
-                                                                "relative inline-flex items-center px-2 py-2 rounded-r-md text-sm font-medium",
-                                                                currentPage === totalPages
-                                                                    ? "text-gray-300 bg-gray-50 cursor-not-allowed"
-                                                                    : "text-gray-500 bg-white hover:bg-gray-50 border border-gray-300"
-                                                            )}
-                                                        >
-                                                            <span className="sr-only">Next</span>
-                                                            <ChevronRightIcon className="h-5 w-5" aria-hidden="true" />
-                                                        </button>
-                                                    </nav>
-                                                </div>
+                                            <div className="flex items-center space-x-2">
+                                                {getPageNumbers().map((page, index) => (
+                                                    <span key={index}>
+                                                        {page === '...' ? (
+                                                            <span className="px-4 py-2 text-sm text-muted-foreground">...</span>
+                                                        ) : (
+                                                            <Button
+                                                                variant={currentPage === page ? "default" : "outline"}
+                                                                size="sm"
+                                                                onClick={() => goToPage(page as number)}
+                                                            >
+                                                                {page}
+                                                            </Button>
+                                                        )}
+                                                    </span>
+                                                ))}
                                             </div>
+
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={goToNext}
+                                                disabled={currentPage === totalPages}
+                                            >
+                                                Next
+                                            </Button>
                                         </div>
                                     )}
                                 </>
@@ -324,5 +271,5 @@ export default function Page() {
 }
 
 function Loading() {
-    return <h2>🌀 Loading...</h2>;
+    return <h2>Loading...</h2>;
 }

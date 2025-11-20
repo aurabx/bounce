@@ -1,28 +1,33 @@
 "use client"
 
-import {classNames} from "@/app/lib/helpers";
-import {usePathname} from "next/navigation";
+import { cn } from "@/app/lib/utils"
+import { usePathname } from "next/navigation"
 import Link from 'next/link'
+import { buttonVariants } from "@/app/components/ui/button"
 
 export default function MenuItem({
          href = '',
          label = '',
+         icon: Icon,
     } : {
         href: string,
         label: string,
+        icon: any,
     }) {
     const pathName = usePathname();
 
     return <li>
         <Link
             href={href}
-            className={classNames(
+            className={cn(
+                buttonVariants({ variant: "ghost" }),
+                "w-full justify-start gap-x-3",
                 pathName === href
-                    ? 'bg-indigo-700 text-white'
-                    : 'text-indigo-200 hover:bg-indigo-700 hover:text-white',
-                'group flex gap-x-3 rounded-md p-2 text-sm/6 font-semibold',
+                    ? 'bg-primary/10 text-primary hover:bg-primary/20 hover:text-primary'
+                    : 'text-muted-foreground hover:text-primary'
             )}
         >
+            <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
             {label}
         </Link>
     </li>;
