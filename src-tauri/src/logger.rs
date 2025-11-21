@@ -1,10 +1,10 @@
-use log::{Level, LevelFilter, Metadata, Record};
-use serde_json::json;
-use std::sync::Once;
-use reqwest::Client;
-use tokio::sync::mpsc;
-use std::sync::Arc;
 use dicom::core::chrono;
+use log::{Level, LevelFilter, Metadata, Record};
+use reqwest::Client;
+use serde_json::json;
+use std::sync::Arc;
+use std::sync::Once;
+use tokio::sync::mpsc;
 
 // Use a static Once guard to ensure initialization happens only once
 static INIT: Once = Once::new();
@@ -80,13 +80,11 @@ impl LogtailLogger {
                             batch.push(log_msg);
 
                             // Send batch if it's full or timeout reached
-                            if batch.len() >= BATCH_SIZE || last_send.elapsed() >= BATCH_TIMEOUT {
-                                if !batch.is_empty() {
-                                    println!("Sending batch of {} logs", batch.len());
-                                    Self::send_logs_batch(&client, &config, &batch).await;
-                                    batch.clear();
-                                    last_send = std::time::Instant::now();
-                                }
+                            if (batch.len() >= BATCH_SIZE || last_send.elapsed() >= BATCH_TIMEOUT) && !batch.is_empty() {
+                                println!("Sending batch of {} logs", batch.len());
+                                Self::send_logs_batch(&client, &config, &batch).await;
+                                batch.clear();
+                                last_send = std::time::Instant::now();
                             }
                         }
                         None => {
@@ -197,7 +195,13 @@ impl log::Log for LogtailLogger {
 }
 
 // Function to send log directly via global sender
-pub fn send_log_direct(level: Level, message: String, module: Option<String>, file: Option<String>, line: Option<u32>) {
+pub fn send_log_direct(
+    level: Level,
+    message: String,
+    module: Option<String>,
+    file: Option<String>,
+    line: Option<u32>,
+) {
     unsafe {
         #[allow(static_mut_refs)]
         if let Some(sender) = &GLOBAL_SENDER {
@@ -324,7 +328,6 @@ macro_rules! log_trace {
         }
     };
 }
-
 
 #[macro_export]
 macro_rules! log_info_with_context {

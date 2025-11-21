@@ -1,6 +1,6 @@
 'use client';
 
-import {Suspense, useEffect, useState} from 'react'
+import {Suspense, useEffect, useState, useCallback} from 'react'
 import {useAppSelector} from "@/app/lib/hook";
 import {invoke} from "@tauri-apps/api/core";
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react'
@@ -36,7 +36,7 @@ export default function Page() {
     const endIndex = startIndex + ITEMS_PER_PAGE;
     const currentStudies = studies; // Backend should return paginated results
 
-    const loadStudies = async (page: number = currentPage, limit: number = ITEMS_PER_PAGE) => {
+    const loadStudies = useCallback(async (page: number = currentPage, limit: number = ITEMS_PER_PAGE) => {
         setLoaded(false);
         try {
             await invoke('current_studies', { page, limit });
@@ -45,7 +45,7 @@ export default function Page() {
         } finally {
             setLoaded(true);
         }
-    };
+    }, [currentPage]);
 
     const refreshStudies = async () => {
         setIsRefreshing(true);
@@ -58,7 +58,7 @@ export default function Page() {
 
     useEffect(() => {
         loadStudies(1, ITEMS_PER_PAGE);
-    }, []);
+    }, [loadStudies]);
 
     // Reset to first page when studies change
     useEffect(() => {

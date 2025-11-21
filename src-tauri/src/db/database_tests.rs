@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
-use super::super::models::Study;
-use super::super::database::Database;
-use chrono::Utc;
+    use super::super::database::Database;
+    use super::super::models::Study;
+    use chrono::Utc;
     use sqlx::SqlitePool;
     use tempfile::TempDir;
 
@@ -87,11 +87,12 @@ use chrono::Utc;
         assert!(result.is_ok(), "Failed to create study");
 
         // Verify the study was created
-        let retrieved: Study = sqlx::query_as::<_, Study>("SELECT * FROM studies WHERE study_uid = ?")
-            .bind(&study.study_uid)
-            .fetch_one(&pool)
-            .await
-            .expect("Failed to retrieve study");
+        let retrieved: Study =
+            sqlx::query_as::<_, Study>("SELECT * FROM studies WHERE study_uid = ?")
+                .bind(&study.study_uid)
+                .fetch_one(&pool)
+                .await
+                .expect("Failed to retrieve study");
 
         assert_eq!(retrieved.study_uid, study.study_uid);
         assert_eq!(retrieved.patient_name, study.patient_name);
@@ -144,11 +145,12 @@ use chrono::Utc;
         .expect("Failed to update study");
 
         // Verify update
-        let retrieved: Study = sqlx::query_as::<_, Study>("SELECT * FROM studies WHERE study_uid = ?")
-            .bind(study_uid)
-            .fetch_one(&pool)
-            .await
-            .expect("Failed to retrieve updated study");
+        let retrieved: Study =
+            sqlx::query_as::<_, Study>("SELECT * FROM studies WHERE study_uid = ?")
+                .bind(study_uid)
+                .fetch_one(&pool)
+                .await
+                .expect("Failed to retrieve updated study");
 
         assert_eq!(
             retrieved.study_description.unwrap(),
@@ -196,11 +198,12 @@ use chrono::Utc;
         .expect("Failed to update status");
 
         // Verify status update
-        let retrieved: Study = sqlx::query_as::<_, Study>("SELECT * FROM studies WHERE study_uid = ?")
-            .bind(&study.study_uid)
-            .fetch_one(&pool)
-            .await
-            .expect("Failed to retrieve study");
+        let retrieved: Study =
+            sqlx::query_as::<_, Study>("SELECT * FROM studies WHERE study_uid = ?")
+                .bind(&study.study_uid)
+                .fetch_one(&pool)
+                .await
+                .expect("Failed to retrieve study");
 
         assert_eq!(retrieved.status, new_status);
         assert!(retrieved.sent_at.is_some());
@@ -236,11 +239,12 @@ use chrono::Utc;
             .expect("Failed to update image count");
 
         // Verify update
-        let retrieved: Study = sqlx::query_as::<_, Study>("SELECT * FROM studies WHERE study_uid = ?")
-            .bind(&study.study_uid)
-            .fetch_one(&pool)
-            .await
-            .expect("Failed to retrieve study");
+        let retrieved: Study =
+            sqlx::query_as::<_, Study>("SELECT * FROM studies WHERE study_uid = ?")
+                .bind(&study.study_uid)
+                .fetch_one(&pool)
+                .await
+                .expect("Failed to retrieve study");
 
         assert_eq!(retrieved.images, new_count);
     }
@@ -421,16 +425,16 @@ use chrono::Utc;
     async fn test_database_struct_methods() {
         let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
         let db = Database::new_for_test(pool).await;
-        
+
         // Create a study using the struct method
         let study = create_test_study("1.2.3");
         let created = db.create_or_update_study(study.clone()).await.unwrap();
         assert_eq!(created.study_uid, "1.2.3");
-        
+
         // Retrieve it
         let retrieved = db.get_study_by_uid("1.2.3").await.unwrap();
         assert_eq!(retrieved.study_uid, "1.2.3");
-        
+
         // Test pagination method
         let (studies, count) = db.get_studies_paginated(0, 10).await.unwrap();
         assert_eq!(studies.len(), 1);

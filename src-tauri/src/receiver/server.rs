@@ -1,8 +1,8 @@
 use crate::{load_config, log_error, log_info, receiver};
 use local_ip_address::local_ip;
 use receiver::dicom_server::DICOMServer;
-use std::sync::Arc;
 use serde_json::json;
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio;
 use tokio::sync::{oneshot, Mutex};
@@ -62,11 +62,8 @@ pub async fn start(app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
         let details_string = serde_json::to_string(&details);
 
-        app.emit(
-            "running-details",
-            details_string.unwrap(),
-        )
-        .unwrap();
+        app.emit("running-details", details_string.unwrap())
+            .unwrap();
 
         // Wrap the server task in a select to handle shutdown
         tokio::select! {
@@ -105,7 +102,7 @@ pub async fn stop(app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
     if let Some(sender) = shutdown_sender {
         // Send the shutdown signal
-        if let Err(_) = sender.send(()) {
+        if sender.send(()).is_err() {
             app.emit("log", "Server already stopped").unwrap();
             app.emit("running", false).unwrap();
             log_info!("Dicom server message: {:?}", "Stopped");

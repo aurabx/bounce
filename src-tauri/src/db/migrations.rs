@@ -1,5 +1,5 @@
-use sqlx::{SqlitePool};
 use anyhow::Result;
+use sqlx::SqlitePool;
 
 pub async fn run_migrations(pool: &SqlitePool) -> Result<()> {
     // Create studies table
@@ -32,8 +32,8 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<()> {
         );
         "#,
     )
-        .execute(pool)
-        .await?;
+    .execute(pool)
+    .await?;
 
     // Create index on study_uid for faster lookups
     sqlx::query(
@@ -41,8 +41,8 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_studies_study_uid ON studies (study_uid);
         "#,
     )
-        .execute(pool)
-        .await?;
+    .execute(pool)
+    .await?;
 
     // Create trigger to update updated_at timestamp on studies
     sqlx::query(
@@ -55,8 +55,8 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<()> {
         END;
         "#,
     )
-        .execute(pool)
-        .await?;
+    .execute(pool)
+    .await?;
 
     Ok(())
 }

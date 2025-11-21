@@ -1,12 +1,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod aura;
+mod db;
 mod logger;
 mod receiver;
 mod store;
 mod transmitter;
-mod db;
 
 use crate::aura::aura_api::AuraApi;
+use crate::db::database::Database;
+use crate::logger::{setup_logger_with_config, LogtailConfig};
 use crate::receiver::server::init_server_state;
 use crate::transmitter::transmission::{QueueUpload, Transmission};
 use std::sync::Arc;
@@ -14,8 +16,6 @@ use store::config::Config;
 use tauri::{AppHandle, Emitter, Listener, Manager, WindowEvent};
 use tauri_plugin_log::{Target, TargetKind};
 use tokio::sync::Mutex;
-use crate::db::database::Database;
-use crate::logger::{setup_logger_with_config, LogtailConfig};
 
 #[derive(Clone)]
 struct AppState {
@@ -38,10 +38,7 @@ fn send_log(app: AppHandle, log: String) -> Result<(), String> {
 async fn reset_app(app: AppHandle) -> Result<(), String> {
     let database = app.state::<Database>();
 
-    database
-        .clear_studies()
-        .await
-        .expect("clear studies panic");
+    database.clear_studies().await.expect("clear studies panic");
 
     let transmission = Transmission::new(app);
 
@@ -103,7 +100,8 @@ async fn delete_study(app: AppHandle, study_uid: String) -> Result<(), String> {
         .await
         .expect("delete study meta panic");
 
-    database.delete_study(study_uid.clone())
+    database
+        .delete_study(study_uid.clone())
         .await
         .expect("delete study meta panic");
 
@@ -112,7 +110,7 @@ async fn delete_study(app: AppHandle, study_uid: String) -> Result<(), String> {
 
 #[tauri::command]
 async fn receiver_start(app: AppHandle) -> Result<(), String> {
-    println!("receiver_start: {}", "now");
+    println!("receiver_start: now");
 
     app.emit("log", "Starting server").unwrap();
     log_info!("Starting server");
@@ -136,7 +134,11 @@ async fn receiver_stop(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn current_studies(app: AppHandle, page: Option<u32>, limit: Option<u32>) -> Result<(), String> {
+async fn current_studies(
+    app: AppHandle,
+    page: Option<u32>,
+    limit: Option<u32>,
+) -> Result<(), String> {
     let page = page.unwrap_or(1);
     let limit = limit.unwrap_or(10);
     let database = app.state::<Database>();
@@ -156,14 +158,12 @@ fn show_window(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-
             let handle = app.app_handle();
             let config = Config::load(handle.clone());
 
@@ -195,9 +195,7 @@ fn main() {
             let transmission = Transmission::new(handle.clone());
 
             // store it in Tauri's managed state
-            app.manage(AppState {
-                transmission
-            });
+            app.manage(AppState { transmission });
 
             let app_handle = app.handle().clone();
 
@@ -214,10 +212,13 @@ fn main() {
                         let study_uid = payload.study_uid;
 
                         // Get the manager inside the async block
-                        let transmission = app_handle_clone.state::<AppState>().transmission.clone();
+                        let transmission =
+                            app_handle_clone.state::<AppState>().transmission.clone();
 
-                        transmission.schedule_study_push(study_uid.to_string())
-                            .await.expect("Enable to schedule study push");
+                        transmission
+                            .schedule_study_push(study_uid.to_string())
+                            .await
+                            .expect("Enable to schedule study push");
                     }
                 });
             });
@@ -237,14 +238,13 @@ fn main() {
                 }))
                 .build(),
         )
-        .on_window_event(|window, event| match event {
-            WindowEvent::CloseRequested { api, .. } => {
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
                 // Don't close the window, just hide it
                 window.hide().unwrap();
                 // Prevent the window from actually closing
                 api.prevent_close();
             }
-            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             receiver_start,

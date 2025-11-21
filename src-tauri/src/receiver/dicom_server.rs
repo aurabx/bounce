@@ -1,4 +1,6 @@
+use crate::db::database::Database;
 use crate::receiver::metadata::Metadata;
+use crate::transmitter::transmission::QueueUpload;
 use crate::{log_error, log_info, receiver, store};
 use dicom::core::{DataElement, Tag, VR};
 use dicom::dicom_value;
@@ -15,8 +17,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use store::config::Config;
 use tauri::{AppHandle, Emitter, Manager};
-use crate::db::database::Database;
-use crate::transmitter::transmission::QueueUpload;
 
 #[derive(Clone)]
 pub struct DICOMServer {
@@ -35,6 +35,7 @@ impl DICOMServer {
         }
     }
 
+    #[cfg(test)]
     pub fn new_for_test(config: Config, database: Database) -> Self {
         Self {
             config: Arc::new(config),
@@ -101,7 +102,7 @@ impl DICOMServer {
     pub async fn run_store_sync(
         &self,
         scu_stream: TcpStream,
-        out_dir: &PathBuf,
+        out_dir: &std::path::Path,
     ) -> Result<(), Whatever> {
         let server = Arc::new(self.clone());
         let calling_ae_title = server.config.ae_title.clone();
@@ -148,9 +149,14 @@ impl DICOMServer {
 
         // Send message to JavaScript
         if let Some(app_handle) = &self.app_handle {
-             app_handle.emit("log", format!("New association from {}", association.client_ae_title())).unwrap_or_else(|e| {
-                println!("Failed to emit log event: {}", e);
-            });
+            app_handle
+                .emit(
+                    "log",
+                    format!("New association from {}", association.client_ae_title()),
+                )
+                .unwrap_or_else(|e| {
+                    println!("Failed to emit log event: {}", e);
+                });
         }
 
         loop {
@@ -191,33 +197,61 @@ impl DICOMServer {
                                         Self::extract_int_tag(&obj, tags::COMMAND_FIELD)?;
 
                                     println!("Tags: {:?}", &obj.tags().collect::<Vec<_>>());
-                                    
+
                                     if let Ok(elem) = obj.element(tags::COMMAND_GROUP_LENGTH) {
-                                        println!("COMMAND_GROUP_LENGTH: {:?}", elem.to_str().unwrap_or(std::borrow::Cow::Borrowed("?")));
+                                        println!(
+                                            "COMMAND_GROUP_LENGTH: {:?}",
+                                            elem.to_str()
+                                                .unwrap_or(std::borrow::Cow::Borrowed("?"))
+                                        );
                                     }
 
                                     if let Ok(elem) = obj.element(tags::AFFECTED_SOP_CLASS_UID) {
-                                        println!("AFFECTED_SOP_CLASS_UID: {:?}", elem.to_str().unwrap_or(std::borrow::Cow::Borrowed("?")));
+                                        println!(
+                                            "AFFECTED_SOP_CLASS_UID: {:?}",
+                                            elem.to_str()
+                                                .unwrap_or(std::borrow::Cow::Borrowed("?"))
+                                        );
                                     }
 
                                     if let Ok(elem) = obj.element(tags::COMMAND_FIELD) {
-                                        println!("COMMAND_FIELD: {:?}", elem.to_str().unwrap_or(std::borrow::Cow::Borrowed("?")));
+                                        println!(
+                                            "COMMAND_FIELD: {:?}",
+                                            elem.to_str()
+                                                .unwrap_or(std::borrow::Cow::Borrowed("?"))
+                                        );
                                     }
 
                                     if let Ok(elem) = obj.element(tags::MESSAGE_ID) {
-                                        println!("MESSAGE_ID: {:?}", elem.to_str().unwrap_or(std::borrow::Cow::Borrowed("?")));
+                                        println!(
+                                            "MESSAGE_ID: {:?}",
+                                            elem.to_str()
+                                                .unwrap_or(std::borrow::Cow::Borrowed("?"))
+                                        );
                                     }
 
                                     if let Ok(elem) = obj.element(tags::PRIORITY) {
-                                        println!("PRIORITY: {:?}", elem.to_str().unwrap_or(std::borrow::Cow::Borrowed("?")));
+                                        println!(
+                                            "PRIORITY: {:?}",
+                                            elem.to_str()
+                                                .unwrap_or(std::borrow::Cow::Borrowed("?"))
+                                        );
                                     }
 
                                     if let Ok(elem) = obj.element(tags::COMMAND_DATA_SET_TYPE) {
-                                        println!("COMMAND_DATA_SET_TYPE: {:?}", elem.to_str().unwrap_or(std::borrow::Cow::Borrowed("?")));
+                                        println!(
+                                            "COMMAND_DATA_SET_TYPE: {:?}",
+                                            elem.to_str()
+                                                .unwrap_or(std::borrow::Cow::Borrowed("?"))
+                                        );
                                     }
-                                    
+
                                     if let Ok(elem) = obj.element(tags::AFFECTED_SOP_INSTANCE_UID) {
-                                        println!("AFFECTED_SOP_INSTANCE_UID: {:?}", elem.to_str().unwrap_or(std::borrow::Cow::Borrowed("?")));
+                                        println!(
+                                            "AFFECTED_SOP_INSTANCE_UID: {:?}",
+                                            elem.to_str()
+                                                .unwrap_or(std::borrow::Cow::Borrowed("?"))
+                                        );
                                     }
 
                                     if command_field == 0x0030 {
@@ -283,7 +317,7 @@ impl DICOMServer {
                                     println!("Received SeriesInstanceUID: {}", series_uid);
 
                                     // let message = format!("Received Study: {}", study_uid);
-                                    
+
                                     let file_meta = FileMetaTableBuilder::new()
                                         .transfer_syntax(ts)
                                         .build()
@@ -292,12 +326,12 @@ impl DICOMServer {
                                         )?;
 
                                     // write the files to the current directory with their SOPInstanceUID as filenames
-                                    let mut file_path = out_dir.clone();
+                                    let mut file_path = out_dir.to_path_buf();
 
-                                    file_path.push(study_uid.trim_end_matches('\0').to_string());
+                                    file_path.push(study_uid.trim_end_matches('\0'));
                                     // let study_dir = file_path.clone();
 
-                                    file_path.push(series_uid.trim_end_matches('\0').to_string());
+                                    file_path.push(series_uid.trim_end_matches('\0'));
                                     let series_dir = file_path.clone();
 
                                     if !series_dir.exists() {
@@ -318,7 +352,7 @@ impl DICOMServer {
 
                                     if let Err(err) = Metadata::update_study_metadata_json(
                                         &self.database,
-                                        out_dir.as_path(),
+                                        out_dir,
                                         &obj,
                                     )
                                     .await
@@ -334,11 +368,16 @@ impl DICOMServer {
 
                                     //let state = self.app_handle.state::<AppState>();
                                     if let Some(app_handle) = &self.app_handle {
-                                         app_handle.emit("queue-study", QueueUpload {
-                                            study_uid: &study_uid,
-                                        }).unwrap();
+                                        app_handle
+                                            .emit(
+                                                "queue-study",
+                                                QueueUpload {
+                                                    study_uid: &study_uid,
+                                                },
+                                            )
+                                            .unwrap();
                                     }
-                                 
+
                                     // send C-STORE-RSP object
                                     // commands are always in implict VR LE
                                     let ts =
@@ -419,9 +458,14 @@ impl DICOMServer {
         }
 
         if let Some(app_handle) = &self.app_handle {
-            app_handle.emit("log", format!("Dropping connection with {}", association.client_ae_title())).unwrap_or_else(|e| {
-                println!("Failed to emit log event: {}", e);
-            });
+            app_handle
+                .emit(
+                    "log",
+                    format!("Dropping connection with {}", association.client_ae_title()),
+                )
+                .unwrap_or_else(|e| {
+                    println!("Failed to emit log event: {}", e);
+                });
         }
 
         Ok(())
@@ -430,18 +474,18 @@ impl DICOMServer {
     pub(crate) fn extract_string_tag(obj: &InMemDicomObject, tag: Tag) -> Result<String, Whatever> {
         Ok(obj
             .element(tag)
-            .whatever_context(format!("missing string tag {}", tag.element().to_string()))?
+            .whatever_context(format!("missing string tag {}", tag.element()))?
             .to_str()
-            .whatever_context(format!("could not retrieve {}", tag.element().to_string()))?
+            .whatever_context(format!("could not retrieve {}", tag.element()))?
             .to_string())
     }
 
     fn extract_int_tag(obj: &InMemDicomObject, tag: Tag) -> Result<u16, Whatever> {
-        Ok(obj
+        obj
             .element(tag)
-            .whatever_context(format!("missing int tag {}", tag.element().to_string()))?
+            .whatever_context(format!("missing int tag {}", tag.element()))?
             .to_int()
-            .whatever_context(format!("could not retrieve {}", tag.element().to_string()))?)
+            .whatever_context(format!("could not retrieve {}", tag.element()))
     }
 
     /// Extract string tag from DICOM object, returning None if tag is missing or empty

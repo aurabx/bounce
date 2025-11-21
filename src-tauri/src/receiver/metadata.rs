@@ -1,3 +1,5 @@
+use crate::db::database::Database;
+use crate::db::models::Study;
 use crate::receiver::dicom_server::DICOMServer;
 use crate::{log_error, log_info};
 use dicom::object::InMemDicomObject;
@@ -7,8 +9,6 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use crate::db::database::Database;
-use crate::db::models::Study;
 
 #[derive(Debug, Clone)]
 pub struct Metadata {}
@@ -147,14 +147,14 @@ impl Metadata {
         let series_count = study_info.series.len();
 
         // Update counts
-        study_info.series_count = series_count.clone();
+        study_info.series_count = series_count;
 
         // Count images (one approach is to count DCM files in the study directory)
         let mut image_count = 0;
         for _entry in walkdir::WalkDir::new(study_path)
             .into_iter()
             .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().map_or(false, |ext| ext == "dcm"))
+            .filter(|e| e.path().extension().is_some_and(|ext| ext == "dcm"))
         {
             image_count += 1;
         }
@@ -173,17 +173,35 @@ impl Metadata {
         let new_study = Study {
             id: None,
             study_uid: study_uid.clone(),
-            study_description: DICOMServer::extract_string_tag_optional(obj, tags::STUDY_DESCRIPTION),
+            study_description: DICOMServer::extract_string_tag_optional(
+                obj,
+                tags::STUDY_DESCRIPTION,
+            ),
             institution_name: DICOMServer::extract_string_tag_optional(obj, tags::INSTITUTION_NAME),
-            institution_address: DICOMServer::extract_string_tag_optional(obj, tags::INSTITUTION_ADDRESS),
+            institution_address: DICOMServer::extract_string_tag_optional(
+                obj,
+                tags::INSTITUTION_ADDRESS,
+            ),
             patient_id: DICOMServer::extract_string_tag_optional(obj, tags::PATIENT_ID),
-            other_patient_ids: DICOMServer::extract_string_tag_optional(obj, tags::OTHER_PATIENT_NAMES),
+            other_patient_ids: DICOMServer::extract_string_tag_optional(
+                obj,
+                tags::OTHER_PATIENT_NAMES,
+            ),
             accession_no: DICOMServer::extract_string_tag_optional(obj, tags::ACCESSION_NUMBER),
             patient_name: DICOMServer::extract_string_tag_optional(obj, tags::PATIENT_NAME),
-            issuer_of_patient_id: DICOMServer::extract_string_tag_optional(obj, tags::ISSUER_OF_PATIENT_ID),
-            patient_birth_date: DICOMServer::extract_string_tag_optional(obj, tags::PATIENT_BIRTH_DATE),
+            issuer_of_patient_id: DICOMServer::extract_string_tag_optional(
+                obj,
+                tags::ISSUER_OF_PATIENT_ID,
+            ),
+            patient_birth_date: DICOMServer::extract_string_tag_optional(
+                obj,
+                tags::PATIENT_BIRTH_DATE,
+            ),
             patient_sex: DICOMServer::extract_string_tag_optional(obj, tags::PATIENT_SEX),
-            referring_physician_name: DICOMServer::extract_string_tag_optional(obj, tags::REFERRING_PHYSICIAN_NAME),
+            referring_physician_name: DICOMServer::extract_string_tag_optional(
+                obj,
+                tags::REFERRING_PHYSICIAN_NAME,
+            ),
             study_date: DICOMServer::extract_string_tag_optional(obj, tags::STUDY_DATE),
             study_time: DICOMServer::extract_string_tag_optional(obj, tags::STUDY_TIME),
             tz_offset: None, // TZ offset isn't directly in standard DICOM tags
@@ -251,14 +269,12 @@ impl Metadata {
         })
     }
 
-
     /// Update the study metadata JSON file with study_uid as the key
     pub async fn update_study_metadata_status(
         database: &Database,
         study_uid: String,
         status: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-
         // let database = app_handle.state::<Database>();
 
         database.update_study_status(&study_uid, status).await?;
@@ -266,5 +282,4 @@ impl Metadata {
 
         Ok(())
     }
-
 }

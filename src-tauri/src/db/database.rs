@@ -1,10 +1,10 @@
 use crate::db::{migrations, models::*};
-use anyhow::{Context, Result};
-use chrono::{Utc};
-use sqlx::{ SqlitePool};
-use serde_json::Value;
-use tauri::{AppHandle, Manager};
 use crate::{load_config, log_error, log_info};
+use anyhow::{Context, Result};
+use chrono::Utc;
+use serde_json::Value;
+use sqlx::SqlitePool;
+use tauri::{AppHandle, Manager};
 
 #[derive(Clone, Debug)]
 pub struct Database {
@@ -14,12 +14,11 @@ pub struct Database {
 
 impl Database {
     pub async fn new(app_handle: AppHandle) -> Result<Self> {
-        let app_dir = app_handle.clone()
+        let app_dir = app_handle
+            .clone()
             .path()
             .app_data_dir()
             .context("Failed to get app data directory")?;
-
-
 
         // Ensure the directory exists
         tokio::fs::create_dir_all(&app_dir).await?;
@@ -38,13 +37,21 @@ impl Database {
             .await
             .context("Failed to run db migrations")?;
 
-        Ok(Self { pool, app_handle: Some(app_handle) })
+        Ok(Self {
+            pool,
+            app_handle: Some(app_handle),
+        })
     }
-    
+
     #[allow(dead_code)]
     pub async fn new_for_test(pool: SqlitePool) -> Self {
-        migrations::run_migrations(&pool).await.expect("Failed to run migrations");
-        Self { pool, app_handle: None }
+        migrations::run_migrations(&pool)
+            .await
+            .expect("Failed to run migrations");
+        Self {
+            pool,
+            app_handle: None,
+        }
     }
 
     // pub fn pool(&self) -> &SqlitePool {
@@ -106,9 +113,7 @@ impl Database {
     }
 
     pub async fn get_study_by_uid(&self, study_uid: &str) -> Result<Study> {
-        let study = sqlx::query_as::<_, Study>(
-            "SELECT * FROM studies WHERE study_uid = ?"
-        )
+        let study = sqlx::query_as::<_, Study>("SELECT * FROM studies WHERE study_uid = ?")
             .bind(study_uid)
             .fetch_one(&self.pool)
             .await
@@ -119,21 +124,24 @@ impl Database {
 
     pub async fn current_studies(&self, page: u32, limit: u32) -> Value {
         let config = if let Some(app_handle) = &self.app_handle {
-             load_config(app_handle.clone())
+            load_config(app_handle.clone())
         } else {
-             // In test mode, we can't load config from store, so we might need a workaround 
-             // or just return basic info. For now, let's panic if called in test 
-             // or return a default config if we can mock it?
-             // A better approach is to have the config passed in or return an error.
-             // But current_studies returns Value (JSON), so we can return an error JSON.
-             log_error!("current_studies called without app_handle");
-             return serde_json::json!({"error": "No app_handle available"});
+            // In test mode, we can't load config from store, so we might need a workaround
+            // or just return basic info. For now, let's panic if called in test
+            // or return a default config if we can mock it?
+            // A better approach is to have the config passed in or return an error.
+            // But current_studies returns Value (JSON), so we can return an error JSON.
+            log_error!("current_studies called without app_handle");
+            return serde_json::json!({"error": "No app_handle available"});
         };
 
         // Calculate offset
         let offset = (page.saturating_sub(1)) * limit;
 
-        match self.get_studies_paginated(offset as i64, limit as i64).await {
+        match self
+            .get_studies_paginated(offset as i64, limit as i64)
+            .await
+        {
             Ok((studies, total_count)) => {
                 let mut studies_json = Vec::new();
 
@@ -143,26 +151,26 @@ impl Database {
                     let exists = study_path.exists();
 
                     let study_json = serde_json::json!({
-                    "study_uid": study.study_uid,
-                    "study_description": study.study_description.unwrap_or_else(|| "No study description".to_string()),
-                    "study_date": study.study_date.unwrap_or_else(|| "No study date".to_string()),
-                    "study_time": study.study_time.unwrap_or_else(|| "No study time".to_string()),
-                    "patient_name": study.patient_name.unwrap_or_else(|| "No patient name".to_string()),
-                    "patient_id": study.patient_id.unwrap_or_else(|| "No patient ID".to_string()),
-                    "institution_name": study.institution_name.unwrap_or_else(|| "No institution".to_string()),
-                    "accession_no": study.accession_no.unwrap_or_else(|| "No accession number".to_string()),
-                    "patient_sex": study.patient_sex.unwrap_or_else(|| "Unknown".to_string()),
-                    "patient_birth_date": study.patient_birth_date.unwrap_or_else(|| "Unknown".to_string()),
-                    "referring_physician_name": study.referring_physician_name.unwrap_or_else(|| "Unknown".to_string()),
-                    "series_count": study.series_count,
-                    "images": study.images,
-                    "status": study.status,
-                    "created_at": study.created_at,
-                    "updated_at": study.updated_at,
-                    "sent_at": study.sent_at,
-                    "exists": exists,
-                    "path": study_path.to_string_lossy(),
-                });
+                        "study_uid": study.study_uid,
+                        "study_description": study.study_description.unwrap_or_else(|| "No study description".to_string()),
+                        "study_date": study.study_date.unwrap_or_else(|| "No study date".to_string()),
+                        "study_time": study.study_time.unwrap_or_else(|| "No study time".to_string()),
+                        "patient_name": study.patient_name.unwrap_or_else(|| "No patient name".to_string()),
+                        "patient_id": study.patient_id.unwrap_or_else(|| "No patient ID".to_string()),
+                        "institution_name": study.institution_name.unwrap_or_else(|| "No institution".to_string()),
+                        "accession_no": study.accession_no.unwrap_or_else(|| "No accession number".to_string()),
+                        "patient_sex": study.patient_sex.unwrap_or_else(|| "Unknown".to_string()),
+                        "patient_birth_date": study.patient_birth_date.unwrap_or_else(|| "Unknown".to_string()),
+                        "referring_physician_name": study.referring_physician_name.unwrap_or_else(|| "Unknown".to_string()),
+                        "series_count": study.series_count,
+                        "images": study.images,
+                        "status": study.status,
+                        "created_at": study.created_at,
+                        "updated_at": study.updated_at,
+                        "sent_at": study.sent_at,
+                        "exists": exists,
+                        "path": study_path.to_string_lossy(),
+                    });
 
                     studies_json.push(study_json);
                 }
@@ -172,18 +180,18 @@ impl Database {
                 let has_previous_page = page > 1;
 
                 let result = serde_json::json!({
-                "studies": studies_json,
-                "pagination": {
-                    "current_page": page,
-                    "total_pages": total_pages,
-                    "total_items": total_count,
-                    "limit": limit,
-                    "offset": offset,
-                    "has_next_page": has_next_page,
-                    "has_previous_page": has_previous_page,
-                    "items_on_page": studies_json.len()
-                }
-            });
+                    "studies": studies_json,
+                    "pagination": {
+                        "current_page": page,
+                        "total_pages": total_pages,
+                        "total_items": total_count,
+                        "limit": limit,
+                        "offset": offset,
+                        "has_next_page": has_next_page,
+                        "has_previous_page": has_previous_page,
+                        "items_on_page": studies_json.len()
+                    }
+                });
 
                 result
             }
@@ -191,49 +199,48 @@ impl Database {
                 log_error!("Error fetching paginated studies from database: {}", e);
 
                 let error_result = serde_json::json!({
-                "studies": [],
-                "pagination": {
-                    "current_page": page,
-                    "total_pages": 0,
-                    "total_items": 0,
-                    "limit": limit,
-                    "offset": offset,
-                    "has_next_page": false,
-                    "has_previous_page": false,
-                    "items_on_page": 0
-                },
-                "error": e.to_string()
-            });
+                    "studies": [],
+                    "pagination": {
+                        "current_page": page,
+                        "total_pages": 0,
+                        "total_items": 0,
+                        "limit": limit,
+                        "offset": offset,
+                        "has_next_page": false,
+                        "has_previous_page": false,
+                        "items_on_page": 0
+                    },
+                    "error": e.to_string()
+                });
 
                 error_result
             }
         }
     }
 
-    pub async fn get_studies_paginated(&self, offset: i64, limit: i64) -> Result<(Vec<Study>, i64)> {
+    pub async fn get_studies_paginated(
+        &self,
+        offset: i64,
+        limit: i64,
+    ) -> Result<(Vec<Study>, i64)> {
         // First, get the total count
-        let total_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM studies"
-        )
+        let total_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM studies")
             .fetch_one(&self.pool)
             .await
             .context("Failed to get total studies count")?;
 
         // Then get the paginated studies
         let studies = sqlx::query_as::<_, Study>(
-            "SELECT * FROM studies ORDER BY created_at DESC LIMIT ? OFFSET ?"
+            "SELECT * FROM studies ORDER BY created_at DESC LIMIT ? OFFSET ?",
         )
-            .bind(limit)
-            .bind(offset)
-            .fetch_all(&self.pool)
-            .await
-            .context("Failed to fetch paginated studies")?;
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&self.pool)
+        .await
+        .context("Failed to fetch paginated studies")?;
 
         Ok((studies, total_count))
     }
-
-
-
 
     pub async fn update_study_status(&self, study_uid: &str, status: &str) -> Result<()> {
         let sent_at = if status == "SENT" {
@@ -249,11 +256,11 @@ impl Database {
             WHERE study_uid = ?
             "#,
         )
-            .bind(status)
-            .bind(sent_at)
-            .bind(study_uid)
-            .execute(&self.pool)
-            .await?;
+        .bind(status)
+        .bind(sent_at)
+        .bind(study_uid)
+        .execute(&self.pool)
+        .await?;
 
         Ok(())
     }
@@ -282,9 +289,7 @@ impl Database {
             .await?;
 
         // Delete all studies
-        sqlx::query("DELETE FROM studies")
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query("DELETE FROM studies").execute(&mut *tx).await?;
 
         tx.commit().await?;
 
@@ -292,5 +297,4 @@ impl Database {
 
         Ok(count as usize)
     }
-
 }

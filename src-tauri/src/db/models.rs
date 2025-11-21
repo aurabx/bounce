@@ -27,4 +27,3 @@ pub struct Study {
     pub updated_at: DateTime<Utc>,
     pub sent_at: Option<DateTime<Utc>>,
 }
-

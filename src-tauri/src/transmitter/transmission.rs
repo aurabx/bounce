@@ -1,16 +1,18 @@
 use crate::aura::aura_api::AuraApi;
+use crate::db::database::Database;
+use crate::receiver::metadata::Metadata;
 use crate::{load_config, log_error, log_info};
-use tokio::io::AsyncReadExt;
 use anyhow::{anyhow, Context, Result};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use reqwest::Client;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::io::{Seek, Write, Cursor};
+use std::io::{Cursor, Seek, Write};
 use std::path::{Path, PathBuf};
 use std::{collections::HashMap, sync::Arc};
-use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
+use tokio::io::AsyncReadExt;
 use tokio::sync::{oneshot, Mutex};
 use tokio::time::{sleep, Duration};
 use tokio::{fs, fs::File};
@@ -18,8 +20,6 @@ use uuid::Uuid;
 use walkdir::{DirEntry, WalkDir};
 use zip::result::ZipError;
 use zip::{write::SimpleFileOptions, write::ZipWriter, CompressionMethod};
-use crate::db::database::Database;
-use crate::receiver::metadata::Metadata;
 // use tokio_util::io::ReaderStream;
 // use tokio_util::io::ReaderStream;
 
@@ -29,7 +29,6 @@ pub struct ScheduledStudy {
     // We send a signal to the task whenever we want to reset the countdown.
     cancel_tx: oneshot::Sender<()>,
 }
-
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct QueueUpload<'a> {
@@ -126,7 +125,8 @@ impl Transmission {
 
     pub async fn delete_study(&self, study_uid: String) -> Result<()> {
         self.delete_local_study_files(study_uid.clone()).await?;
-        self.delete_local_compressed_study(study_uid.clone()).await?;
+        self.delete_local_compressed_study(study_uid.clone())
+            .await?;
         self.delete_local_study_meta(study_uid.clone()).await?;
 
         log_info!("Deleted local study files and archive for {}", study_uid);
@@ -162,15 +162,34 @@ impl Transmission {
         log_info!("study_uid: {}", study_uid.clone());
         log_info!("upload_id: {}", upload_id.to_string());
 
-        let endpoint = upload_config.get("endpoint").unwrap().as_str().unwrap().to_string();
-        let token = upload_config.get("token").unwrap().as_str().unwrap().to_string();
-        let bucket = upload_config.get("bucket").unwrap().as_str().unwrap().to_string();
-        let assembly_id = upload_config.get("assembly_id").unwrap().as_str().unwrap().to_string();
+        let endpoint = upload_config
+            .get("endpoint")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_string();
+        let token = upload_config
+            .get("token")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_string();
+        let bucket = upload_config
+            .get("bucket")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_string();
+        let assembly_id = upload_config
+            .get("assembly_id")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_string();
 
         log_info!("endpoint: {}", endpoint.clone());
         log_info!("token: {}", token.to_string());
         log_info!("bucket: {}", bucket.to_string());
-
 
         // === Upload init
         self.aura_api
@@ -184,7 +203,12 @@ impl Transmission {
 
         log_info!("Sent upload init to aura");
 
-        self.app_handle.emit("log", format!("Study data send to aurabox {}", study_uid.clone())).unwrap();
+        self.app_handle
+            .emit(
+                "log",
+                format!("Study data send to aurabox {}", study_uid.clone()),
+            )
+            .unwrap();
 
         // === Upload start
         // This would normally run just after the upload starts in uppy
@@ -201,13 +225,16 @@ impl Transmission {
         log_info!("Sent upload start to aura");
 
         // === Upload via TUS
-        self.upload_via_tus(&upload_config, &archive_path, &upload_id).await?;
-        log_info!(
-            "Study sent successfully via TUS to {}",
-            endpoint
-        );
+        self.upload_via_tus(&upload_config, &archive_path, &upload_id)
+            .await?;
+        log_info!("Study sent successfully via TUS to {}", endpoint);
 
-        self.app_handle.emit("log", format!("Dicom send to aurabox storage {}", study_uid.clone())).unwrap();
+        self.app_handle
+            .emit(
+                "log",
+                format!("Dicom send to aurabox storage {}", study_uid.clone()),
+            )
+            .unwrap();
 
         // === Upload complete
         self.aura_api
@@ -221,51 +248,50 @@ impl Transmission {
 
         log_info!("Sent upload complete to aura");
 
-        self.app_handle.emit("log", format!("Complete request sent to aura {}", study_uid.clone())).unwrap();
+        self.app_handle
+            .emit(
+                "log",
+                format!("Complete request sent to aura {}", study_uid.clone()),
+            )
+            .unwrap();
 
         // Optionally, delete local study if requested
         if delete_after_send {
             self.delete_study(study_uid.clone()).await?;
         }
 
-        if let Err(err) = Metadata::update_study_metadata_status(
-            &self.database,
-            study_uid,
-            "SENT",
-        ).await {
+        if let Err(err) =
+            Metadata::update_study_metadata_status(&self.database, study_uid, "SENT").await
+        {
             log_error!("Failed to update study metadata status: {}", err);
         }
 
         Ok(())
     }
 
-    fn resolve_study_path(&self, study_uid: &String) -> PathBuf {
+    fn resolve_study_path(&self, study_uid: &str) -> PathBuf {
         let config = load_config(self.app_handle.clone());
 
         // Actually push the study (you’ll have to adapt to your code)
         let mut file_path = PathBuf::from(config.get_base_dir());
-        file_path.push(study_uid.trim_end_matches('\0').to_string());
+        file_path.push(study_uid.trim_end_matches('\0'));
         // file_path.push(study_uid.to_string());
 
         file_path
     }
 
-    fn resolve_study_archive_path(&self, study_uid: &String) -> PathBuf {
+    fn resolve_study_archive_path(&self, study_uid: &str) -> PathBuf {
         let config = load_config(self.app_handle.clone());
 
         let file_path = PathBuf::from(config.get_base_dir());
-        let file_path = file_path.clone().join(study_uid.clone() + ".zip");
-
-        file_path
+        file_path.join(study_uid.to_owned() + ".zip")
     }
 
-    fn resolve_study_meta_path(&self, study_uid: &String) -> PathBuf {
+    fn resolve_study_meta_path(&self, study_uid: &str) -> PathBuf {
         let config = load_config(self.app_handle.clone());
 
         let file_path = PathBuf::from(config.get_base_dir());
-        let file_path = file_path.clone().join(study_uid.clone() + ".json");
-
-        file_path
+        file_path.join(study_uid.to_owned() + ".json")
     }
 
     pub async fn zip_folder<T, I>(it: I, prefix: &Path, writer: T) -> anyhow::Result<()>
@@ -310,7 +336,6 @@ impl Transmission {
     }
 
     async fn compress_study(&self, study_uid: String) -> Result<PathBuf> {
-
         //let archive_path = study_path.with_extension("zip");
         let config = load_config(self.app_handle.clone());
         let output_path = PathBuf::from(config.get_base_dir());
@@ -359,7 +384,6 @@ impl Transmission {
             fs::remove_file(archive_path.as_path())
                 .await
                 .context("Failed to delete local study files")?;
-
         }
 
         Ok(())
@@ -393,18 +417,22 @@ impl Transmission {
         }
 
         // Read directory contents
-        let mut entries = fs::read_dir(&file_path).await
+        let mut entries = fs::read_dir(&file_path)
+            .await
             .context(format!("Failed to read directory: {:?}", file_path))?;
 
         let mut deleted_count = 0;
         let mut error_count = 0;
 
         // Iterate through all entries in the directory
-        while let Some(entry) = entries.next_entry().await
-            .context("Failed to read directory entry")? {
-
+        while let Some(entry) = entries
+            .next_entry()
+            .await
+            .context("Failed to read directory entry")?
+        {
             let entry_path = entry.path();
-            let entry_name = entry_path.file_name()
+            let entry_name = entry_path
+                .file_name()
                 .and_then(|name| name.to_str())
                 .unwrap_or("unknown");
 
@@ -436,22 +464,29 @@ impl Transmission {
         }
 
         if error_count > 0 {
-            log_error!("Storage clearing completed with {} errors. {} items deleted.", error_count, deleted_count);
-            return Err(anyhow!("Failed to delete {} items from storage", error_count));
+            log_error!(
+                "Storage clearing completed with {} errors. {} items deleted.",
+                error_count,
+                deleted_count
+            );
+            return Err(anyhow!(
+                "Failed to delete {} items from storage",
+                error_count
+            ));
         }
 
-        log_info!("Successfully cleared storage directory. {} items deleted.", deleted_count);
+        log_info!(
+            "Successfully cleared storage directory. {} items deleted.",
+            deleted_count
+        );
         Ok(())
     }
-
 
     /// Create a Transloadit Assembly and return its TUS upload URL.
     async fn fetch_uploader_config(&self) -> Result<Value> {
         let upload_config = self.aura_api.upload_config().await?;
 
-        let lift_config = upload_config
-            .get("lift")
-            .unwrap();
+        let lift_config = upload_config.get("lift").unwrap();
 
         let bucket = lift_config.get("bucket").unwrap().as_str();
         let endpoint = lift_config.get("endpoint").unwrap().as_str();
@@ -472,7 +507,12 @@ impl Transmission {
     }
 
     /// A simple TUS upload example.
-    async fn upload_via_tus(&self, upload_config: &Value, file_path: &Path, upload_id: &Uuid) -> Result<()> {
+    async fn upload_via_tus(
+        &self,
+        upload_config: &Value,
+        file_path: &Path,
+        upload_id: &Uuid,
+    ) -> Result<()> {
         let file_size = fs::metadata(file_path)
             .await
             .context("Could not get metadata for file")?
@@ -557,11 +597,16 @@ impl Transmission {
         let mut uploaded_bytes = 0u64;
         let mut chunk_buffer = vec![0u8; CHUNK_SIZE];
 
-        log_info!("Starting chunked upload of {} bytes in {}MB chunks", file_size, CHUNK_SIZE / 1024 / 1024);
+        log_info!(
+            "Starting chunked upload of {} bytes in {}MB chunks",
+            file_size,
+            CHUNK_SIZE / 1024 / 1024
+        );
 
         loop {
             // Read next chunk using AsyncReadExt::read on the cursor
-            let bytes_read = cursor.read(&mut chunk_buffer)
+            let bytes_read = cursor
+                .read(&mut chunk_buffer)
                 .await
                 .context("Failed to read file chunk")?;
 
@@ -572,7 +617,11 @@ impl Transmission {
             // Upload this chunk
             let chunk_data = &chunk_buffer[..bytes_read];
 
-            log_info!("Uploading chunk: offset={}, size={}", uploaded_bytes, bytes_read);
+            log_info!(
+                "Uploading chunk: offset={}, size={}",
+                uploaded_bytes,
+                bytes_read
+            );
 
             let patch_resp = self
                 .client
@@ -590,7 +639,11 @@ impl Transmission {
             if !patch_resp.status().is_success() {
                 let status = patch_resp.status();
                 let body = patch_resp.text().await.ok();
-                log_error!("TUS chunk upload failed. Status: {}, Body: {:?}", status, body);
+                log_error!(
+                    "TUS chunk upload failed. Status: {}, Body: {:?}",
+                    status,
+                    body
+                );
                 return Err(anyhow!(
                     "TUS upload patch failed. Status: {}, Body: {:?}",
                     status,
@@ -603,13 +656,21 @@ impl Transmission {
             // Report progress
             let progress = (uploaded_bytes as f64 / file_size as f64 * 100.0) as u32;
             if uploaded_bytes % (CHUNK_SIZE as u64 * 10) == 0 || uploaded_bytes == file_size {
-                log_info!("Upload progress: {}% ({}/{})", progress, uploaded_bytes, file_size);
+                log_info!(
+                    "Upload progress: {}% ({}/{})",
+                    progress,
+                    uploaded_bytes,
+                    file_size
+                );
 
-                if let Err(e) = self.app_handle.emit("upload-progress", json!({
-                    "uploaded": uploaded_bytes,
-                    "total": file_size,
-                    "progress": progress
-                })) {
+                if let Err(e) = self.app_handle.emit(
+                    "upload-progress",
+                    json!({
+                        "uploaded": uploaded_bytes,
+                        "total": file_size,
+                        "progress": progress
+                    }),
+                ) {
                     log_error!("Failed to emit progress event: {}", e);
                 }
             }

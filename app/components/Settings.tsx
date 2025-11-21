@@ -1,7 +1,7 @@
 'use client';
 
 import {load} from '@tauri-apps/plugin-store';
-import {Suspense, useEffect, useState} from 'react'
+import {Suspense, useEffect, useState, useCallback} from 'react'
 import {fields, fieldKeys} from "@/app/lib/fields";
 import { Alert, AlertTitle, AlertDescription } from "@/app/components/ui/alert";
 import { Button } from "@/app/components/ui/button";
@@ -51,14 +51,14 @@ export default function Settings() {
         }
     };
 
-    const checkApiKey = async () => {
+    const checkApiKey = useCallback(async () => {
         if (settings && settings.api_key) {
             const parts = settings.api_key.split('_');
             const last = parts[parts.length - 1];
 
             ['local', 'dev', 'staging'].includes(last) ? setEnv(last) : setEnv(null);
         }
-    }
+    }, [settings]);
 
     const setField = async (key: string, value: any) => {
         setSettings({
@@ -136,7 +136,7 @@ export default function Settings() {
 
     useEffect(() => {
         checkApiKey().then()
-    }, [settings, env]);
+    }, [checkApiKey]);
 
     return (
         <div className="space-y-4">

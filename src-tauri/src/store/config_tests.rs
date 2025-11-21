@@ -210,7 +210,10 @@ mod tests {
         };
 
         let endpoint = config.get_api_endpoint();
-        assert_eq!(endpoint, "https://dev-54ta5gq-pghszvpk65pns.au.platformsh.site");
+        assert_eq!(
+            endpoint,
+            "https://dev-54ta5gq-pghszvpk65pns.au.platformsh.site"
+        );
     }
 
     #[test]

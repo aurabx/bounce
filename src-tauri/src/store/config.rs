@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tauri::AppHandle;
-use tauri_plugin_store::{StoreExt};
+use tauri_plugin_store::StoreExt;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
@@ -16,9 +16,7 @@ pub struct Config {
 }
 
 impl Config {
-
     pub fn load(app_handle: AppHandle) -> Self {
-
         let store = app_handle
             .store("store.json")
             .map_err(|e| format!("Failed to load store: {}", e))
@@ -42,11 +40,10 @@ impl Config {
             port: match store.get("port") {
                 None => 9090,
                 Some(value) => match value.as_str() {
-                    Some(str_value) => str_value.parse().unwrap_or_else(|_| 9090),
+                    Some(str_value) => str_value.parse().unwrap_or(9090),
                     None => 9090,
                 },
             },
-
 
             ip_address: match store.get("ip_address") {
                 None => "0.0.0.0".to_string(),
@@ -57,7 +54,7 @@ impl Config {
                         } else {
                             str_value.parse().unwrap_or_else(|_| "0.0.0.0".to_string())
                         }
-                    },
+                    }
                     None => "0.0.0.0".to_string(),
                 },
             },
@@ -130,7 +127,6 @@ impl Config {
         Some("production".to_string())
     }
 
-
     pub fn get_api_endpoint(&self) -> String {
         let region = self.region_from_api_key().unwrap();
         let mode = self.mode_from_api_key().unwrap();
@@ -143,21 +139,17 @@ impl Config {
         }
     }
 
-    pub fn resolve_study_path(&self, study_uid: &String) -> PathBuf {
+    pub fn resolve_study_path(&self, study_uid: &str) -> PathBuf {
         // Actually push the study (you’ll have to adapt to your code)
         let mut file_path = PathBuf::from(&self.get_base_dir());
-        file_path.push(study_uid.trim_end_matches('\0').to_string());
-
+        file_path.push(study_uid.trim_end_matches('\0'));
         file_path
     }
 
-    pub fn resolve_metadata_path(&self, study_uid: &String) -> PathBuf {
+    pub fn resolve_metadata_path(&self, study_uid: &str) -> PathBuf {
         // Actually push the study (you’ll have to adapt to your code)
         let mut file_path = PathBuf::from(&self.get_base_dir());
         file_path.push(study_uid.trim_end_matches('\0').to_string() + ".json");
-
         file_path
     }
-
-
 }
