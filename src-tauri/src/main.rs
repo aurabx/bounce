@@ -2,13 +2,16 @@
 mod aura;
 mod db;
 mod logger;
+mod query;
 mod receiver;
 mod store;
 mod transmitter;
 
 use crate::aura::aura_api::AuraApi;
 use crate::db::database::Database;
-use crate::logger::{setup_logger_with_config, LogtailConfig};
+use crate::logger::{set_remote_logging_enabled, setup_logger_with_config, LogtailConfig};
+use crate::query::cfind::execute_cfind;
+use crate::query::models::{CfindResult, PacsService, QueryFilters};
 use crate::receiver::server::init_server_state;
 use crate::transmitter::transmission::{QueueUpload, Transmission};
 use std::sync::Arc;
@@ -31,6 +34,12 @@ fn send_log(app: AppHandle, log: String) -> Result<(), String> {
     println!("log: {}", log);
     app.emit("log", log).unwrap();
 
+    Ok(())
+}
+
+#[tauri::command]
+fn update_send_logs(enabled: bool) -> Result<(), String> {
+    set_remote_logging_enabled(enabled);
     Ok(())
 }
 
@@ -149,6 +158,42 @@ async fn current_studies(
     Ok(())
 }
 
+/// Diagnostic command: execute a C-FIND query directly from the Bounce UI.
+///
+/// This is independent of the Aurabox polling flow and useful for testing
+/// connectivity to a PACS during setup.
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+async fn cfind_query(
+    app: AppHandle,
+    pacs_host: String,
+    pacs_port: u16,
+    pacs_ae_title: String,
+    patient_name: Option<String>,
+    patient_id: Option<String>,
+    study_date: Option<String>,
+    accession_number: Option<String>,
+    modality: Option<String>,
+) -> Result<Vec<CfindResult>, String> {
+    let config = load_config(app);
+
+    let pacs = PacsService {
+        ae_title: pacs_ae_title,
+        host: pacs_host,
+        port: pacs_port,
+    };
+
+    let filters = QueryFilters {
+        patient_name,
+        patient_id,
+        study_date,
+        accession_number,
+        modality,
+    };
+
+    execute_cfind(&config.ae_title, &pacs, &filters).await
+}
+
 #[tauri::command]
 fn show_window(app: AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_window("main") {
@@ -255,7 +300,9 @@ fn main() {
             delete_study,
             api_start_upload,
             current_studies,
-            show_window
+            cfind_query,
+            show_window,
+            update_send_logs
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

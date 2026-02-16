@@ -2,6 +2,7 @@ use dicom::core::chrono;
 use log::{Level, LevelFilter, Metadata, Record};
 use reqwest::Client;
 use serde_json::json;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::Once;
 use tokio::sync::mpsc;
@@ -9,8 +10,8 @@ use tokio::sync::mpsc;
 // Use a static Once guard to ensure initialization happens only once
 static INIT: Once = Once::new();
 
-// Global sender for direct macro access
-static mut GLOBAL_SENDER: Option<Arc<mpsc::UnboundedSender<LogMessage>>> = None;
+// Global enable flag — can be toggled at runtime without restarting the logger
+static mut GLOBAL_ENABLE: Option<Arc<AtomicBool>> = None;
 
 // Configuration for Better Stack Logtail
 #[derive(Debug, Clone)]
@@ -27,6 +28,7 @@ pub struct LogtailLogger {
     #[allow(dead_code)]
     config: LogtailConfig,
     sender: Arc<mpsc::UnboundedSender<LogMessage>>,
+    enable: Arc<AtomicBool>,
 }
 
 #[derive(Debug, Clone)]
@@ -43,61 +45,64 @@ impl LogtailLogger {
     pub fn new(config: LogtailConfig) -> Self {
         let (sender, receiver) = mpsc::unbounded_channel();
         let sender = Arc::new(sender);
+        let enable = Arc::new(AtomicBool::new(config.enable));
 
-        // Store the sender globally for macro access
+        // Store the enable flag globally so it can be updated later
         unsafe {
-            GLOBAL_SENDER = Some(sender.clone());
+            GLOBAL_ENABLE = Some(enable.clone());
         }
 
         // Start background task to send logs
         let config_clone = config.clone();
+        let enable_clone = enable.clone();
         tauri::async_runtime::spawn(async move {
-            Self::log_sender_task(config_clone, receiver).await;
+            Self::log_sender_task(config_clone, receiver, enable_clone).await;
         });
 
-        Self { config, sender }
+        Self {
+            config,
+            sender,
+            enable,
+        }
     }
 
     async fn log_sender_task(
         config: LogtailConfig,
         mut receiver: mpsc::UnboundedReceiver<LogMessage>,
+        enable: Arc<AtomicBool>,
     ) {
         let client = Client::new();
         let mut batch = Vec::new();
         let mut last_send = std::time::Instant::now();
-        const BATCH_SIZE: usize = 10; // Reduced for testing
-        const BATCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2); // Reduced for testing
-
-        println!("Log sender task started, waiting for messages...");
+        const BATCH_SIZE: usize = 10;
+        const BATCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
         loop {
             tokio::select! {
-                // Receive new log messages
                 msg = receiver.recv() => {
                     match msg {
                         Some(log_msg) => {
-                            println!("Received log message: {:?}", log_msg);
+                            // Skip queueing if remote logging is disabled
+                            if !enable.load(Ordering::Relaxed) {
+                                continue;
+                            }
+
                             batch.push(log_msg);
 
-                            // Send batch if it's full or timeout reached
                             if (batch.len() >= BATCH_SIZE || last_send.elapsed() >= BATCH_TIMEOUT) && !batch.is_empty() {
-                                println!("Sending batch of {} logs", batch.len());
                                 Self::send_logs_batch(&client, &config, &batch).await;
                                 batch.clear();
                                 last_send = std::time::Instant::now();
                             }
                         }
                         None => {
-                            println!("🔚 Log channel closed, shutting down sender task");
                             break;
                         }
                     }
                 }
 
-                // Timeout to send remaining logs
                 _ = tokio::time::sleep(BATCH_TIMEOUT) => {
                     if !batch.is_empty() && last_send.elapsed() >= BATCH_TIMEOUT {
-                        println!("Timeout reached, sending batch of {} logs", batch.len());
                         Self::send_logs_batch(&client, &config, &batch).await;
                         batch.clear();
                         last_send = std::time::Instant::now();
@@ -108,16 +113,11 @@ impl LogtailLogger {
 
         // Send any remaining logs before shutting down
         if !batch.is_empty() {
-            println!("🔄 Sending final batch of {} logs", batch.len());
             Self::send_logs_batch(&client, &config, &batch).await;
         }
     }
 
     async fn send_logs_batch(client: &Client, config: &LogtailConfig, logs: &[LogMessage]) {
-        if !config.enable {
-            return;
-        }
-
         let payload: Vec<serde_json::Value> = logs
             .iter()
             .map(|log| {
@@ -136,8 +136,6 @@ impl LogtailLogger {
             })
             .collect();
 
-        println!("🌐 Sending {} logs to {}", payload.len(), config.endpoint);
-
         let response = client
             .post(&config.endpoint)
             .header("Authorization", format!("Bearer {}", config.source_token))
@@ -148,9 +146,7 @@ impl LogtailLogger {
 
         match response {
             Ok(resp) => {
-                if resp.status().is_success() {
-                    println!("Successfully sent {} logs to Logtail", payload.len());
-                } else {
+                if !resp.status().is_success() {
                     let status = resp.status();
                     let body = resp.text().await.unwrap_or_default();
                     eprintln!("Failed to send logs to Logtail: HTTP {} - {}", status, body);
@@ -170,6 +166,14 @@ impl log::Log for LogtailLogger {
 
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
+            // Print to stdout for local development
+            println!("[{}] {}", record.level(), record.args());
+
+            // Only queue for remote sending if enabled
+            if !self.enable.load(Ordering::Relaxed) {
+                return;
+            }
+
             let log_msg = LogMessage {
                 level: record.level().to_string().to_lowercase(),
                 message: record.args().to_string(),
@@ -179,9 +183,6 @@ impl log::Log for LogtailLogger {
                 line: record.line(),
             };
 
-            println!("LogtailLogger::log called: {:?}", log_msg);
-
-            // Send to Logtail (non-blocking)
             if let Err(e) = self.sender.send(log_msg) {
                 eprintln!("Failed to send log message: {}", e);
             }
@@ -189,143 +190,69 @@ impl log::Log for LogtailLogger {
     }
 
     fn flush(&self) {
-        // Implementation for flushing logs if needed
-        // In our case, the background task handles batching and sending
-    }
-}
-
-// Function to send log directly via global sender
-pub fn send_log_direct(
-    level: Level,
-    message: String,
-    module: Option<String>,
-    file: Option<String>,
-    line: Option<u32>,
-) {
-    unsafe {
-        #[allow(static_mut_refs)]
-        if let Some(sender) = &GLOBAL_SENDER {
-            let log_msg = LogMessage {
-                level: level.to_string().to_lowercase(),
-                message,
-                timestamp: chrono::Utc::now().to_rfc3339(),
-                module,
-                file,
-                line,
-            };
-
-            println!("Direct log send: {:?}", log_msg);
-
-            if let Err(e) = sender.send(log_msg) {
-                eprintln!("Failed to send direct log message: {}", e);
-            }
-        } else {
-            eprintln!("Global sender not initialized");
-        }
+        // The background task handles batching and sending
     }
 }
 
 pub fn setup_logger_with_config(config: LogtailConfig) {
-    // This will ensure the code inside only runs once, no matter how many times setup_logger() is called
     INIT.call_once(|| {
-        println!("Setting up logger with config: {:?}", config);
         let logger = LogtailLogger::new(config);
 
         if let Err(e) = log::set_boxed_logger(Box::new(logger)) {
             eprintln!("Failed to initialize logger: {}", e);
         } else {
             log::set_max_level(LevelFilter::Info);
-            println!("Logger initialized with Better Stack Logtail integration");
-
-            // Test the logger immediately
-            log::info!("Logger initialized with Better Stack Logtail integration");
+            log::info!("Logger initialized");
         }
     });
 }
 
-// Updated macros that use both standard logging AND direct sending
+/// Update the remote logging enable flag at runtime (e.g. when the user
+/// toggles "Send logs to Aurabox team" in Settings).
+pub fn set_remote_logging_enabled(enabled: bool) {
+    unsafe {
+        #[allow(static_mut_refs)]
+        if let Some(flag) = &GLOBAL_ENABLE {
+            flag.store(enabled, Ordering::Relaxed);
+        }
+    }
+}
+
+// Macros that route through the standard `log` crate.
+// LogtailLogger::log() handles both local printing and remote queueing.
+
 #[macro_export]
 macro_rules! log_info {
     ($($arg:tt)*) => {
-        {
-            let message = format!($($arg)*);
-            log::info!("{}", message);
-            $crate::logger::send_log_direct(
-                log::Level::Info,
-                message,
-                Some(module_path!().to_string()),
-                Some(file!().to_string()),
-                Some(line!())
-            );
-        }
+        log::info!($($arg)*);
     };
 }
 
 #[macro_export]
 macro_rules! log_error {
     ($($arg:tt)*) => {
-        {
-            let message = format!($($arg)*);
-            log::error!("{}", message);
-            $crate::logger::send_log_direct(
-                log::Level::Error,
-                message,
-                Some(module_path!().to_string()),
-                Some(file!().to_string()),
-                Some(line!())
-            );
-        }
+        log::error!($($arg)*);
     };
 }
 
 #[macro_export]
 macro_rules! log_warn {
     ($($arg:tt)*) => {
-        {
-            let message = format!($($arg)*);
-            log::warn!("{}", message);
-            $crate::logger::send_log_direct(
-                log::Level::Warn,
-                message,
-                Some(module_path!().to_string()),
-                Some(file!().to_string()),
-                Some(line!())
-            );
-        }
+        log::warn!($($arg)*);
     };
 }
 
 #[macro_export]
 macro_rules! log_debug {
     ($($arg:tt)*) => {
-        {
-            let message = format!($($arg)*);
-            log::debug!("{}", message);
-            $crate::logger::send_log_direct(
-                log::Level::Debug,
-                message,
-                Some(module_path!().to_string()),
-                Some(file!().to_string()),
-                Some(line!())
-            );
-        }
+        log::debug!($($arg)*);
     };
 }
 
 #[macro_export]
 macro_rules! log_trace {
     ($($arg:tt)*) => {
-        {
-            let message = format!($($arg)*);
-            log::trace!("{}", message);
-            $crate::logger::send_log_direct(
-                log::Level::Trace,
-                message,
-                Some(module_path!().to_string()),
-                Some(file!().to_string()),
-                Some(line!())
-            );
-        }
+        log::trace!($($arg)*);
     };
 }
 

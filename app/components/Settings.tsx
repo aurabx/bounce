@@ -40,6 +40,9 @@ export default function Settings() {
 
         await store.save();
 
+        // Update remote logging flag in the backend without requiring a restart
+        await invoke('update_send_logs', { enabled: settings?.['send_logs'] === 'yes' });
+
         setSaved(true);
         setTimeout(() => setSaved(false), 3000)
 
