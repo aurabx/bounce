@@ -4,6 +4,7 @@ This guide provides detailed instructions for developers contributing to or work
 
 ## Table of Contents
 
+- [Makefile Quick Reference](#makefile-quick-reference)
 - [Getting Started](#getting-started)
 - [Development Environment](#development-environment)
 - [Project Structure](#project-structure)
@@ -14,6 +15,28 @@ This guide provides detailed instructions for developers contributing to or work
 - [Code Style](#code-style)
 - [Common Tasks](#common-tasks)
 - [Troubleshooting](#troubleshooting)
+
+---
+
+## Makefile Quick Reference
+
+A `Makefile` at the project root wraps the most common npm and cargo commands. Run `make help` for the full list.
+
+| Command | Description |
+|---|---|
+| `make dev` | Start full Tauri app with hot-reload |
+| `make dev-frontend` | Start Next.js frontend only |
+| `make dev-backend` | Run Rust backend only |
+| `make build` | Build frontend + Tauri release bundle |
+| `make test` | Run all tests |
+| `make lint` | Run all linters (ESLint + Clippy) |
+| `make fmt` | Format all code |
+| `make check` | Lint + format check + tests (pre-commit) |
+| `make clean` | Remove build artifacts |
+| `make install` | Install Node + Rust dependencies |
+| `make version V=x.y.z` | Bump version everywhere |
+| `make dicom-echo` | DICOM C-ECHO connectivity test |
+| `make dicom-send FILE=f.dcm` | Send a DICOM file via C-STORE |
 
 ---
 
@@ -90,10 +113,12 @@ xcode-select --install
 
 4. **Run the application in development mode**:
    ```bash
-   npm run tauri:dev
+   make dev
    ```
 
 The application will launch with hot-reload enabled for both frontend and backend changes.
+
+> **Tip**: Run `make help` to see all available Make targets.
 
 ---
 
@@ -144,15 +169,27 @@ The application will launch with hot-reload enabled for both frontend and backen
 
 ## Development Workflow
 
+### Using the Makefile
+
+A `Makefile` is provided at the project root with targets for all common development tasks. Run `make help` to see the full list.
+
 ### Running the Development Server
 
 ```bash
 # Start Tauri app with hot-reload (recommended)
-npm run tauri:dev
+make dev
 
 # Or, run frontend and backend separately:
-npm run dev          # Frontend only (Next.js)
-cargo run --manifest-path=src-tauri/Cargo.toml  # Backend only
+make dev-frontend    # Frontend only (Next.js)
+make dev-backend     # Backend only (Rust)
+```
+
+The equivalent npm/cargo commands still work if you prefer them:
+
+```bash
+npm run tauri:dev
+npm run dev
+cargo run --manifest-path=src-tauri/Cargo.toml
 ```
 
 ### Making Changes
@@ -194,17 +231,18 @@ cd ..
 ### Development Build
 
 ```bash
-npm run tauri dev
+make dev
 ```
 
 ### Production Build
 
 ```bash
-# Build frontend
-npm run build
+# Build frontend + Tauri app in one step
+make build
 
-# Build Tauri app (includes frontend build)
-npm run tauri:build
+# Or individually:
+make build-frontend   # Next.js static export only
+make build-release    # Full Tauri application bundle
 ```
 
 Output locations:
@@ -239,8 +277,10 @@ npm install --save-dev @testing-library/react @testing-library/jest-dom jest
 
 **Unit tests**:
 ```bash
-cd src-tauri
-cargo test
+make test-rust
+
+# Or run all tests:
+make test
 ```
 
 **Integration tests**: Add to `src-tauri/tests/`
@@ -256,9 +296,13 @@ cargo test
 
 ```bash
 # C-ECHO (connectivity test)
-echoscu -v -aec BOUNCE localhost 12345
+make dicom-echo PORT=12345
 
 # C-STORE (send DICOM file)
+make dicom-send FILE=test.dcm PORT=12345
+
+# Or using DCMTK directly:
+echoscu -v -aec BOUNCE localhost 12345
 storescu -v -aec BOUNCE localhost 12345 test.dcm
 ```
 
@@ -331,13 +375,19 @@ Follow standard Rust conventions:
 
 ```bash
 # Format code
-cargo fmt
+make fmt-rust
 
 # Lint code
-cargo clippy
+make lint-rust
 
-# Fix lints automatically
-cargo clippy --fix
+# Check formatting without modifying files
+make fmt-check
+
+# Run all linters (frontend + backend)
+make lint
+
+# Run pre-commit checks (lint + format check + tests)
+make check
 ```
 
 **Conventions**:
@@ -369,10 +419,7 @@ pub async fn process_study(study_uid: String) -> Result<()> {
 
 ```bash
 # Lint code
-npm run lint
-
-# Format code (if Prettier is configured)
-npx prettier --write .
+make lint-frontend
 ```
 
 **Conventions**:
@@ -518,7 +565,11 @@ impl Database {
 
 ### Updating Application Version
 
-Use the provided script:
+```bash
+make version V=1.2.3
+```
+
+Or use the script directly:
 
 ```bash
 ./update-version.sh 1.2.3
@@ -539,10 +590,9 @@ This updates:
 
 **Solution**:
 ```bash
-cd src-tauri
-cargo clean
-cargo update
-cargo build
+make clean-rust
+cd src-tauri && cargo update
+make build-release
 ```
 
 ### Frontend Hot Reload Not Working
@@ -551,8 +601,8 @@ cargo build
 
 **Solution**:
 1. Stop the dev server (Ctrl+C)
-2. Clear Next.js cache: `rm -rf .next`
-3. Restart: `npm run tauri:dev`
+2. Clear caches: `make clean-frontend`
+3. Restart: `make dev`
 
 ### DICOM Server Won't Bind to Port
 
