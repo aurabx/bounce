@@ -11,7 +11,7 @@ use crate::aura::aura_api::AuraApi;
 use crate::db::database::Database;
 use crate::logger::{set_remote_logging_enabled, setup_logger_with_config, LogtailConfig};
 use crate::query::cfind::execute_cfind;
-use crate::query::models::{CfindResult, PacsService, QueryFilters};
+use crate::query::models::{CfindResult, DicomService, PacsService, QueryFilters};
 use crate::receiver::server::init_server_state;
 use crate::transmitter::transmission::{QueueUpload, Transmission};
 use std::sync::Arc;
@@ -194,6 +194,21 @@ async fn cfind_query(
     execute_cfind(&config.ae_title, &pacs, &filters).await
 }
 
+/// Fetch the list of configured DICOM services (remote PACS) from Aurabox.
+///
+/// Returns the services available for this gateway, including their Aurabox
+/// IDs, labels, and connection details. Useful for populating the UI's PACS
+/// selector for manual C-FIND queries.
+#[tauri::command]
+async fn fetch_dicom_services(app: AppHandle) -> Result<Vec<DicomService>, String> {
+    let api = AuraApi::new(app);
+    let response = api
+        .fetch_services()
+        .await
+        .map_err(|e| format!("Failed to fetch DICOM services: {}", e))?;
+    Ok(response.services)
+}
+
 #[tauri::command]
 fn show_window(app: AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_window("main") {
@@ -301,6 +316,7 @@ fn main() {
             api_start_upload,
             current_studies,
             cfind_query,
+            fetch_dicom_services,
             show_window,
             update_send_logs
         ])

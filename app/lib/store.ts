@@ -1,6 +1,6 @@
 import { configureStore, createSlice } from '@reduxjs/toolkit'
 import type { PayloadAction } from '@reduxjs/toolkit'
-import {CurrentStudies, Study} from "@/app/lib/types";
+import {CurrentStudies, DicomService, Study} from "@/app/lib/types";
 
 export interface RunningDetail {
     label: string,
@@ -12,7 +12,8 @@ export interface State {
     studies: Study[],
     running: boolean,
     runningDetail: RunningDetail[],
-    errors: string[]
+    errors: string[],
+    dicomServices: DicomService[],
 }
 
 const initialState: State = {
@@ -21,6 +22,7 @@ const initialState: State = {
     running: false,
     runningDetail: [],
     errors: [],
+    dicomServices: [],
 }
 
 export const mainSlice = createSlice({
@@ -44,12 +46,15 @@ export const mainSlice = createSlice({
         },
         setErrors(state, action: PayloadAction<string[]>){
             state.errors = action.payload
+        },
+        setDicomServices(state, action: PayloadAction<DicomService[]>){
+            state.dicomServices = action.payload
         }
     },
 })
 
 // Action creators are generated for each case reducer function
-export const { logMessage, setRunning, setRunningDetail, setCurrentStudies, setError, setErrors } = mainSlice.actions
+export const { logMessage, setRunning, setRunningDetail, setCurrentStudies, setError, setErrors, setDicomServices } = mainSlice.actions
 
 export const makeStore = () => {
     return configureStore({

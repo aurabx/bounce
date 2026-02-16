@@ -1,3 +1,4 @@
+use crate::query::poller::{self, QueryPollerState};
 use crate::{load_config, log_error, log_info, receiver};
 use local_ip_address::local_ip;
 use receiver::dicom_server::DICOMServer;
@@ -10,12 +11,14 @@ use tokio::sync::{oneshot, Mutex};
 // Define a struct to manage server state
 pub struct ServerState {
     shutdown_sender: Option<oneshot::Sender<()>>,
+    poller_state: QueryPollerState,
 }
 
 // Initialize the server state in main.rs
 pub fn init_server_state() -> ServerState {
     ServerState {
         shutdown_sender: None,
+        poller_state: poller::init_poller_state(),
     }
 }
 
@@ -33,6 +36,11 @@ pub async fn start(app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     {
         let mut state = app_state.lock().await;
         state.shutdown_sender = Some(shutdown_tx);
+
+        // Start the query poller alongside the DICOM server
+        let (poller_shutdown_tx, poller_shutdown_rx) = oneshot::channel::<()>();
+        state.poller_state.shutdown_sender = Some(poller_shutdown_tx);
+        poller::start_poller(app.clone(), poller_shutdown_rx);
     }
 
     let local_ip = local_ip().unwrap();
@@ -92,12 +100,19 @@ pub async fn start(app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 pub async fn stop(app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let app_state = app.state::<Arc<Mutex<ServerState>>>();
 
-    // Take the shutdown sender from the state
-
+    // Take the shutdown senders from the state
     let mut shutdown_sender = None;
+    let mut poller_shutdown_sender = None;
     {
         let mut state = app_state.lock().await;
         shutdown_sender = state.shutdown_sender.take();
+        poller_shutdown_sender = state.poller_state.shutdown_sender.take();
+    }
+
+    // Stop the query poller
+    if let Some(sender) = poller_shutdown_sender {
+        let _ = sender.send(());
+        log_info!("Query poller shutdown signal sent");
     }
 
     if let Some(sender) = shutdown_sender {

@@ -1,6 +1,10 @@
 //! Accepted storage transfer options
 use dicom_dictionary_std::uids::*;
 
+/// Study Root Query/Retrieve Information Model - FIND
+#[allow(dead_code)]
+pub const STUDY_ROOT_FIND: &str = "1.2.840.10008.5.1.4.1.2.2.1";
+
 /// A list of supported abstract syntaxes for storage services
 #[allow(deprecated)]
 pub static ABSTRACT_SYNTAXES: &[&str] = &[

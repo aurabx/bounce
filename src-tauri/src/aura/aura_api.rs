@@ -1,3 +1,5 @@
+use crate::aura::query_api::QueryApiClient;
+use crate::query::models::{CfindResult, PendingQueriesResponse, ServicesResponse};
 use crate::{load_config, log_info};
 use anyhow::Error;
 use reqwest::{Client, Response};
@@ -17,6 +19,15 @@ impl AuraApi {
             client: Client::new(),
             app_handle: app,
         }
+    }
+
+    /// Build a [`QueryApiClient`] from the current Tauri config.
+    ///
+    /// This resolves the base URL and API key from the Tauri Store so the
+    /// underlying client can be constructed without a Tauri dependency.
+    fn query_client(&self) -> QueryApiClient {
+        let config = load_config(self.app_handle.clone());
+        QueryApiClient::new(config.get_api_endpoint(), config.api_key)
     }
 
     pub async fn upload_config(&self) -> anyhow::Result<Value> {
@@ -115,6 +126,43 @@ impl AuraApi {
             .await?;
 
         Self::handle_response(response).await
+    }
+
+    // -----------------------------------------------------------------------
+    // C-FIND query polling endpoints
+    //
+    // These delegate to [`QueryApiClient`] which contains the HTTP logic
+    // and can be tested independently with a mock HTTP server.
+    // -----------------------------------------------------------------------
+
+    /// Fetch pending C-FIND queries from Aurabox for this gateway.
+    pub async fn fetch_pending_queries(&self) -> anyhow::Result<PendingQueriesResponse> {
+        self.query_client().fetch_pending_queries().await
+    }
+
+    /// Fetch configured DICOM services (remote PACS) from Aurabox.
+    pub async fn fetch_services(&self) -> anyhow::Result<ServicesResponse> {
+        self.query_client().fetch_services().await
+    }
+
+    /// Post C-FIND results back to Aurabox.
+    pub async fn post_query_results(
+        &self,
+        query_id: &str,
+        results: Vec<CfindResult>,
+    ) -> anyhow::Result<Value> {
+        log_info!("Posting C-FIND results for query {}", query_id);
+        self.query_client().post_query_results(query_id, results).await
+    }
+
+    /// Report a C-FIND query failure to Aurabox.
+    pub async fn post_query_failed(
+        &self,
+        query_id: &str,
+        error: String,
+    ) -> anyhow::Result<Value> {
+        log_info!("Posting C-FIND failure for query {}", query_id);
+        self.query_client().post_query_failed(query_id, error).await
     }
 
     async fn handle_response(response: Response) -> Result<Value, Error> {

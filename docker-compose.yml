@@ -1,0 +1,17 @@
+services:
+  orthanc:
+    image: orthancteam/orthanc:latest
+    ports:
+      # DICOM port — Bounce C-FIND and storescu connect here
+      - "4242:4242"
+      # Web UI — browse studies, upload DICOMs, check logs
+      - "8042:8042"
+    volumes:
+      - orthanc-data:/var/lib/orthanc/db
+      - ./docker/orthanc.json:/etc/orthanc/orthanc.json:ro
+    environment:
+      ORTHANC__NAME: "Test PACS"
+    restart: unless-stopped
+
+volumes:
+  orthanc-data:

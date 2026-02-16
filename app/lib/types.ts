@@ -11,3 +11,11 @@ export interface Study {
 export type CurrentStudies = {
     studies: Study[]
 }
+
+export interface DicomService {
+    id: string,
+    label: string,
+    ae_title: string,
+    host: string,
+    port: number,
+}

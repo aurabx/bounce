@@ -1,0 +1,31 @@
+{
+  "Name": "Test PACS",
+
+  "DicomAet": "ORTHANC",
+  "DicomPort": 4242,
+
+  "HttpPort": 8042,
+  "RemoteAccessAllowed": true,
+  "AuthenticationEnabled": false,
+
+  "DicomModalities": {
+    "BOUNCE": {
+      "AET": "BOUNCE",
+      "Host": "host.docker.internal",
+      "Port": 9090,
+      "AllowFind": true,
+      "AllowStore": true,
+      "AllowMove": true
+    }
+  },
+
+  "StableAge": 5,
+  "DicomAssociationCloseDelay": 0,
+
+  "QueryRetrieveSize": 100,
+  "CaseSensitivePN": false,
+
+  "StorageCompression": false,
+  "MaximumStorageSize": 0,
+  "MaximumPatientCount": 0
+}
