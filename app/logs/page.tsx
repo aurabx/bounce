@@ -5,8 +5,6 @@ import {useAppSelector} from "@/app/lib/hook";
 import { openPath } from '@tauri-apps/plugin-opener';
 import { attachLogger } from '@tauri-apps/plugin-log'
 import { appLogDir, join } from '@tauri-apps/api/path';
-import { getName } from '@tauri-apps/api/app';
-import { platform } from '@tauri-apps/plugin-os';
 import { Card, CardContent } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
 import { ScrollArea } from "@radix-ui/react-scroll-area"; // Assuming we might want to use ScrollArea later, but normal div overflow is fine too.
@@ -20,24 +18,14 @@ export default function Page() {
     const openLogPath = async (e: any) => {
         e.preventDefault()
 
-        let logDirPath = await appLogDir();
-        const currentPlatform = platform();
-        const appName = await getName();
+        // appLogDir() returns the platform-specific log directory:
+        // Windows: %APPDATA%\[app-name]\logs\
+        // macOS:   ~/Library/Logs/[app-name]/
+        // Linux:   ~/.local/share/[app-name]/logs/
+        const logDirPath = await appLogDir();
+        const logFilePath = await join(logDirPath, 'logs.log');
 
-        let logFilePath;
-
-        if (currentPlatform === 'windows') {
-            // Windows: typically in %APPDATA%\[app-name]\logs\
-            logFilePath = await join(logDirPath, `${appName}.log`);
-        } else if (currentPlatform === 'macos') {
-            // macOS: typically in ~/Library/Logs/[app-name]/
-            logFilePath = await join(logDirPath, `${appName}.log`);
-        } else {
-            // Linux: typically in ~/.local/share/[app-name]/logs/
-            logFilePath = await join(logDirPath, `${appName}.log`);
-        }
-
-        // Open the directory using the system's default file explorer
+        // Open the log file using the system's default application
         await openPath(logFilePath);
     }
 

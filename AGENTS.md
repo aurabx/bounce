@@ -217,10 +217,15 @@ let config = Config::load(app_handle.clone());
 - macOS: `~/Library/Application Support/com.aurabox.bounce/`
 - Windows: `%APPDATA%\com.aurabox.bounce\`
 
-### Logging
-- Application logs stored in platform-specific directories (see Database Location)
-- Remote logging to Better Stack (Logtail) when enabled via config
-- Source token hardcoded in `main.rs` (line 187)
+### Log File Location
+Logs are written by `tauri-plugin-log` to the platform-specific log directory (not the database/app data directory):
+- Linux: `~/.local/share/com.aurabox.bounce/logs/logs.log`
+- macOS: `~/Library/Logs/com.aurabox.bounce/logs.log`
+- Windows: `%APPDATA%\com.aurabox.bounce\logs\logs.log`
+
+The log filename `logs.log` is configured in `main.rs` via `file_name: Some("logs".to_string())`.
+
+Remote logging to Better Stack (Logtail) is also available when enabled via config.
 
 ## Common Development Tasks
 
@@ -234,7 +239,7 @@ let config = Config::load(app_handle.clone());
 ### Debugging Backend
 - Use `log_info!`, `log_error!` macros defined in `logger.rs`
 - Check terminal output during `tauri:dev`
-- Logs written to application data directory
+- Logs written to platform-specific log directory (see Log File Location above)
 
 ### Debugging Frontend
 - Open Chrome DevTools: right-click → "Inspect Element"
