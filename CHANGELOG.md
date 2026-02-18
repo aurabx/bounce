@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0] - 2026-02-18
+
+### Added
+- Implemented PACS query support with a new DICOM C-FIND SCU workflow.
+- Extended C-FIND querying to support PATIENT-level queries.
+- Added automated tests for C-FIND query behavior and coverage for PATIENT-level lookups.
+- Added a `Makefile` with common development tasks.
+
+### Changed
+- Added a dynamic toggle for remote logging and enabled the C-FIND PACS query command in the app flow.
+- Updated developer documentation for C-FIND implementation and project agent guidance (`WARP.md` renamed to `AGENTS.md`).
+
+### Fixed
+- Corrected the log file path and aligned documentation with the actual platform log locations.
+
 ## [1.1.0] - 2025-11-21
 
 ### Added
