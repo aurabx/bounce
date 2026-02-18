@@ -91,13 +91,13 @@ mod tests {
     }
 
     // =======================================================================
-    // build_cfind_identifier tests
+    // build_cfind_identifier tests - STUDY level
     // =======================================================================
 
     #[test]
-    fn test_build_cfind_identifier_empty_filters() {
+    fn test_build_cfind_identifier_study_level_empty_filters() {
         let filters = QueryFilters::default();
-        let ident = build_cfind_identifier(&filters);
+        let ident = build_cfind_identifier("STUDY", &filters);
 
         // QueryRetrieveLevel must be "STUDY"
         let qr_level = ident
@@ -115,24 +115,24 @@ mod tests {
     }
 
     #[test]
-    fn test_build_cfind_identifier_with_patient_name_filter() {
+    fn test_build_cfind_identifier_study_level_with_patient_name_filter() {
         let filters = QueryFilters {
             patient_name: Some("DOE^JOHN".to_string()),
             ..Default::default()
         };
-        let ident = build_cfind_identifier(&filters);
+        let ident = build_cfind_identifier("STUDY", &filters);
 
         let pn = ident.element(tags::PATIENT_NAME).expect("missing PatientName");
         assert_eq!(pn.to_str().unwrap().trim_end_matches('\0'), "DOE^JOHN");
     }
 
     #[test]
-    fn test_build_cfind_identifier_with_study_date_filter() {
+    fn test_build_cfind_identifier_study_level_with_study_date_filter() {
         let filters = QueryFilters {
             study_date: Some("20240101-20241231".to_string()),
             ..Default::default()
         };
-        let ident = build_cfind_identifier(&filters);
+        let ident = build_cfind_identifier("STUDY", &filters);
 
         let sd = ident.element(tags::STUDY_DATE).expect("missing StudyDate");
         assert_eq!(
@@ -142,12 +142,12 @@ mod tests {
     }
 
     #[test]
-    fn test_build_cfind_identifier_with_modality_filter() {
+    fn test_build_cfind_identifier_study_level_with_modality_filter() {
         let filters = QueryFilters {
             modality: Some("CT".to_string()),
             ..Default::default()
         };
-        let ident = build_cfind_identifier(&filters);
+        let ident = build_cfind_identifier("STUDY", &filters);
 
         let mod_tag = ident
             .element(tags::MODALITIES_IN_STUDY)
@@ -156,7 +156,7 @@ mod tests {
     }
 
     #[test]
-    fn test_build_cfind_identifier_with_all_filters() {
+    fn test_build_cfind_identifier_study_level_with_all_filters() {
         let filters = QueryFilters {
             patient_name: Some("SMITH*".to_string()),
             patient_id: Some("PID001".to_string()),
@@ -164,7 +164,7 @@ mod tests {
             accession_number: Some("ACC123".to_string()),
             modality: Some("MR".to_string()),
         };
-        let ident = build_cfind_identifier(&filters);
+        let ident = build_cfind_identifier("STUDY", &filters);
 
         assert_eq!(
             ident
@@ -214,9 +214,9 @@ mod tests {
     }
 
     #[test]
-    fn test_build_cfind_identifier_has_return_keys() {
+    fn test_build_cfind_identifier_study_level_has_return_keys() {
         let filters = QueryFilters::default();
-        let ident = build_cfind_identifier(&filters);
+        let ident = build_cfind_identifier("STUDY", &filters);
 
         // These should all be present as return keys (empty values)
         assert!(ident.element(tags::STUDY_TIME).is_ok());
@@ -235,12 +235,12 @@ mod tests {
     }
 
     #[test]
-    fn test_build_cfind_identifier_serializes() {
+    fn test_build_cfind_identifier_study_level_serializes() {
         let filters = QueryFilters {
             patient_name: Some("TEST".to_string()),
             ..Default::default()
         };
-        let ident = build_cfind_identifier(&filters);
+        let ident = build_cfind_identifier("STUDY", &filters);
         let ts = ivr_le!();
         let mut bytes = Vec::new();
         ident
@@ -250,11 +250,83 @@ mod tests {
     }
 
     // =======================================================================
-    // parse_cfind_result tests
+    // build_cfind_identifier tests - PATIENT level
     // =======================================================================
 
-    /// Helper: build a fake C-FIND result dataset and serialize it.
-    fn make_result_bytes(
+    #[test]
+    fn test_build_cfind_identifier_patient_level_sets_correct_qr_level() {
+        let filters = QueryFilters::default();
+        let ident = build_cfind_identifier("PATIENT", &filters);
+
+        let qr_level = ident
+            .element(tags::QUERY_RETRIEVE_LEVEL)
+            .expect("missing QueryRetrieveLevel");
+        assert_eq!(qr_level.to_str().unwrap().trim(), "PATIENT");
+    }
+
+    #[test]
+    fn test_build_cfind_identifier_patient_level_has_patient_return_keys() {
+        let filters = QueryFilters::default();
+        let ident = build_cfind_identifier("PATIENT", &filters);
+
+        // PatientName and PatientID should be present
+        assert!(ident.element(tags::PATIENT_NAME).is_ok());
+        assert!(ident.element(tags::PATIENT_ID).is_ok());
+        // PatientBirthDate (0010,0030)
+        assert!(ident.element(Tag(0x0010, 0x0030)).is_ok());
+        // PatientSex (0010,0040)
+        assert!(ident.element(Tag(0x0010, 0x0040)).is_ok());
+        // NumberOfPatientRelatedStudies (0020,1200)
+        assert!(ident.element(Tag(0x0020, 0x1200)).is_ok());
+    }
+
+    #[test]
+    fn test_build_cfind_identifier_patient_level_omits_study_keys() {
+        let filters = QueryFilters::default();
+        let ident = build_cfind_identifier("PATIENT", &filters);
+
+        // Study-level tags should NOT be present
+        assert!(ident.element(tags::STUDY_DATE).is_err());
+        assert!(ident.element(tags::STUDY_TIME).is_err());
+        assert!(ident.element(tags::STUDY_DESCRIPTION).is_err());
+        assert!(ident.element(tags::STUDY_INSTANCE_UID).is_err());
+        assert!(ident.element(tags::ACCESSION_NUMBER).is_err());
+        assert!(ident.element(tags::MODALITIES_IN_STUDY).is_err());
+    }
+
+    #[test]
+    fn test_build_cfind_identifier_patient_level_with_name_filter() {
+        let filters = QueryFilters {
+            patient_name: Some("*ATHU*".to_string()),
+            ..Default::default()
+        };
+        let ident = build_cfind_identifier("PATIENT", &filters);
+
+        let pn = ident.element(tags::PATIENT_NAME).expect("missing PatientName");
+        assert_eq!(pn.to_str().unwrap().trim_end_matches('\0'), "*ATHU*");
+    }
+
+    #[test]
+    fn test_build_cfind_identifier_patient_level_serializes() {
+        let filters = QueryFilters {
+            patient_name: Some("DOE^JANE".to_string()),
+            ..Default::default()
+        };
+        let ident = build_cfind_identifier("PATIENT", &filters);
+        let ts = ivr_le!();
+        let mut bytes = Vec::new();
+        ident
+            .write_dataset_with_ts(&mut bytes, &ts)
+            .expect("Failed to serialize patient-level identifier");
+        assert!(!bytes.is_empty());
+    }
+
+    // =======================================================================
+    // parse_cfind_result tests - STUDY level
+    // =======================================================================
+
+    /// Helper: build a fake STUDY-level C-FIND result dataset and serialize it.
+    fn make_study_result_bytes(
         study_uid: &str,
         patient_name: Option<&str>,
         patient_id: Option<&str>,
@@ -344,9 +416,62 @@ mod tests {
         bytes
     }
 
+    /// Helper: build a fake PATIENT-level C-FIND result dataset and serialize it.
+    fn make_patient_result_bytes(
+        patient_name: &str,
+        patient_id: &str,
+        birth_date: Option<&str>,
+        sex: Option<&str>,
+        num_studies: Option<&str>,
+    ) -> Vec<u8> {
+        let mut elements: Vec<DataElement<InMemDicomObject>> = Vec::new();
+
+        elements.push(DataElement::new(
+            tags::PATIENT_NAME,
+            VR::PN,
+            dicom_value!(Str, patient_name),
+        ));
+
+        elements.push(DataElement::new(
+            tags::PATIENT_ID,
+            VR::LO,
+            dicom_value!(Str, patient_id),
+        ));
+
+        if let Some(v) = birth_date {
+            elements.push(DataElement::new(
+                Tag(0x0010, 0x0030),
+                VR::DA,
+                dicom_value!(Str, v),
+            ));
+        }
+
+        if let Some(v) = sex {
+            elements.push(DataElement::new(
+                Tag(0x0010, 0x0040),
+                VR::CS,
+                dicom_value!(Str, v),
+            ));
+        }
+
+        if let Some(v) = num_studies {
+            elements.push(DataElement::new(
+                Tag(0x0020, 0x1200),
+                VR::IS,
+                dicom_value!(Str, v),
+            ));
+        }
+
+        let obj = InMemDicomObject::from_element_iter(elements);
+        let ts = ivr_le!();
+        let mut bytes = Vec::new();
+        obj.write_dataset_with_ts(&mut bytes, &ts).unwrap();
+        bytes
+    }
+
     #[test]
-    fn test_parse_cfind_result_full() {
-        let bytes = make_result_bytes(
+    fn test_parse_cfind_result_study_level_full() {
+        let bytes = make_study_result_bytes(
             "1.2.840.99999",
             Some("DOE^JOHN"),
             Some("12345"),
@@ -357,8 +482,8 @@ mod tests {
         );
 
         let ts = ivr_le!();
-        let result = parse_cfind_result(&bytes, &ts).expect("failed to parse");
-        assert_eq!(result.study_instance_uid, "1.2.840.99999");
+        let result = parse_cfind_result(&bytes, &ts, "STUDY").expect("failed to parse");
+        assert_eq!(result.study_instance_uid.as_deref(), Some("1.2.840.99999"));
         assert_eq!(result.patient_name.as_deref(), Some("DOE^JOHN"));
         assert_eq!(result.patient_id.as_deref(), Some("12345"));
         assert_eq!(result.study_date.as_deref(), Some("20240615"));
@@ -371,8 +496,8 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_cfind_result_minimal() {
-        // Only StudyInstanceUID is required
+    fn test_parse_cfind_result_study_level_minimal() {
+        // Only StudyInstanceUID is required for STUDY level
         let obj = InMemDicomObject::from_element_iter(vec![DataElement::new(
             tags::STUDY_INSTANCE_UID,
             VR::UI,
@@ -383,8 +508,8 @@ mod tests {
         let mut bytes = Vec::new();
         obj.write_dataset_with_ts(&mut bytes, &ts).unwrap();
 
-        let result = parse_cfind_result(&bytes, &ts).expect("failed to parse");
-        assert_eq!(result.study_instance_uid, "1.2.3.4.5");
+        let result = parse_cfind_result(&bytes, &ts, "STUDY").expect("failed to parse");
+        assert_eq!(result.study_instance_uid.as_deref(), Some("1.2.3.4.5"));
         assert!(result.patient_name.is_none());
         assert!(result.patient_id.is_none());
         assert!(result.study_date.is_none());
@@ -392,7 +517,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_cfind_result_missing_study_uid_fails() {
+    fn test_parse_cfind_result_study_level_missing_uid_fails() {
         // Dataset with no StudyInstanceUID
         let obj = InMemDicomObject::from_element_iter(vec![DataElement::new(
             tags::PATIENT_NAME,
@@ -404,7 +529,7 @@ mod tests {
         let mut bytes = Vec::new();
         obj.write_dataset_with_ts(&mut bytes, &ts).unwrap();
 
-        let result = parse_cfind_result(&bytes, &ts);
+        let result = parse_cfind_result(&bytes, &ts, "STUDY");
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
@@ -414,14 +539,14 @@ mod tests {
     #[test]
     fn test_parse_cfind_result_invalid_bytes_fails() {
         let ts = ivr_le!();
-        let result = parse_cfind_result(&[0xFF, 0xFF, 0xFF, 0xFF], &ts);
+        let result = parse_cfind_result(&[0xFF, 0xFF, 0xFF, 0xFF], &ts, "STUDY");
         assert!(result.is_err());
     }
 
     #[test]
     fn test_parse_cfind_result_empty_bytes_fails() {
         let ts = ivr_le!();
-        let result = parse_cfind_result(&[], &ts);
+        let result = parse_cfind_result(&[], &ts, "STUDY");
         // An empty dataset should either fail to parse or lack StudyInstanceUID
         assert!(result.is_err());
     }
@@ -445,9 +570,67 @@ mod tests {
         let mut bytes = Vec::new();
         obj.write_dataset_with_ts(&mut bytes, &ts).unwrap();
 
-        let result = parse_cfind_result(&bytes, &ts).expect("failed to parse");
-        assert_eq!(result.study_instance_uid, "1.2.3");
+        let result = parse_cfind_result(&bytes, &ts, "STUDY").expect("failed to parse");
+        assert_eq!(result.study_instance_uid.as_deref(), Some("1.2.3"));
         assert_eq!(result.patient_name.as_deref(), Some("DOE^JOHN"));
+    }
+
+    // =======================================================================
+    // parse_cfind_result tests - PATIENT level
+    // =======================================================================
+
+    #[test]
+    fn test_parse_cfind_result_patient_level_full() {
+        let bytes = make_patient_result_bytes(
+            "ATHUKORALA^Premachandra^^Prof",
+            "60.53799",
+            Some("19511007"),
+            Some("M"),
+            Some("5"),
+        );
+
+        let ts = ivr_le!();
+        let result = parse_cfind_result(&bytes, &ts, "PATIENT").expect("failed to parse");
+        assert_eq!(result.patient_name.as_deref(), Some("ATHUKORALA^Premachandra^^Prof"));
+        assert_eq!(result.patient_id.as_deref(), Some("60.53799"));
+        assert_eq!(result.patient_birth_date.as_deref(), Some("19511007"));
+        assert_eq!(result.patient_sex.as_deref(), Some("M"));
+        assert_eq!(result.number_of_patient_related_studies, Some(5));
+        // Study-level fields should be None
+        assert!(result.study_instance_uid.is_none());
+        assert!(result.study_date.is_none());
+    }
+
+    #[test]
+    fn test_parse_cfind_result_patient_level_minimal() {
+        // PATIENT-level does NOT require StudyInstanceUID
+        let bytes = make_patient_result_bytes("DOE^JOHN", "12345", None, None, None);
+
+        let ts = ivr_le!();
+        let result = parse_cfind_result(&bytes, &ts, "PATIENT").expect("failed to parse");
+        assert_eq!(result.patient_name.as_deref(), Some("DOE^JOHN"));
+        assert_eq!(result.patient_id.as_deref(), Some("12345"));
+        assert!(result.patient_birth_date.is_none());
+        assert!(result.patient_sex.is_none());
+        assert!(result.number_of_patient_related_studies.is_none());
+        assert!(result.study_instance_uid.is_none());
+    }
+
+    #[test]
+    fn test_parse_cfind_result_patient_level_female() {
+        let bytes = make_patient_result_bytes(
+            "SMITH^JANE",
+            "99999",
+            Some("19850722"),
+            Some("F"),
+            Some("3"),
+        );
+
+        let ts = ivr_le!();
+        let result = parse_cfind_result(&bytes, &ts, "PATIENT").expect("failed to parse");
+        assert_eq!(result.patient_sex.as_deref(), Some("F"));
+        assert_eq!(result.patient_birth_date.as_deref(), Some("19850722"));
+        assert_eq!(result.number_of_patient_related_studies, Some(3));
     }
 
     // =======================================================================
@@ -832,18 +1015,18 @@ mod tests {
             ..Default::default()
         };
 
-        let results = execute_cfind("BOUNCE", &pacs, &filters)
+        let results = execute_cfind("BOUNCE", &pacs, "STUDY", &filters)
             .await
             .expect("C-FIND should succeed");
 
         assert_eq!(results.len(), 2, "Should have received 2 results");
 
-        assert_eq!(results[0].study_instance_uid, "1.2.3.0");
+        assert_eq!(results[0].study_instance_uid.as_deref(), Some("1.2.3.0"));
         assert_eq!(results[0].patient_name.as_deref(), Some("PATIENT^0"));
         assert_eq!(results[0].patient_id.as_deref(), Some("PID0"));
         assert_eq!(results[0].study_date.as_deref(), Some("20240101"));
 
-        assert_eq!(results[1].study_instance_uid, "1.2.3.1");
+        assert_eq!(results[1].study_instance_uid.as_deref(), Some("1.2.3.1"));
         assert_eq!(results[1].patient_name.as_deref(), Some("PATIENT^1"));
         assert_eq!(results[1].patient_id.as_deref(), Some("PID1"));
 
@@ -862,7 +1045,7 @@ mod tests {
 
         let filters = QueryFilters::default();
 
-        let result = execute_cfind("BOUNCE", &pacs, &filters).await;
+        let result = execute_cfind("BOUNCE", &pacs, "STUDY", &filters).await;
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
@@ -994,7 +1177,7 @@ mod tests {
             port: addr.port(),
         };
 
-        let results = execute_cfind("BOUNCE", &pacs, &QueryFilters::default())
+        let results = execute_cfind("BOUNCE", &pacs, "STUDY", &QueryFilters::default())
             .await
             .expect("C-FIND should succeed");
 

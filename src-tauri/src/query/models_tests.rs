@@ -204,7 +204,7 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn test_cfind_result_serialize_full() {
+    fn test_cfind_result_serialize_study_level() {
         let result = CfindResult {
             patient_name: Some("DOE^JOHN".to_string()),
             patient_id: Some("12345".to_string()),
@@ -212,10 +212,13 @@ mod tests {
             study_time: Some("143022".to_string()),
             study_description: Some("CT CHEST W/CONTRAST".to_string()),
             accession_number: Some("ACC001".to_string()),
-            study_instance_uid: "1.2.840.113619.2.55.3.123".to_string(),
+            study_instance_uid: Some("1.2.840.113619.2.55.3.123".to_string()),
             modalities_in_study: Some("CT".to_string()),
             number_of_series: Some(3),
             number_of_instances: Some(245),
+            patient_birth_date: None,
+            patient_sex: None,
+            number_of_patient_related_studies: None,
         };
 
         let json = serde_json::to_string(&result).unwrap();
@@ -223,6 +226,36 @@ mod tests {
         assert!(json.contains("\"study_instance_uid\":\"1.2.840.113619.2.55.3.123\""));
         assert!(json.contains("\"number_of_series\":3"));
         assert!(json.contains("\"number_of_instances\":245"));
+        // Patient-level fields should be omitted via skip_serializing_if
+        assert!(!json.contains("\"patient_birth_date\""));
+        assert!(!json.contains("\"patient_sex\""));
+        assert!(!json.contains("\"number_of_patient_related_studies\""));
+    }
+
+    #[test]
+    fn test_cfind_result_serialize_patient_level() {
+        let result = CfindResult {
+            patient_name: Some("ATHUKORALA^Premachandra^^Prof".to_string()),
+            patient_id: Some("60.53799".to_string()),
+            study_date: None,
+            study_time: None,
+            study_description: None,
+            accession_number: None,
+            study_instance_uid: None,
+            modalities_in_study: None,
+            number_of_series: None,
+            number_of_instances: None,
+            patient_birth_date: Some("19511007".to_string()),
+            patient_sex: Some("M".to_string()),
+            number_of_patient_related_studies: Some(5),
+        };
+
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("\"patient_birth_date\":\"19511007\""));
+        assert!(json.contains("\"patient_sex\":\"M\""));
+        assert!(json.contains("\"number_of_patient_related_studies\":5"));
+        // study_instance_uid should be omitted
+        assert!(!json.contains("\"study_instance_uid\""));
     }
 
     #[test]
@@ -234,15 +267,18 @@ mod tests {
             study_time: None,
             study_description: None,
             accession_number: None,
-            study_instance_uid: "1.2.3".to_string(),
+            study_instance_uid: Some("1.2.3".to_string()),
             modalities_in_study: None,
             number_of_series: None,
             number_of_instances: None,
+            patient_birth_date: None,
+            patient_sex: None,
+            number_of_patient_related_studies: None,
         };
 
         let json = serde_json::to_string(&result).unwrap();
         let deserialized: CfindResult = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized.study_instance_uid, "1.2.3");
+        assert_eq!(deserialized.study_instance_uid.as_deref(), Some("1.2.3"));
         assert!(deserialized.patient_name.is_none());
         assert!(deserialized.number_of_series.is_none());
     }
@@ -256,10 +292,13 @@ mod tests {
             study_time: None,
             study_description: Some("MR BRAIN".to_string()),
             accession_number: None,
-            study_instance_uid: "1.2.840.99999".to_string(),
+            study_instance_uid: Some("1.2.840.99999".to_string()),
             modalities_in_study: Some("MR".to_string()),
             number_of_series: Some(5),
             number_of_instances: Some(100),
+            patient_birth_date: None,
+            patient_sex: None,
+            number_of_patient_related_studies: None,
         };
 
         let json = serde_json::to_string(&original).unwrap();
@@ -274,7 +313,7 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn test_query_results_payload_serialize() {
+    fn test_query_results_payload_serialize_study_level() {
         let payload = QueryResultsPayload {
             results: vec![
                 CfindResult {
@@ -284,10 +323,13 @@ mod tests {
                     study_time: None,
                     study_description: None,
                     accession_number: None,
-                    study_instance_uid: "1.2.3".to_string(),
+                    study_instance_uid: Some("1.2.3".to_string()),
                     modalities_in_study: None,
                     number_of_series: None,
                     number_of_instances: None,
+                    patient_birth_date: None,
+                    patient_sex: None,
+                    number_of_patient_related_studies: None,
                 },
                 CfindResult {
                     patient_name: Some("B".to_string()),
@@ -296,10 +338,13 @@ mod tests {
                     study_time: None,
                     study_description: None,
                     accession_number: None,
-                    study_instance_uid: "4.5.6".to_string(),
+                    study_instance_uid: Some("4.5.6".to_string()),
                     modalities_in_study: None,
                     number_of_series: None,
                     number_of_instances: None,
+                    patient_birth_date: None,
+                    patient_sex: None,
+                    number_of_patient_related_studies: None,
                 },
             ],
         };
@@ -308,6 +353,48 @@ mod tests {
         assert!(json.contains("\"results\":["));
         let deserialized: QueryResultsPayload = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.results.len(), 2);
+        assert_eq!(
+            deserialized.results[0].study_instance_uid.as_deref(),
+            Some("1.2.3")
+        );
+        assert_eq!(
+            deserialized.results[1].study_instance_uid.as_deref(),
+            Some("4.5.6")
+        );
+    }
+
+    #[test]
+    fn test_query_results_payload_serialize_patient_level() {
+        let payload = QueryResultsPayload {
+            results: vec![CfindResult {
+                patient_name: Some("DOE^JOHN".to_string()),
+                patient_id: Some("PID001".to_string()),
+                study_date: None,
+                study_time: None,
+                study_description: None,
+                accession_number: None,
+                study_instance_uid: None,
+                modalities_in_study: None,
+                number_of_series: None,
+                number_of_instances: None,
+                patient_birth_date: Some("19800115".to_string()),
+                patient_sex: Some("M".to_string()),
+                number_of_patient_related_studies: Some(3),
+            }],
+        };
+
+        let json = serde_json::to_string(&payload).unwrap();
+        assert!(json.contains("\"patient_birth_date\":\"19800115\""));
+        assert!(json.contains("\"patient_sex\":\"M\""));
+        assert!(json.contains("\"number_of_patient_related_studies\":3"));
+        // study_instance_uid should be omitted via skip_serializing_if
+        assert!(!json.contains("\"study_instance_uid\""));
+        let deserialized: QueryResultsPayload = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.results.len(), 1);
+        assert_eq!(
+            deserialized.results[0].patient_birth_date.as_deref(),
+            Some("19800115")
+        );
     }
 
     #[test]

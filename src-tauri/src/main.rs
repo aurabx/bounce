@@ -191,7 +191,7 @@ async fn cfind_query(
         modality,
     };
 
-    execute_cfind(&config.ae_title, &pacs, &filters).await
+    execute_cfind(&config.ae_title, &pacs, "STUDY", &filters).await
 }
 
 /// Fetch the list of configured DICOM services (remote PACS) from Aurabox.

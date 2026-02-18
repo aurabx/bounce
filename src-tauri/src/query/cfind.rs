@@ -28,19 +28,22 @@ const CFIND_TIMEOUT: Duration = Duration::from_secs(30);
 ///
 /// * `calling_ae` - The AE title of this Bounce gateway (our SCU identity).
 /// * `pacs` - Connection details for the target PACS SCP.
+/// * `query_level` - The DICOM Query/Retrieve level: `"PATIENT"` or `"STUDY"`.
 /// * `filters` - Query match keys.
 ///
 /// # Returns
 ///
-/// A vector of [`CfindResult`] study-level records, or an error string.
+/// A vector of [`CfindResult`] records, or an error string.
 pub async fn execute_cfind(
     calling_ae: &str,
     pacs: &PacsService,
+    query_level: &str,
     filters: &QueryFilters,
 ) -> Result<Vec<CfindResult>, String> {
     // Run the entire operation under a timeout
+    let level = query_level.to_string();
     let result = tokio::time::timeout(CFIND_TIMEOUT, async {
-        execute_cfind_inner(calling_ae, pacs, filters).await
+        execute_cfind_inner(calling_ae, pacs, &level, filters).await
     })
     .await;
 
@@ -60,6 +63,7 @@ pub async fn execute_cfind(
 async fn execute_cfind_inner(
     calling_ae: &str,
     pacs: &PacsService,
+    query_level: &str,
     filters: &QueryFilters,
 ) -> Result<Vec<CfindResult>, String> {
     let addr = format!("{}:{}", pacs.host, pacs.port);
@@ -131,7 +135,7 @@ async fn execute_cfind_inner(
     let command_ts = dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
 
     // Build the C-FIND identifier (the data object that carries match/return keys)
-    let identifier = build_cfind_identifier(filters);
+    let identifier = build_cfind_identifier(query_level, filters);
 
     // Serialize the identifier with the negotiated transfer syntax
     let mut identifier_bytes = Vec::new();
@@ -231,7 +235,7 @@ async fn execute_cfind_inner(
                                     // preceding Pending response whose data
                                     // arrived in a separate PData PDU.
                                     if !response_data_buffer.is_empty() {
-                                        match parse_cfind_result(&response_data_buffer, negotiated_ts) {
+                                        match parse_cfind_result(&response_data_buffer, negotiated_ts, query_level) {
                                             Ok(result) => results.push(result),
                                             Err(e) => {
                                                 log_error!(
@@ -263,7 +267,7 @@ async fn execute_cfind_inner(
                                     //
                                     // If we already have buffered data, parse it now.
                                     if !response_data_buffer.is_empty() {
-                                        match parse_cfind_result(&response_data_buffer, negotiated_ts) {
+                                        match parse_cfind_result(&response_data_buffer, negotiated_ts, query_level) {
                                             Ok(result) => results.push(result),
                                             Err(e) => {
                                                 log_error!(
@@ -358,46 +362,22 @@ pub(crate) fn build_cfind_command(message_id: u16) -> InMemDicomObject<StandardD
 ///
 /// Populated filter fields act as match keys; empty elements act as
 /// return keys requesting the PACS to populate them.
-pub(crate) fn build_cfind_identifier(filters: &QueryFilters) -> InMemDicomObject<StandardDataDictionary> {
-    let elements: Vec<DataElement<InMemDicomObject<StandardDataDictionary>>> = vec![
+///
+/// The `query_level` determines which DICOM tags are included:
+/// - `"PATIENT"`: Patient-level tags (DOB, sex, number of studies)
+/// - `"STUDY"` (default): Study-level tags (study date/time, description, UID, etc.)
+pub(crate) fn build_cfind_identifier(query_level: &str, filters: &QueryFilters) -> InMemDicomObject<StandardDataDictionary> {
+    let is_patient_level = query_level.eq_ignore_ascii_case("PATIENT");
+    let level_str = if is_patient_level { "PATIENT" } else { "STUDY" };
+
+    let mut elements: Vec<DataElement<InMemDicomObject<StandardDataDictionary>>> = vec![
         // Required: QueryRetrieveLevel
         DataElement::new(
             tags::QUERY_RETRIEVE_LEVEL,
             VR::CS,
-            dicom_value!(Str, "STUDY"),
+            dicom_value!(Str, level_str),
         ),
-        // StudyDate (0008,0020)
-        DataElement::new(
-            tags::STUDY_DATE,
-            VR::DA,
-            match &filters.study_date {
-                Some(d) => dicom_value!(Str, d.as_str()),
-                None => dicom_value!(),
-            },
-        ),
-        // StudyTime (0008,0030) - return key only
-        DataElement::new(tags::STUDY_TIME, VR::TM, dicom_value!()),
-        // AccessionNumber (0008,0050)
-        DataElement::new(
-            tags::ACCESSION_NUMBER,
-            VR::SH,
-            match &filters.accession_number {
-                Some(a) => dicom_value!(Str, a.as_str()),
-                None => dicom_value!(),
-            },
-        ),
-        // ModalitiesInStudy (0008,0061)
-        DataElement::new(
-            tags::MODALITIES_IN_STUDY,
-            VR::CS,
-            match &filters.modality {
-                Some(m) => dicom_value!(Str, m.as_str()),
-                None => dicom_value!(),
-            },
-        ),
-        // StudyDescription (0008,1030) - return key
-        DataElement::new(tags::STUDY_DESCRIPTION, VR::LO, dicom_value!()),
-        // PatientName (0010,0010)
+        // PatientName (0010,0010) - common to both levels
         DataElement::new(
             tags::PATIENT_NAME,
             VR::PN,
@@ -406,7 +386,7 @@ pub(crate) fn build_cfind_identifier(filters: &QueryFilters) -> InMemDicomObject
                 None => dicom_value!(),
             },
         ),
-        // PatientID (0010,0020)
+        // PatientID (0010,0020) - common to both levels
         DataElement::new(
             tags::PATIENT_ID,
             VR::LO,
@@ -415,19 +395,66 @@ pub(crate) fn build_cfind_identifier(filters: &QueryFilters) -> InMemDicomObject
                 None => dicom_value!(),
             },
         ),
-        // PatientBirthDate (0010,0030) - return key
-        DataElement::new(Tag(0x0010, 0x0030), VR::DA, dicom_value!()),
-        // PatientSex (0010,0040) - return key
-        DataElement::new(Tag(0x0010, 0x0040), VR::CS, dicom_value!()),
-        // StudyInstanceUID (0020,000D) - return key (always needed)
-        DataElement::new(tags::STUDY_INSTANCE_UID, VR::UI, dicom_value!()),
-        // StudyID (0020,0010) - return key
-        DataElement::new(Tag(0x0020, 0x0010), VR::SH, dicom_value!()),
-        // NumberOfStudyRelatedSeries (0020,1206) - return key
-        DataElement::new(Tag(0x0020, 0x1206), VR::IS, dicom_value!()),
-        // NumberOfStudyRelatedInstances (0020,1208) - return key
-        DataElement::new(Tag(0x0020, 0x1208), VR::IS, dicom_value!()),
     ];
+
+    if is_patient_level {
+        // PATIENT-level return keys
+        elements.extend([
+            // PatientBirthDate (0010,0030)
+            DataElement::new(Tag(0x0010, 0x0030), VR::DA, dicom_value!()),
+            // PatientSex (0010,0040)
+            DataElement::new(Tag(0x0010, 0x0040), VR::CS, dicom_value!()),
+            // NumberOfPatientRelatedStudies (0020,1200)
+            DataElement::new(Tag(0x0020, 0x1200), VR::IS, dicom_value!()),
+        ]);
+    } else {
+        // STUDY-level return keys
+        elements.extend([
+            // StudyDate (0008,0020)
+            DataElement::new(
+                tags::STUDY_DATE,
+                VR::DA,
+                match &filters.study_date {
+                    Some(d) => dicom_value!(Str, d.as_str()),
+                    None => dicom_value!(),
+                },
+            ),
+            // StudyTime (0008,0030)
+            DataElement::new(tags::STUDY_TIME, VR::TM, dicom_value!()),
+            // AccessionNumber (0008,0050)
+            DataElement::new(
+                tags::ACCESSION_NUMBER,
+                VR::SH,
+                match &filters.accession_number {
+                    Some(a) => dicom_value!(Str, a.as_str()),
+                    None => dicom_value!(),
+                },
+            ),
+            // ModalitiesInStudy (0008,0061)
+            DataElement::new(
+                tags::MODALITIES_IN_STUDY,
+                VR::CS,
+                match &filters.modality {
+                    Some(m) => dicom_value!(Str, m.as_str()),
+                    None => dicom_value!(),
+                },
+            ),
+            // StudyDescription (0008,1030)
+            DataElement::new(tags::STUDY_DESCRIPTION, VR::LO, dicom_value!()),
+            // PatientBirthDate (0010,0030) - also useful at study level
+            DataElement::new(Tag(0x0010, 0x0030), VR::DA, dicom_value!()),
+            // PatientSex (0010,0040) - also useful at study level
+            DataElement::new(Tag(0x0010, 0x0040), VR::CS, dicom_value!()),
+            // StudyInstanceUID (0020,000D)
+            DataElement::new(tags::STUDY_INSTANCE_UID, VR::UI, dicom_value!()),
+            // StudyID (0020,0010)
+            DataElement::new(Tag(0x0020, 0x0010), VR::SH, dicom_value!()),
+            // NumberOfStudyRelatedSeries (0020,1206)
+            DataElement::new(Tag(0x0020, 0x1206), VR::IS, dicom_value!()),
+            // NumberOfStudyRelatedInstances (0020,1208)
+            DataElement::new(Tag(0x0020, 0x1208), VR::IS, dicom_value!()),
+        ]);
+    }
 
     InMemDicomObject::from_element_iter(elements)
 }
@@ -437,17 +464,28 @@ pub(crate) fn build_cfind_identifier(filters: &QueryFilters) -> InMemDicomObject
 /// The `ts` parameter must be the transfer syntax negotiated during
 /// association establishment so that response datasets are decoded
 /// correctly.
-pub(crate) fn parse_cfind_result(data: &[u8], ts: &dicom::encoding::TransferSyntax) -> Result<CfindResult, String> {
+///
+/// The `query_level` determines which fields are required vs optional.
+/// For STUDY-level queries, `StudyInstanceUID` is required. For
+/// PATIENT-level queries, it is not expected.
+pub(crate) fn parse_cfind_result(data: &[u8], ts: &dicom::encoding::TransferSyntax, query_level: &str) -> Result<CfindResult, String> {
     let obj = InMemDicomObject::read_dataset_with_ts(data, ts)
         .map_err(|e| format!("Failed to parse C-FIND result dataset: {}", e))?;
 
-    // StudyInstanceUID is required
-    let study_instance_uid = extract_string_required(&obj, tags::STUDY_INSTANCE_UID)
-        .ok_or("C-FIND result missing StudyInstanceUID")?;
+    let is_patient_level = query_level.eq_ignore_ascii_case("PATIENT");
+
+    // StudyInstanceUID is required for STUDY-level, optional for PATIENT-level
+    let study_instance_uid = extract_string_optional(&obj, tags::STUDY_INSTANCE_UID);
+    if !is_patient_level && study_instance_uid.is_none() {
+        return Err("C-FIND result missing StudyInstanceUID".to_string());
+    }
 
     Ok(CfindResult {
+        // Common fields
         patient_name: extract_string_optional(&obj, tags::PATIENT_NAME),
         patient_id: extract_string_optional(&obj, tags::PATIENT_ID),
+
+        // Study-level fields (may be None for PATIENT-level queries)
         study_date: extract_string_optional(&obj, tags::STUDY_DATE),
         study_time: extract_string_optional(&obj, tags::STUDY_TIME),
         study_description: extract_string_optional(&obj, tags::STUDY_DESCRIPTION),
@@ -456,6 +494,11 @@ pub(crate) fn parse_cfind_result(data: &[u8], ts: &dicom::encoding::TransferSynt
         modalities_in_study: extract_string_optional(&obj, tags::MODALITIES_IN_STUDY),
         number_of_series: extract_integer_optional(&obj, Tag(0x0020, 0x1206)),
         number_of_instances: extract_integer_optional(&obj, Tag(0x0020, 0x1208)),
+
+        // Patient-level fields
+        patient_birth_date: extract_string_optional(&obj, Tag(0x0010, 0x0030)),
+        patient_sex: extract_string_optional(&obj, Tag(0x0010, 0x0040)),
+        number_of_patient_related_studies: extract_integer_optional(&obj, Tag(0x0020, 0x1200)),
     })
 }
 
@@ -486,9 +529,9 @@ pub(crate) fn extract_string_optional(obj: &InMemDicomObject<StandardDataDiction
 }
 
 /// Extract a required string tag, returning `None` if missing or empty.
-pub(crate) fn extract_string_required(obj: &InMemDicomObject<StandardDataDictionary>, tag: Tag) -> Option<String> {
-    extract_string_optional(obj, tag)
-}
+// pub(crate) fn extract_string_required(obj: &InMemDicomObject<StandardDataDictionary>, tag: Tag) -> Option<String> {
+//     extract_string_optional(obj, tag)
+// }
 
 /// Extract an integer from an IS (Integer String) element, returning `None` on failure.
 pub(crate) fn extract_integer_optional(obj: &InMemDicomObject<StandardDataDictionary>, tag: Tag) -> Option<u32> {

@@ -37,19 +37,37 @@ pub struct PendingQueriesResponse {
     pub queries: Vec<PacsQueryRequest>,
 }
 
-/// A single study-level result from a C-FIND response.
+/// A single result from a C-FIND response.
+///
+/// Contains fields for both STUDY-level and PATIENT-level queries.
+/// Study-level fields (`study_date`, `study_instance_uid`, etc.) are
+/// `None` for PATIENT-level results, and patient-level fields
+/// (`patient_birth_date`, `patient_sex`, etc.) are `None` for
+/// STUDY-level results.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CfindResult {
+    // Common fields (present at both levels)
     pub patient_name: Option<String>,
     pub patient_id: Option<String>,
+
+    // Study-level fields
     pub study_date: Option<String>,
     pub study_time: Option<String>,
     pub study_description: Option<String>,
     pub accession_number: Option<String>,
-    pub study_instance_uid: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub study_instance_uid: Option<String>,
     pub modalities_in_study: Option<String>,
     pub number_of_series: Option<u32>,
     pub number_of_instances: Option<u32>,
+
+    // Patient-level fields
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub patient_birth_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub patient_sex: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub number_of_patient_related_studies: Option<u32>,
 }
 
 /// Payload sent to `POST /api/bounce/queries/{id}/results`.

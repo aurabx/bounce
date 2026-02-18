@@ -304,10 +304,13 @@ mod tests {
             study_time: None,
             study_description: Some("CT CHEST".to_string()),
             accession_number: Some("ACC001".to_string()),
-            study_instance_uid: "1.2.3.4.5".to_string(),
+            study_instance_uid: Some("1.2.3.4.5".to_string()),
             modalities_in_study: Some("CT".to_string()),
             number_of_series: Some(3),
             number_of_instances: Some(100),
+            patient_birth_date: None,
+            patient_sex: None,
+            number_of_patient_related_studies: None,
         }];
 
         let resp = client.post_query_results("q-123", results).await.unwrap();
@@ -380,10 +383,13 @@ mod tests {
             study_time: None,
             study_description: None,
             accession_number: None,
-            study_instance_uid: "1.2.3".to_string(),
+            study_instance_uid: Some("1.2.3".to_string()),
             modalities_in_study: None,
             number_of_series: None,
             number_of_instances: None,
+            patient_birth_date: None,
+            patient_sex: None,
+            number_of_patient_related_studies: None,
         }];
 
         client
@@ -762,12 +768,12 @@ mod tests {
             ..Default::default()
         };
 
-        let results = execute_cfind("BOUNCE_TEST", &pacs, &filters)
+        let results = execute_cfind("BOUNCE_TEST", &pacs, "STUDY", &filters)
             .await
             .expect("C-FIND should succeed");
 
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].study_instance_uid, "1.2.3.999");
+        assert_eq!(results[0].study_instance_uid.as_deref(), Some("1.2.3.999"));
         assert_eq!(
             results[0].patient_name.as_deref(),
             Some("INTEGRATION^TEST")

@@ -104,7 +104,7 @@ async fn execute_single_query(
         query.filters,
     );
 
-    match execute_cfind(calling_ae, &query.service, &query.filters).await {
+    match execute_cfind(calling_ae, &query.service, &query.query_level, &query.filters).await {
         Ok(results) => {
             let count = results.len();
             log_info!(
