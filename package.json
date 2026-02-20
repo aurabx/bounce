@@ -10,7 +10,7 @@
     "lint": "next lint",
     "tauri": "tauri",
     "tauri:build": "dotenv -- tauri build",
-    "tauri:dev": "tauri dev"
+    "tauri:dev": "node scripts/tauri-dev.mjs"
   },
   "dependencies": {
     "@headlessui/react": "^2.2.0",
