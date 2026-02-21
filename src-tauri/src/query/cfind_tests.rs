@@ -163,6 +163,7 @@ mod tests {
             study_date: Some("20230601".to_string()),
             accession_number: Some("ACC123".to_string()),
             modality: Some("MR".to_string()),
+            study_instance_uid: None,
         };
         let ident = build_cfind_identifier("STUDY", &filters);
 

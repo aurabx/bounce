@@ -1,5 +1,7 @@
 use crate::aura::query_api::QueryApiClient;
-use crate::query::models::{CfindResult, PendingQueriesResponse, ServicesResponse};
+use crate::query::models::{
+    CfindResult, PendingQueriesResponse, PendingRetrievesResponse, ServicesResponse,
+};
 use crate::{load_config, log_info};
 use anyhow::Error;
 use reqwest::{Client, Response};
@@ -67,18 +69,52 @@ impl AuraApi {
         let json_content = fs::read_to_string(&json_path)?;
         let json_value: Value = serde_json::from_str::<Value>(&json_content)?;
 
+        // Check for a retrieve marker file. If present, the study was
+        // retrieved via C-MOVE and we know the Aura patient_id to include
+        // in the upload init so the transfer is auto-matched to the patient.
+        let retrieve_marker_path = config.resolve_retrieve_marker_path(&study_uid);
+
+        log_info!(
+            "upload_init: checking for retrieve marker at {:?} (exists={})",
+            retrieve_marker_path,
+            retrieve_marker_path.exists(),
+        );
+
+        let patient_id = fs::read_to_string(&retrieve_marker_path).ok();
+
+        if let Some(ref pid) = patient_id {
+            log_info!(
+                "upload_init: found retrieve marker for study {}, patient_id={}",
+                study_uid,
+                pid,
+            );
+        } else {
+            log_info!(
+                "upload_init: no retrieve marker found for study {}",
+                study_uid,
+            );
+        }
+
         let url = format!("{}/api/bounce/upload/init", config.get_api_endpoint());
+
+        let mut payload = json!({
+            "studies" : json_value.get("studies").unwrap(),
+            "mode" : "bulk",
+            "type": "lift",
+            "signature" : signature,
+            "upload_id" : upload_id,
+        });
+
+        if let Some(pid) = &patient_id {
+            payload.as_object_mut()
+                .unwrap()
+                .insert("patient_id".to_string(), Value::String(pid.clone()));
+        }
 
         let response = self
             .client
             .post(&url)
-            .json(&json!({
-                "studies" : json_value.get("studies").unwrap(),
-                "mode" : "bulk",
-                "type": "lift",
-                "signature" : signature,
-                "upload_id" : upload_id,
-            }))
+            .json(&payload)
             .header("Content-Type", "application/json")
             .header("Accepts", "application/json")
             .header("Authorization", format!("Bearer {}", config.api_key))
@@ -163,6 +199,34 @@ impl AuraApi {
     ) -> anyhow::Result<Value> {
         log_info!("Posting C-FIND failure for query {}", query_id);
         self.query_client().post_query_failed(query_id, error).await
+    }
+
+    // -------------------------------------------------------------------
+    // C-MOVE retrieve polling endpoints
+    //
+    // These delegate to [`QueryApiClient`] which contains the HTTP logic
+    // and can be tested independently with a mock HTTP server.
+    // -------------------------------------------------------------------
+
+    /// Fetch pending C-MOVE retrieve requests from Aurabox for this gateway.
+    pub async fn fetch_pending_retrieves(&self) -> anyhow::Result<PendingRetrievesResponse> {
+        self.query_client().fetch_pending_retrieves().await
+    }
+
+    /// Report a C-MOVE retrieve as completed to Aurabox.
+    pub async fn post_retrieve_completed(&self, retrieve_id: &str) -> anyhow::Result<Value> {
+        log_info!("Posting C-MOVE retrieve completed for {}", retrieve_id);
+        self.query_client().post_retrieve_completed(retrieve_id).await
+    }
+
+    /// Report a C-MOVE retrieve failure to Aurabox.
+    pub async fn post_retrieve_failed(
+        &self,
+        retrieve_id: &str,
+        error: String,
+    ) -> anyhow::Result<Value> {
+        log_info!("Posting C-MOVE retrieve failure for {}", retrieve_id);
+        self.query_client().post_retrieve_failed(retrieve_id, error).await
     }
 
     async fn handle_response(response: Response) -> Result<Value, Error> {

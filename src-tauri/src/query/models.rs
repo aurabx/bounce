@@ -20,6 +20,7 @@ pub struct QueryFilters {
     pub study_date: Option<String>,
     pub accession_number: Option<String>,
     pub modality: Option<String>,
+    pub study_instance_uid: Option<String>,
 }
 
 /// A single pending query request fetched from Aurabox.
@@ -39,7 +40,7 @@ pub struct PendingQueriesResponse {
 
 /// A single result from a C-FIND response.
 ///
-/// Contains fields for both STUDY-level and PATIENT-level queries.
+/// Contains fields for STUDY-level, SERIES-level, and PATIENT-level queries.
 /// Study-level fields (`study_date`, `study_instance_uid`, etc.) are
 /// `None` for PATIENT-level results, and patient-level fields
 /// (`patient_birth_date`, `patient_sex`, etc.) are `None` for
@@ -57,9 +58,31 @@ pub struct CfindResult {
     pub accession_number: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub study_instance_uid: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modality: Option<String>,
     pub modalities_in_study: Option<String>,
     pub number_of_series: Option<u32>,
     pub number_of_instances: Option<u32>,
+
+    // Series-level fields
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub series_instance_uid: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub series_description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub series_number: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub series_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub series_time: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body_part_examined: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub laterality: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub institution_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub referring_physician_name: Option<String>,
 
     // Patient-level fields
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -111,5 +134,54 @@ pub struct ServicesResponse {
 /// Payload sent to `POST /api/bounce/queries/{id}/failed`.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct QueryFailedPayload {
+    pub error: String,
+}
+
+// ---------------------------------------------------------------------------
+// C-MOVE retrieve models
+// ---------------------------------------------------------------------------
+
+/// PACS service details included in a retrieve request.
+///
+/// Extends [`PacsService`] with an Aurabox service `id` so Bounce can
+/// reference the service when reporting back.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RetrieveService {
+    pub id: String,
+    pub ae_title: String,
+    pub host: String,
+    pub port: u16,
+}
+
+/// Convert a [`RetrieveService`] into the lighter [`PacsService`] used by
+/// C-MOVE execution, discarding the Aurabox-specific `id` field.
+impl From<RetrieveService> for PacsService {
+    fn from(svc: RetrieveService) -> Self {
+        PacsService {
+            ae_title: svc.ae_title,
+            host: svc.host,
+            port: svc.port,
+        }
+    }
+}
+
+/// A single pending retrieve request fetched from Aurabox.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PacsRetrieveRequest {
+    pub id: String,
+    pub service: RetrieveService,
+    pub study_instance_uid: String,
+    pub patient_id: Option<String>,
+}
+
+/// The wrapper returned by `GET /api/bounce/retrieves/pending`.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PendingRetrievesResponse {
+    pub retrieves: Vec<PacsRetrieveRequest>,
+}
+
+/// Payload sent to `POST /api/bounce/retrieves/{id}/failed`.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RetrieveFailedPayload {
     pub error: String,
 }

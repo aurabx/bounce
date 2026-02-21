@@ -64,6 +64,7 @@ mod tests {
             study_date: Some("20240101-20241231".to_string()),
             accession_number: None,
             modality: Some("CT".to_string()),
+            study_instance_uid: None,
         };
         let json = serde_json::to_string(&filters).unwrap();
         assert!(json.contains("\"patient_name\":\"DOE^JOHN\""));
@@ -141,6 +142,7 @@ mod tests {
                 study_date: None,
                 accession_number: Some("ACC999".to_string()),
                 modality: None,
+                study_instance_uid: None,
             },
         };
 
@@ -213,9 +215,19 @@ mod tests {
             study_description: Some("CT CHEST W/CONTRAST".to_string()),
             accession_number: Some("ACC001".to_string()),
             study_instance_uid: Some("1.2.840.113619.2.55.3.123".to_string()),
+            modality: None,
             modalities_in_study: Some("CT".to_string()),
             number_of_series: Some(3),
             number_of_instances: Some(245),
+            series_instance_uid: None,
+            series_description: None,
+            series_number: None,
+            series_date: None,
+            series_time: None,
+            body_part_examined: None,
+            laterality: None,
+            institution_name: None,
+            referring_physician_name: None,
             patient_birth_date: None,
             patient_sex: None,
             number_of_patient_related_studies: None,
@@ -242,9 +254,19 @@ mod tests {
             study_description: None,
             accession_number: None,
             study_instance_uid: None,
+            modality: None,
             modalities_in_study: None,
             number_of_series: None,
             number_of_instances: None,
+            series_instance_uid: None,
+            series_description: None,
+            series_number: None,
+            series_date: None,
+            series_time: None,
+            body_part_examined: None,
+            laterality: None,
+            institution_name: None,
+            referring_physician_name: None,
             patient_birth_date: Some("19511007".to_string()),
             patient_sex: Some("M".to_string()),
             number_of_patient_related_studies: Some(5),
@@ -268,9 +290,19 @@ mod tests {
             study_description: None,
             accession_number: None,
             study_instance_uid: Some("1.2.3".to_string()),
+            modality: None,
             modalities_in_study: None,
             number_of_series: None,
             number_of_instances: None,
+            series_instance_uid: None,
+            series_description: None,
+            series_number: None,
+            series_date: None,
+            series_time: None,
+            body_part_examined: None,
+            laterality: None,
+            institution_name: None,
+            referring_physician_name: None,
             patient_birth_date: None,
             patient_sex: None,
             number_of_patient_related_studies: None,
@@ -293,9 +325,19 @@ mod tests {
             study_description: Some("MR BRAIN".to_string()),
             accession_number: None,
             study_instance_uid: Some("1.2.840.99999".to_string()),
+            modality: None,
             modalities_in_study: Some("MR".to_string()),
             number_of_series: Some(5),
             number_of_instances: Some(100),
+            series_instance_uid: None,
+            series_description: None,
+            series_number: None,
+            series_date: None,
+            series_time: None,
+            body_part_examined: None,
+            laterality: None,
+            institution_name: None,
+            referring_physician_name: None,
             patient_birth_date: None,
             patient_sex: None,
             number_of_patient_related_studies: None,
@@ -324,9 +366,19 @@ mod tests {
                     study_description: None,
                     accession_number: None,
                     study_instance_uid: Some("1.2.3".to_string()),
+                    modality: None,
                     modalities_in_study: None,
                     number_of_series: None,
                     number_of_instances: None,
+                    series_instance_uid: None,
+                    series_description: None,
+                    series_number: None,
+                    series_date: None,
+                    series_time: None,
+                    body_part_examined: None,
+                    laterality: None,
+                    institution_name: None,
+                    referring_physician_name: None,
                     patient_birth_date: None,
                     patient_sex: None,
                     number_of_patient_related_studies: None,
@@ -339,9 +391,19 @@ mod tests {
                     study_description: None,
                     accession_number: None,
                     study_instance_uid: Some("4.5.6".to_string()),
+                    modality: None,
                     modalities_in_study: None,
                     number_of_series: None,
                     number_of_instances: None,
+                    series_instance_uid: None,
+                    series_description: None,
+                    series_number: None,
+                    series_date: None,
+                    series_time: None,
+                    body_part_examined: None,
+                    laterality: None,
+                    institution_name: None,
+                    referring_physician_name: None,
                     patient_birth_date: None,
                     patient_sex: None,
                     number_of_patient_related_studies: None,
@@ -374,9 +436,19 @@ mod tests {
                 study_description: None,
                 accession_number: None,
                 study_instance_uid: None,
+                modality: None,
                 modalities_in_study: None,
                 number_of_series: None,
                 number_of_instances: None,
+                series_instance_uid: None,
+                series_description: None,
+                series_number: None,
+                series_date: None,
+                series_time: None,
+                body_part_examined: None,
+                laterality: None,
+                institution_name: None,
+                referring_physician_name: None,
                 patient_birth_date: Some("19800115".to_string()),
                 patient_sex: Some("M".to_string()),
                 number_of_patient_related_studies: Some(3),
@@ -651,6 +723,246 @@ mod tests {
         };
         let json = serde_json::to_string(&original).unwrap();
         let deserialized: QueryFailedPayload = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.error, original.error);
+    }
+
+    // -----------------------------------------------------------------------
+    // RetrieveService
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_retrieve_service_serialize() {
+        let service = RetrieveService {
+            id: "svc-pacs-1".to_string(),
+            ae_title: "PACS_SCP".to_string(),
+            host: "192.168.1.100".to_string(),
+            port: 104,
+        };
+        let json = serde_json::to_string(&service).unwrap();
+        assert!(json.contains("\"id\":\"svc-pacs-1\""));
+        assert!(json.contains("\"ae_title\":\"PACS_SCP\""));
+        assert!(json.contains("\"host\":\"192.168.1.100\""));
+        assert!(json.contains("\"port\":104"));
+    }
+
+    #[test]
+    fn test_retrieve_service_deserialize() {
+        let json = r#"{
+            "id": "svc-abc",
+            "ae_title": "REMOTE_PACS",
+            "host": "10.0.0.50",
+            "port": 11112
+        }"#;
+        let service: RetrieveService = serde_json::from_str(json).unwrap();
+        assert_eq!(service.id, "svc-abc");
+        assert_eq!(service.ae_title, "REMOTE_PACS");
+        assert_eq!(service.host, "10.0.0.50");
+        assert_eq!(service.port, 11112);
+    }
+
+    #[test]
+    fn test_retrieve_service_roundtrip() {
+        let original = RetrieveService {
+            id: "svc-42".to_string(),
+            ae_title: "MY_PACS".to_string(),
+            host: "pacs.local".to_string(),
+            port: 4242,
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: RetrieveService = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.id, original.id);
+        assert_eq!(deserialized.ae_title, original.ae_title);
+        assert_eq!(deserialized.host, original.host);
+        assert_eq!(deserialized.port, original.port);
+    }
+
+    // -----------------------------------------------------------------------
+    // RetrieveService -> PacsService conversion
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_retrieve_service_to_pacs_service() {
+        let retrieve_svc = RetrieveService {
+            id: "svc-99".to_string(),
+            ae_title: "HOSP_PACS".to_string(),
+            host: "192.168.1.200".to_string(),
+            port: 104,
+        };
+        let pacs: PacsService = retrieve_svc.into();
+        assert_eq!(pacs.ae_title, "HOSP_PACS");
+        assert_eq!(pacs.host, "192.168.1.200");
+        assert_eq!(pacs.port, 104);
+    }
+
+    #[test]
+    fn test_retrieve_service_to_pacs_service_discards_id() {
+        let retrieve_svc = RetrieveService {
+            id: "should-be-gone".to_string(),
+            ae_title: "KEEP_ME".to_string(),
+            host: "keep.this.host".to_string(),
+            port: 5555,
+        };
+        let pacs: PacsService = PacsService::from(retrieve_svc);
+        assert_eq!(pacs.ae_title, "KEEP_ME");
+        assert_eq!(pacs.host, "keep.this.host");
+        assert_eq!(pacs.port, 5555);
+    }
+
+    // -----------------------------------------------------------------------
+    // PacsRetrieveRequest
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_pacs_retrieve_request_deserialize_full() {
+        let json = r#"{
+            "id": "ret-123",
+            "service": {
+                "id": "svc-pacs-1",
+                "ae_title": "PACS_SCP",
+                "host": "192.168.1.100",
+                "port": 104
+            },
+            "study_instance_uid": "1.2.840.113619.2.55.3.123",
+            "patient_id": "PID001"
+        }"#;
+
+        let req: PacsRetrieveRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.id, "ret-123");
+        assert_eq!(req.service.id, "svc-pacs-1");
+        assert_eq!(req.service.ae_title, "PACS_SCP");
+        assert_eq!(req.service.host, "192.168.1.100");
+        assert_eq!(req.service.port, 104);
+        assert_eq!(req.study_instance_uid, "1.2.840.113619.2.55.3.123");
+        assert_eq!(req.patient_id.as_deref(), Some("PID001"));
+    }
+
+    #[test]
+    fn test_pacs_retrieve_request_deserialize_null_patient_id() {
+        let json = r#"{
+            "id": "ret-456",
+            "service": {
+                "id": "svc-2",
+                "ae_title": "ARCHIVE",
+                "host": "10.0.0.2",
+                "port": 11112
+            },
+            "study_instance_uid": "1.2.3.4.5",
+            "patient_id": null
+        }"#;
+
+        let req: PacsRetrieveRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.id, "ret-456");
+        assert!(req.patient_id.is_none());
+    }
+
+    #[test]
+    fn test_pacs_retrieve_request_roundtrip() {
+        let original = PacsRetrieveRequest {
+            id: "ret-789".to_string(),
+            service: RetrieveService {
+                id: "svc-3".to_string(),
+                ae_title: "REMOTE".to_string(),
+                host: "10.0.0.5".to_string(),
+                port: 4242,
+            },
+            study_instance_uid: "1.2.840.99999".to_string(),
+            patient_id: Some("PAT-42".to_string()),
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: PacsRetrieveRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.id, original.id);
+        assert_eq!(deserialized.service.ae_title, original.service.ae_title);
+        assert_eq!(deserialized.study_instance_uid, original.study_instance_uid);
+        assert_eq!(deserialized.patient_id, original.patient_id);
+    }
+
+    // -----------------------------------------------------------------------
+    // PendingRetrievesResponse
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_pending_retrieves_response_empty() {
+        let json = r#"{"retrieves":[]}"#;
+        let resp: PendingRetrievesResponse = serde_json::from_str(json).unwrap();
+        assert!(resp.retrieves.is_empty());
+    }
+
+    #[test]
+    fn test_pending_retrieves_response_multiple() {
+        let json = r#"{
+            "retrieves": [
+                {
+                    "id": "ret-1",
+                    "service": {"id": "svc-a", "ae_title": "A", "host": "1.1.1.1", "port": 104},
+                    "study_instance_uid": "1.2.3.100",
+                    "patient_id": "PID-A"
+                },
+                {
+                    "id": "ret-2",
+                    "service": {"id": "svc-b", "ae_title": "B", "host": "2.2.2.2", "port": 11112},
+                    "study_instance_uid": "1.2.3.200",
+                    "patient_id": null
+                }
+            ]
+        }"#;
+
+        let resp: PendingRetrievesResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.retrieves.len(), 2);
+        assert_eq!(resp.retrieves[0].id, "ret-1");
+        assert_eq!(resp.retrieves[0].study_instance_uid, "1.2.3.100");
+        assert_eq!(resp.retrieves[0].patient_id.as_deref(), Some("PID-A"));
+        assert_eq!(resp.retrieves[1].id, "ret-2");
+        assert_eq!(resp.retrieves[1].service.ae_title, "B");
+        assert!(resp.retrieves[1].patient_id.is_none());
+    }
+
+    #[test]
+    fn test_pending_retrieves_response_roundtrip() {
+        let original = PendingRetrievesResponse {
+            retrieves: vec![PacsRetrieveRequest {
+                id: "ret-rt".to_string(),
+                service: RetrieveService {
+                    id: "svc-rt".to_string(),
+                    ae_title: "RT_PACS".to_string(),
+                    host: "10.0.0.99".to_string(),
+                    port: 104,
+                },
+                study_instance_uid: "1.2.3.roundtrip".to_string(),
+                patient_id: Some("RT-PAT".to_string()),
+            }],
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: PendingRetrievesResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.retrieves.len(), 1);
+        assert_eq!(deserialized.retrieves[0].id, "ret-rt");
+        assert_eq!(
+            deserialized.retrieves[0].study_instance_uid,
+            "1.2.3.roundtrip"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // RetrieveFailedPayload
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_retrieve_failed_payload_serialize() {
+        let payload = RetrieveFailedPayload {
+            error: "C-MOVE failed with status 0xA701".to_string(),
+        };
+        let json = serde_json::to_string(&payload).unwrap();
+        assert_eq!(json, r#"{"error":"C-MOVE failed with status 0xA701"}"#);
+    }
+
+    #[test]
+    fn test_retrieve_failed_payload_roundtrip() {
+        let original = RetrieveFailedPayload {
+            error: "C-MOVE timed out after 300s".to_string(),
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: RetrieveFailedPayload = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.error, original.error);
     }
 }

@@ -147,9 +147,17 @@ impl Config {
     }
 
     pub fn resolve_metadata_path(&self, study_uid: &str) -> PathBuf {
-        // Actually push the study (you’ll have to adapt to your code)
+        // Actually push the study (you'll have to adapt to your code)
         let mut file_path = PathBuf::from(&self.get_base_dir());
         file_path.push(study_uid.trim_end_matches('\0').to_string() + ".json");
+        file_path
+    }
+
+    /// Path for a retrieve marker file that stores the Aura patient_id
+    /// for a study retrieved via C-MOVE.
+    pub fn resolve_retrieve_marker_path(&self, study_uid: &str) -> PathBuf {
+        let mut file_path = PathBuf::from(&self.get_base_dir());
+        file_path.push(study_uid.trim_end_matches('\0').to_string() + ".retrieve");
         file_path
     }
 }

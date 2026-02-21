@@ -1,12 +1,14 @@
-//! Background polling loop for C-FIND queries.
+//! Background polling loop for C-FIND queries and C-MOVE retrieves.
 //!
-//! Periodically polls Aurabox for pending PACS queries, executes them via
-//! [`crate::query::cfind::execute_cfind`], and posts results (or failures)
-//! back to Aurabox.
+//! Periodically polls Aurabox for pending PACS queries and retrieve
+//! requests, executing them via [`crate::query::cfind::execute_cfind`]
+//! and [`crate::query::cmove::execute_cmove`] respectively, then posts
+//! results (or failures) back to Aurabox.
 
 use crate::aura::aura_api::AuraApi;
 use crate::query::cfind::execute_cfind;
-use crate::query::models::PacsQueryRequest;
+use crate::query::cmove::execute_cmove;
+use crate::query::models::{PacsQueryRequest, PacsRetrieveRequest};
 use crate::store::config::Config;
 use crate::{load_config, log_error, log_info};
 use std::time::Duration;
@@ -56,7 +58,7 @@ async fn run_poll_loop(app: AppHandle, mut shutdown_rx: oneshot::Receiver<()>) {
     }
 }
 
-/// Single poll cycle: fetch pending queries and execute each one.
+/// Single poll cycle: fetch pending queries and retrieves, execute each.
 async fn poll_and_execute(app: &AppHandle, api: &AuraApi) {
     let config = load_config(app.clone());
 
@@ -65,23 +67,38 @@ async fn poll_and_execute(app: &AppHandle, api: &AuraApi) {
         return;
     }
 
-    let pending = match api.fetch_pending_queries().await {
+    // --- C-FIND queries ---
+    let pending_queries = match api.fetch_pending_queries().await {
         Ok(resp) => resp.queries,
         Err(e) => {
-            // Log at debug level to avoid spamming when the endpoint doesn't exist yet
             log_error!("Query poller: failed to fetch pending queries: {}", e);
-            return;
+            Vec::new()
         }
     };
 
-    if pending.is_empty() {
-        return;
+    if !pending_queries.is_empty() {
+        log_info!("Query poller: {} pending queries", pending_queries.len());
+
+        for query in pending_queries {
+            execute_single_query(app, api, &config, query).await;
+        }
     }
 
-    log_info!("Query poller: {} pending queries", pending.len());
+    // --- C-MOVE retrieves ---
+    let pending_retrieves = match api.fetch_pending_retrieves().await {
+        Ok(resp) => resp.retrieves,
+        Err(e) => {
+            log_error!("Query poller: failed to fetch pending retrieves: {}", e);
+            Vec::new()
+        }
+    };
 
-    for query in pending {
-        execute_single_query(app, api, &config, query).await;
+    if !pending_retrieves.is_empty() {
+        log_info!("Query poller: {} pending retrieves", pending_retrieves.len());
+
+        for retrieve in pending_retrieves {
+            execute_single_retrieve(api, &config, retrieve).await;
+        }
     }
 }
 
@@ -128,6 +145,93 @@ async fn execute_single_query(
                 log_error!(
                     "Query poller: failed to post failure for {}: {}",
                     query.id,
+                    e,
+                );
+            }
+        }
+    }
+}
+
+/// Execute a single C-MOVE retrieve and report completion or failure.
+///
+/// The C-MOVE tells the PACS to send the study to Bounce's C-STORE SCP.
+/// Once the PACS finishes sending, Bounce's DICOM server will have received
+/// the files and the normal upload workflow triggers automatically.
+async fn execute_single_retrieve(
+    api: &AuraApi,
+    config: &Config,
+    retrieve: PacsRetrieveRequest,
+) {
+    let calling_ae = &config.ae_title;
+    // Use Bounce's own AE title as the move destination so the PACS
+    // sends the study to our C-STORE SCP.
+    let move_destination = &config.ae_title;
+    let pacs_service = retrieve.service.clone().into();
+
+    log_info!(
+        "Query poller: executing C-MOVE {} for study {} from {}@{}:{} (destination={})",
+        retrieve.id,
+        retrieve.study_instance_uid,
+        retrieve.service.ae_title,
+        retrieve.service.host,
+        retrieve.service.port,
+        move_destination,
+    );
+
+    match execute_cmove(calling_ae, &pacs_service, &retrieve.study_instance_uid, move_destination).await {
+        Ok(()) => {
+            log_info!(
+                "Query poller: C-MOVE {} completed successfully",
+                retrieve.id,
+            );
+
+            // Write a retrieve marker file so the upload workflow can
+            // include the patient_id in the upload init payload, which
+            // allows Aura to auto-match the study to the correct patient.
+            if let Some(ref patient_id) = retrieve.patient_id {
+                let marker_path = config.resolve_retrieve_marker_path(&retrieve.study_instance_uid);
+                log_info!(
+                    "Query poller: writing retrieve marker at {:?} for study {} with patient_id {}",
+                    marker_path,
+                    retrieve.study_instance_uid,
+                    patient_id,
+                );
+                if let Err(e) = std::fs::write(&marker_path, patient_id) {
+                    log_error!(
+                        "Query poller: failed to write retrieve marker for {}: {}",
+                        retrieve.study_instance_uid,
+                        e,
+                    );
+                } else {
+                    log_info!(
+                        "Query poller: wrote retrieve marker for study {} with patient_id {}",
+                        retrieve.study_instance_uid,
+                        patient_id,
+                    );
+                }
+            } else {
+                log_error!(
+                    "Query poller: no patient_id in retrieve {} for study {}, cannot write marker",
+                    retrieve.id,
+                    retrieve.study_instance_uid,
+                );
+            }
+
+            if let Err(e) = api.post_retrieve_completed(&retrieve.id).await {
+                log_error!(
+                    "Query poller: failed to post retrieve completed for {}: {}",
+                    retrieve.id,
+                    e,
+                );
+            }
+        }
+        Err(error) => {
+            log_error!("Query poller: C-MOVE {} failed: {}", retrieve.id, error);
+
+            if let Err(e) = api.post_retrieve_failed(&retrieve.id, error).await {
+                log_error!(
+                    "Query poller: failed to post retrieve failure for {}: {}",
+                    retrieve.id,
                     e,
                 );
             }

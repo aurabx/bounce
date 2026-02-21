@@ -8,8 +8,8 @@
 //! the `base_url` and `api_key` from the Tauri config store.
 
 use crate::query::models::{
-    CfindResult, PendingQueriesResponse, QueryFailedPayload, QueryResultsPayload,
-    ServicesResponse,
+    CfindResult, PendingQueriesResponse, PendingRetrievesResponse, QueryFailedPayload,
+    QueryResultsPayload, RetrieveFailedPayload, ServicesResponse,
 };
 use reqwest::Client;
 use serde_json::Value;
@@ -150,6 +150,95 @@ impl QueryApiClient {
         );
 
         let payload = QueryFailedPayload { error };
+
+        let response = self
+            .client
+            .post(&url)
+            .header("Accept", "application/json")
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .json(&payload)
+            .send()
+            .await?;
+
+        Self::handle_response(response).await
+    }
+
+    // -------------------------------------------------------------------
+    // C-MOVE retrieve endpoints
+    // -------------------------------------------------------------------
+
+    /// Fetch pending C-MOVE retrieve requests from Aurabox for this gateway.
+    ///
+    /// Calls `GET {base_url}/api/bounce/retrieves/pending`.
+    pub async fn fetch_pending_retrieves(&self) -> anyhow::Result<PendingRetrievesResponse> {
+        let url = format!("{}/api/bounce/retrieves/pending", self.base_url);
+
+        let response = self
+            .client
+            .get(&url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json")
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!(
+                "Failed to fetch pending retrieves: HTTP {} - {}",
+                status,
+                body,
+            ));
+        }
+
+        let body = response.text().await?;
+        let parsed: PendingRetrievesResponse = serde_json::from_str(&body).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse pending retrieves response: {}. Raw: {}",
+                e,
+                body,
+            )
+        })?;
+
+        Ok(parsed)
+    }
+
+    /// Report a C-MOVE retrieve as completed to Aurabox.
+    ///
+    /// Calls `POST {base_url}/api/bounce/retrieves/{id}/completed`.
+    pub async fn post_retrieve_completed(&self, retrieve_id: &str) -> anyhow::Result<Value> {
+        let url = format!(
+            "{}/api/bounce/retrieves/{}/completed",
+            self.base_url, retrieve_id,
+        );
+
+        let response = self
+            .client
+            .post(&url)
+            .header("Accept", "application/json")
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .json(&serde_json::json!({}))
+            .send()
+            .await?;
+
+        Self::handle_response(response).await
+    }
+
+    /// Report a C-MOVE retrieve failure to Aurabox.
+    ///
+    /// Calls `POST {base_url}/api/bounce/retrieves/{id}/failed`.
+    pub async fn post_retrieve_failed(
+        &self,
+        retrieve_id: &str,
+        error: String,
+    ) -> anyhow::Result<Value> {
+        let url = format!(
+            "{}/api/bounce/retrieves/{}/failed",
+            self.base_url, retrieve_id,
+        );
+
+        let payload = RetrieveFailedPayload { error };
 
         let response = self
             .client

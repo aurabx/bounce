@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.1] - 2026-02-21
+
+### Fixed
+- Dynamically allocate Next.js dev server port to avoid `EADDRINUSE` errors when the default port is already in use.
+
 ## [1.2.0] - 2026-02-18
 
 ### Added

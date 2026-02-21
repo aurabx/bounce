@@ -28,7 +28,7 @@ const CFIND_TIMEOUT: Duration = Duration::from_secs(30);
 ///
 /// * `calling_ae` - The AE title of this Bounce gateway (our SCU identity).
 /// * `pacs` - Connection details for the target PACS SCP.
-/// * `query_level` - The DICOM Query/Retrieve level: `"PATIENT"` or `"STUDY"`.
+/// * `query_level` - The DICOM Query/Retrieve level: `"PATIENT"`, `"STUDY"`, or `"SERIES"`.
 /// * `filters` - Query match keys.
 ///
 /// # Returns
@@ -365,10 +365,18 @@ pub(crate) fn build_cfind_command(message_id: u16) -> InMemDicomObject<StandardD
 ///
 /// The `query_level` determines which DICOM tags are included:
 /// - `"PATIENT"`: Patient-level tags (DOB, sex, number of studies)
+/// - `"SERIES"`: Series-level tags (series UID/number/description, modality, etc.)
 /// - `"STUDY"` (default): Study-level tags (study date/time, description, UID, etc.)
 pub(crate) fn build_cfind_identifier(query_level: &str, filters: &QueryFilters) -> InMemDicomObject<StandardDataDictionary> {
     let is_patient_level = query_level.eq_ignore_ascii_case("PATIENT");
-    let level_str = if is_patient_level { "PATIENT" } else { "STUDY" };
+    let is_series_level = query_level.eq_ignore_ascii_case("SERIES");
+    let level_str = if is_patient_level {
+        "PATIENT"
+    } else if is_series_level {
+        "SERIES"
+    } else {
+        "STUDY"
+    };
 
     let mut elements: Vec<DataElement<InMemDicomObject<StandardDataDictionary>>> = vec![
         // Required: QueryRetrieveLevel
@@ -406,6 +414,48 @@ pub(crate) fn build_cfind_identifier(query_level: &str, filters: &QueryFilters) 
             DataElement::new(Tag(0x0010, 0x0040), VR::CS, dicom_value!()),
             // NumberOfPatientRelatedStudies (0020,1200)
             DataElement::new(Tag(0x0020, 0x1200), VR::IS, dicom_value!()),
+        ]);
+    } else if is_series_level {
+        // SERIES-level keys
+        elements.extend([
+            // StudyInstanceUID (0020,000D) - required match key for series query
+            DataElement::new(
+                tags::STUDY_INSTANCE_UID,
+                VR::UI,
+                match &filters.study_instance_uid {
+                    Some(uid) => dicom_value!(Str, uid.as_str()),
+                    None => dicom_value!(),
+                },
+            ),
+            // SeriesInstanceUID (0020,000E)
+            DataElement::new(Tag(0x0020, 0x000E), VR::UI, dicom_value!()),
+            // Modality (0008,0060)
+            DataElement::new(
+                tags::MODALITY,
+                VR::CS,
+                match &filters.modality {
+                    Some(m) => dicom_value!(Str, m.as_str()),
+                    None => dicom_value!(),
+                },
+            ),
+            // SeriesDescription (0008,103E)
+            DataElement::new(Tag(0x0008, 0x103E), VR::LO, dicom_value!()),
+            // SeriesNumber (0020,0011)
+            DataElement::new(Tag(0x0020, 0x0011), VR::IS, dicom_value!()),
+            // SeriesDate (0008,0021)
+            DataElement::new(Tag(0x0008, 0x0021), VR::DA, dicom_value!()),
+            // SeriesTime (0008,0031)
+            DataElement::new(Tag(0x0008, 0x0031), VR::TM, dicom_value!()),
+            // BodyPartExamined (0018,0015)
+            DataElement::new(Tag(0x0018, 0x0015), VR::CS, dicom_value!()),
+            // Laterality (0020,0060)
+            DataElement::new(Tag(0x0020, 0x0060), VR::CS, dicom_value!()),
+            // NumberOfSeriesRelatedInstances (0020,1209)
+            DataElement::new(Tag(0x0020, 0x1209), VR::IS, dicom_value!()),
+            // InstitutionName (0008,0080)
+            DataElement::new(Tag(0x0008, 0x0080), VR::LO, dicom_value!()),
+            // ReferringPhysicianName (0008,0090)
+            DataElement::new(Tag(0x0008, 0x0090), VR::PN, dicom_value!()),
         ]);
     } else {
         // STUDY-level return keys
@@ -466,18 +516,24 @@ pub(crate) fn build_cfind_identifier(query_level: &str, filters: &QueryFilters) 
 /// correctly.
 ///
 /// The `query_level` determines which fields are required vs optional.
-/// For STUDY-level queries, `StudyInstanceUID` is required. For
-/// PATIENT-level queries, it is not expected.
+/// For STUDY-level and SERIES-level queries, `StudyInstanceUID` is required.
+/// For SERIES-level queries, `SeriesInstanceUID` is also required.
 pub(crate) fn parse_cfind_result(data: &[u8], ts: &dicom::encoding::TransferSyntax, query_level: &str) -> Result<CfindResult, String> {
     let obj = InMemDicomObject::read_dataset_with_ts(data, ts)
         .map_err(|e| format!("Failed to parse C-FIND result dataset: {}", e))?;
 
     let is_patient_level = query_level.eq_ignore_ascii_case("PATIENT");
+    let is_series_level = query_level.eq_ignore_ascii_case("SERIES");
 
     // StudyInstanceUID is required for STUDY-level, optional for PATIENT-level
     let study_instance_uid = extract_string_optional(&obj, tags::STUDY_INSTANCE_UID);
     if !is_patient_level && study_instance_uid.is_none() {
         return Err("C-FIND result missing StudyInstanceUID".to_string());
+    }
+
+    let series_instance_uid = extract_string_optional(&obj, Tag(0x0020, 0x000E));
+    if is_series_level && series_instance_uid.is_none() {
+        return Err("C-FIND result missing SeriesInstanceUID".to_string());
     }
 
     Ok(CfindResult {
@@ -491,9 +547,25 @@ pub(crate) fn parse_cfind_result(data: &[u8], ts: &dicom::encoding::TransferSynt
         study_description: extract_string_optional(&obj, tags::STUDY_DESCRIPTION),
         accession_number: extract_string_optional(&obj, tags::ACCESSION_NUMBER),
         study_instance_uid,
+        modality: extract_string_optional(&obj, tags::MODALITY),
         modalities_in_study: extract_string_optional(&obj, tags::MODALITIES_IN_STUDY),
         number_of_series: extract_integer_optional(&obj, Tag(0x0020, 0x1206)),
-        number_of_instances: extract_integer_optional(&obj, Tag(0x0020, 0x1208)),
+        number_of_instances: if is_series_level {
+            extract_integer_optional(&obj, Tag(0x0020, 0x1209))
+        } else {
+            extract_integer_optional(&obj, Tag(0x0020, 0x1208))
+        },
+
+        // Series-level fields
+        series_instance_uid,
+        series_description: extract_string_optional(&obj, Tag(0x0008, 0x103E)),
+        series_number: extract_string_optional(&obj, Tag(0x0020, 0x0011)),
+        series_date: extract_string_optional(&obj, Tag(0x0008, 0x0021)),
+        series_time: extract_string_optional(&obj, Tag(0x0008, 0x0031)),
+        body_part_examined: extract_string_optional(&obj, Tag(0x0018, 0x0015)),
+        laterality: extract_string_optional(&obj, Tag(0x0020, 0x0060)),
+        institution_name: extract_string_optional(&obj, Tag(0x0008, 0x0080)),
+        referring_physician_name: extract_string_optional(&obj, Tag(0x0008, 0x0090)),
 
         // Patient-level fields
         patient_birth_date: extract_string_optional(&obj, Tag(0x0010, 0x0030)),

@@ -12,7 +12,7 @@
     "BOUNCE": {
       "AET": "BOUNCE",
       "Host": "host.docker.internal",
-      "Port": 9090,
+      "Port": 12345,
       "AllowFind": true,
       "AllowStore": true,
       "AllowMove": true

@@ -189,6 +189,7 @@ async fn cfind_query(
         study_date,
         accession_number,
         modality,
+        study_instance_uid: None,
     };
 
     execute_cfind(&config.ae_title, &pacs, "STUDY", &filters).await

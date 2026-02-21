@@ -255,6 +255,15 @@ impl Transmission {
             )
             .unwrap();
 
+        // Clean up retrieve marker file if it exists (created by the
+        // poller when a study is retrieved via C-MOVE).
+        let retrieve_marker_path = config.resolve_retrieve_marker_path(&study_uid);
+        if retrieve_marker_path.exists() {
+            if let Err(e) = std::fs::remove_file(&retrieve_marker_path) {
+                log_error!("Failed to delete retrieve marker: {}", e);
+            }
+        }
+
         // Optionally, delete local study if requested
         if delete_after_send {
             self.delete_study(study_uid.clone()).await?;

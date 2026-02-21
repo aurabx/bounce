@@ -305,9 +305,19 @@ mod tests {
             study_description: Some("CT CHEST".to_string()),
             accession_number: Some("ACC001".to_string()),
             study_instance_uid: Some("1.2.3.4.5".to_string()),
+            modality: None,
             modalities_in_study: Some("CT".to_string()),
             number_of_series: Some(3),
             number_of_instances: Some(100),
+            series_instance_uid: None,
+            series_description: None,
+            series_number: None,
+            series_date: None,
+            series_time: None,
+            body_part_examined: None,
+            laterality: None,
+            institution_name: None,
+            referring_physician_name: None,
             patient_birth_date: None,
             patient_sex: None,
             number_of_patient_related_studies: None,
@@ -384,9 +394,19 @@ mod tests {
             study_description: None,
             accession_number: None,
             study_instance_uid: Some("1.2.3".to_string()),
+            modality: None,
             modalities_in_study: None,
             number_of_series: None,
             number_of_instances: None,
+            series_instance_uid: None,
+            series_description: None,
+            series_number: None,
+            series_date: None,
+            series_time: None,
+            body_part_examined: None,
+            laterality: None,
+            institution_name: None,
+            referring_physician_name: None,
             patient_birth_date: None,
             patient_sex: None,
             number_of_patient_related_studies: None,
@@ -488,6 +508,352 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("404"), "Error should mention 404: {}", err);
+
+        mock.assert_async().await;
+    }
+
+    // =======================================================================
+    // fetch_pending_retrieves
+    // =======================================================================
+
+    #[tokio::test]
+    async fn test_fetch_pending_retrieves_success_empty() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/api/bounce/retrieves/pending")
+            .match_header("Authorization", "Bearer test-api-key")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"retrieves":[]}"#)
+            .create_async()
+            .await;
+
+        let client = make_client(&server.url());
+        let resp = client.fetch_pending_retrieves().await.unwrap();
+
+        assert!(resp.retrieves.is_empty());
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_fetch_pending_retrieves_success_with_retrieve() {
+        let mut server = mockito::Server::new_async().await;
+        let body = r#"{
+            "retrieves": [{
+                "id": "ret-1",
+                "service": {
+                    "id": "svc-pacs-1",
+                    "ae_title": "PACS_SCP",
+                    "host": "192.168.1.100",
+                    "port": 104
+                },
+                "study_instance_uid": "1.2.840.113619.2.55.3.123",
+                "patient_id": "PID001"
+            }]
+        }"#;
+
+        let mock = server
+            .mock("GET", "/api/bounce/retrieves/pending")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(body)
+            .create_async()
+            .await;
+
+        let client = make_client(&server.url());
+        let resp = client.fetch_pending_retrieves().await.unwrap();
+
+        assert_eq!(resp.retrieves.len(), 1);
+        assert_eq!(resp.retrieves[0].id, "ret-1");
+        assert_eq!(resp.retrieves[0].service.id, "svc-pacs-1");
+        assert_eq!(resp.retrieves[0].service.ae_title, "PACS_SCP");
+        assert_eq!(resp.retrieves[0].service.host, "192.168.1.100");
+        assert_eq!(resp.retrieves[0].service.port, 104);
+        assert_eq!(resp.retrieves[0].study_instance_uid, "1.2.840.113619.2.55.3.123");
+        assert_eq!(resp.retrieves[0].patient_id.as_deref(), Some("PID001"));
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_fetch_pending_retrieves_multiple() {
+        let mut server = mockito::Server::new_async().await;
+        let body = r#"{
+            "retrieves": [
+                {
+                    "id": "ret-1",
+                    "service": {"id": "svc-a", "ae_title": "A", "host": "1.1.1.1", "port": 104},
+                    "study_instance_uid": "1.2.3.100",
+                    "patient_id": "PID-A"
+                },
+                {
+                    "id": "ret-2",
+                    "service": {"id": "svc-b", "ae_title": "B", "host": "2.2.2.2", "port": 11112},
+                    "study_instance_uid": "1.2.3.200",
+                    "patient_id": null
+                }
+            ]
+        }"#;
+
+        let mock = server
+            .mock("GET", "/api/bounce/retrieves/pending")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(body)
+            .create_async()
+            .await;
+
+        let client = make_client(&server.url());
+        let resp = client.fetch_pending_retrieves().await.unwrap();
+
+        assert_eq!(resp.retrieves.len(), 2);
+        assert_eq!(resp.retrieves[0].id, "ret-1");
+        assert_eq!(resp.retrieves[1].id, "ret-2");
+        assert!(resp.retrieves[1].patient_id.is_none());
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_fetch_pending_retrieves_unauthorized() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/api/bounce/retrieves/pending")
+            .with_status(401)
+            .with_body(r#"{"message":"Unauthenticated."}"#)
+            .create_async()
+            .await;
+
+        let client = make_client(&server.url());
+        let result = client.fetch_pending_retrieves().await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("401"), "Error should mention 401: {}", err);
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_fetch_pending_retrieves_malformed_json() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/api/bounce/retrieves/pending")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"not json at all"#)
+            .create_async()
+            .await;
+
+        let client = make_client(&server.url());
+        let result = client.fetch_pending_retrieves().await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("Failed to parse"),
+            "Error should mention parsing: {}",
+            err
+        );
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_fetch_pending_retrieves_sends_correct_headers() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/api/bounce/retrieves/pending")
+            .match_header("Authorization", "Bearer test-api-key")
+            .match_header("Accept", "application/json")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"retrieves":[]}"#)
+            .create_async()
+            .await;
+
+        let client = make_client(&server.url());
+        client.fetch_pending_retrieves().await.unwrap();
+
+        mock.assert_async().await;
+    }
+
+    // =======================================================================
+    // post_retrieve_completed
+    // =======================================================================
+
+    #[tokio::test]
+    async fn test_post_retrieve_completed_success() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/api/bounce/retrieves/ret-123/completed")
+            .match_header("Authorization", "Bearer test-api-key")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"message":"ok"}"#)
+            .create_async()
+            .await;
+
+        let client = make_client(&server.url());
+        let resp = client.post_retrieve_completed("ret-123").await.unwrap();
+        assert_eq!(resp["message"], "ok");
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_post_retrieve_completed_server_error() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/api/bounce/retrieves/ret-fail/completed")
+            .with_status(500)
+            .with_body("Internal Server Error")
+            .create_async()
+            .await;
+
+        let client = make_client(&server.url());
+        let result = client.post_retrieve_completed("ret-fail").await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("500"), "Error should mention 500: {}", err);
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_post_retrieve_completed_conflict() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/api/bounce/retrieves/ret-done/completed")
+            .with_status(409)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"message":"retrieve already finished"}"#)
+            .create_async()
+            .await;
+
+        let client = make_client(&server.url());
+        let result = client.post_retrieve_completed("ret-done").await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("409"), "Error should mention 409: {}", err);
+
+        mock.assert_async().await;
+    }
+
+    // =======================================================================
+    // post_retrieve_failed
+    // =======================================================================
+
+    #[tokio::test]
+    async fn test_post_retrieve_failed_success() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/api/bounce/retrieves/ret-err/failed")
+            .match_header("Authorization", "Bearer test-api-key")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"message":"ok"}"#)
+            .create_async()
+            .await;
+
+        let client = make_client(&server.url());
+        let resp = client
+            .post_retrieve_failed("ret-err", "C-MOVE timed out".to_string())
+            .await
+            .unwrap();
+        assert_eq!(resp["message"], "ok");
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_post_retrieve_failed_sends_error_payload() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/api/bounce/retrieves/ret-err2/failed")
+            .match_body(mockito::Matcher::JsonString(
+                r#"{"error":"C-MOVE failed with status 0xA701"}"#.to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"message":"ok"}"#)
+            .create_async()
+            .await;
+
+        let client = make_client(&server.url());
+        client
+            .post_retrieve_failed("ret-err2", "C-MOVE failed with status 0xA701".to_string())
+            .await
+            .unwrap();
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_post_retrieve_failed_server_error() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/api/bounce/retrieves/ret-srv-err/failed")
+            .with_status(503)
+            .with_body("Service Unavailable")
+            .create_async()
+            .await;
+
+        let client = make_client(&server.url());
+        let result = client
+            .post_retrieve_failed("ret-srv-err", "some error".to_string())
+            .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("503"), "Error should mention 503: {}", err);
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_post_retrieve_failed_not_found() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/api/bounce/retrieves/nonexistent/failed")
+            .with_status(404)
+            .with_body(r#"{"message":"Not Found"}"#)
+            .create_async()
+            .await;
+
+        let client = make_client(&server.url());
+        let result = client
+            .post_retrieve_failed("nonexistent", "error".to_string())
+            .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("404"), "Error should mention 404: {}", err);
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_post_retrieve_failed_forbidden() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/api/bounce/retrieves/ret-other/failed")
+            .with_status(403)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"message":"forbidden"}"#)
+            .create_async()
+            .await;
+
+        let client = make_client(&server.url());
+        let result = client
+            .post_retrieve_failed("ret-other", "error".to_string())
+            .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("403"), "Error should mention 403: {}", err);
 
         mock.assert_async().await;
     }
