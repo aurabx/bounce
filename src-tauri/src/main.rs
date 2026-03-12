@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod aura;
 mod db;
+mod dimse;
 mod logger;
 mod query;
 mod receiver;

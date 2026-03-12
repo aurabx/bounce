@@ -8,18 +8,19 @@
 //! to Bounce's DICOM server, which handles receiving and uploading them
 //! through the normal upload workflow automatically.
 
+use crate::dimse;
 use crate::query::cfind::{extract_status, extract_string_optional};
 use crate::query::models::PacsService;
 use crate::{log_error, log_info};
-use dicom::core::{DataElement, Tag, VR};
 use dicom::core::header::Header;
+use dicom::core::{DataElement, Tag, VR};
 use dicom::dicom_value;
 use dicom::dictionary_std::tags;
-use dicom::object::{InMemDicomObject, StandardDataDictionary};
 use dicom::encoding::TransferSyntaxIndex;
+use dicom::object::{InMemDicomObject, StandardDataDictionary};
 use dicom_transfer_syntax_registry::TransferSyntaxRegistry;
 use dicom_ul::association::ClientAssociationOptions;
-use dicom_ul::pdu::{PDataValueType, PresentationContextResultReason, Pdu};
+use dicom_ul::pdu::{PDataValueType, Pdu, PresentationContextResultReason};
 use std::time::Duration;
 
 /// Study Root Query/Retrieve Information Model - MOVE
@@ -31,6 +32,9 @@ const STUDY_ROOT_MOVE_SOP_CLASS: &str = "1.2.840.10008.5.1.4.1.2.2.2";
 /// needs to send potentially large studies to Bounce's SCP. We use a
 /// generous timeout.
 const CMOVE_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Message ID used for outbound C-MOVE requests on a fresh association.
+const CMOVE_MESSAGE_ID: u16 = 1;
 
 /// Execute a C-MOVE request against a remote PACS.
 ///
@@ -102,15 +106,12 @@ async fn execute_cmove_inner(
     log_info!("C-MOVE: association established with {}", pacs.ae_title);
 
     // Find the accepted presentation context for Study Root MOVE.
-    let pc = association
-        .presentation_contexts()
-        .first()
-        .ok_or_else(|| {
-            format!(
-                "PACS {} did not accept Study Root MOVE presentation context",
-                pacs.ae_title,
-            )
-        })?;
+    let pc = association.presentation_contexts().first().ok_or_else(|| {
+        format!(
+            "PACS {} did not accept Study Root MOVE presentation context",
+            pacs.ae_title,
+        )
+    })?;
 
     if pc.reason != PresentationContextResultReason::Acceptance {
         return Err(format!(
@@ -156,7 +157,18 @@ async fn execute_cmove_inner(
     );
 
     // Build the C-MOVE-RQ command object.
-    let command = build_cmove_command(1, move_destination_ae);
+    let command = build_cmove_command(CMOVE_MESSAGE_ID, move_destination_ae);
+
+    dimse::log_scu_request(
+        &pacs.ae_title,
+        &addr,
+        "C-MOVE-RQ",
+        CMOVE_MESSAGE_ID,
+        &[
+            ("study_instance_uid", study_instance_uid.to_string()),
+            ("move_destination", move_destination_ae.to_string()),
+        ],
+    );
 
     let mut command_bytes = Vec::new();
     command
@@ -193,7 +205,10 @@ async fn execute_cmove_inner(
         .await
         .map_err(|e| format!("Failed to send C-MOVE identifier: {}", e))?;
 
-    log_info!("C-MOVE: request sent, awaiting status responses");
+    log_info!(
+        "C-MOVE: request sent for msg_id={}, awaiting status responses",
+        CMOVE_MESSAGE_ID,
+    );
 
     // Receive C-MOVE-RSP status messages.
     //
@@ -215,21 +230,42 @@ async fn execute_cmove_inner(
                                 data_value.data.as_slice(),
                                 &command_ts,
                             )
-                            .map_err(|e| {
-                                format!("Failed to parse C-MOVE-RSP command: {}", e)
-                            })?;
+                            .map_err(|e| format!("Failed to parse C-MOVE-RSP command: {}", e))?;
 
                             let status = extract_status(&cmd_obj)?;
+                            let response_message_id =
+                                extract_u16_optional(&cmd_obj, tags::MESSAGE_ID_BEING_RESPONDED_TO);
 
                             // Extract sub-operation counts if available
-                            let remaining = extract_u16_optional(&cmd_obj, tags::NUMBER_OF_REMAINING_SUBOPERATIONS);
-                            let completed = extract_u16_optional(&cmd_obj, tags::NUMBER_OF_COMPLETED_SUBOPERATIONS);
-                            let failed = extract_u16_optional(&cmd_obj, tags::NUMBER_OF_FAILED_SUBOPERATIONS);
-                            let warning = extract_u16_optional(&cmd_obj, tags::NUMBER_OF_WARNING_SUBOPERATIONS);
+                            let remaining = extract_u16_optional(
+                                &cmd_obj,
+                                tags::NUMBER_OF_REMAINING_SUBOPERATIONS,
+                            );
+                            let completed = extract_u16_optional(
+                                &cmd_obj,
+                                tags::NUMBER_OF_COMPLETED_SUBOPERATIONS,
+                            );
+                            let failed = extract_u16_optional(
+                                &cmd_obj,
+                                tags::NUMBER_OF_FAILED_SUBOPERATIONS,
+                            );
+                            let warning = extract_u16_optional(
+                                &cmd_obj,
+                                tags::NUMBER_OF_WARNING_SUBOPERATIONS,
+                            );
 
-                            log_info!(
-                                "C-MOVE: status=0x{:04X} remaining={:?} completed={:?} failed={:?} warning={:?}",
-                                status, remaining, completed, failed, warning,
+                            dimse::log_scu_response(
+                                &pacs.ae_title,
+                                &addr,
+                                "C-MOVE-RSP",
+                                response_message_id,
+                                status,
+                                &[
+                                    ("remaining", dimse::format_optional_u16(remaining)),
+                                    ("completed", dimse::format_optional_u16(completed)),
+                                    ("failed", dimse::format_optional_u16(failed)),
+                                    ("warning", dimse::format_optional_u16(warning)),
+                                ],
                             );
 
                             match status {
@@ -271,9 +307,8 @@ async fn execute_cmove_inner(
                                     // ErrorComment (0000,0902) - the PACS may include
                                     // a diagnostic message explaining the failure.
                                     let error_comment_tag = Tag(0x0000, 0x0902);
-                                    let error_comment = extract_string_optional(
-                                        &cmd_obj, error_comment_tag,
-                                    );
+                                    let error_comment =
+                                        extract_string_optional(&cmd_obj, error_comment_tag);
 
                                     // Log ALL elements from the response for diagnostics.
                                     log_error!(
@@ -310,9 +345,12 @@ async fn execute_cmove_inner(
                             // C-MOVE-RSP may include a dataset with failed
                             // SOP instance UIDs on error. We log but don't
                             // parse further.
-                            log_info!(
-                                "C-MOVE: received response data ({} bytes)",
+                            dimse::log_scu_data(
+                                &pacs.ae_title,
+                                &addr,
+                                "C-MOVE-RSP",
                                 data_value.data.len(),
+                                data_value.presentation_context_id,
                             );
                         }
                         _ => {
@@ -360,11 +398,7 @@ pub(crate) fn build_cmove_command(
             VR::US,
             dicom_value!(U16, [0x0021]), // C-MOVE-RQ
         ),
-        DataElement::new(
-            tags::MESSAGE_ID,
-            VR::US,
-            dicom_value!(U16, [message_id]),
-        ),
+        DataElement::new(tags::MESSAGE_ID, VR::US, dicom_value!(U16, [message_id])),
         DataElement::new(
             tags::PRIORITY,
             VR::US,
@@ -388,7 +422,9 @@ pub(crate) fn build_cmove_command(
 /// For a study-level retrieve, we only need:
 /// - `QueryRetrieveLevel` = `"STUDY"`
 /// - `StudyInstanceUID` = the UID of the study to retrieve
-pub(crate) fn build_cmove_identifier(study_instance_uid: &str) -> InMemDicomObject<StandardDataDictionary> {
+pub(crate) fn build_cmove_identifier(
+    study_instance_uid: &str,
+) -> InMemDicomObject<StandardDataDictionary> {
     InMemDicomObject::from_element_iter([
         DataElement::new(
             tags::QUERY_RETRIEVE_LEVEL,
@@ -404,7 +440,10 @@ pub(crate) fn build_cmove_identifier(study_instance_uid: &str) -> InMemDicomObje
 }
 
 /// Extract a u16 value from a command object, returning `None` if missing.
-pub(crate) fn extract_u16_optional(obj: &InMemDicomObject<StandardDataDictionary>, tag: Tag) -> Option<u16> {
+pub(crate) fn extract_u16_optional(
+    obj: &InMemDicomObject<StandardDataDictionary>,
+    tag: Tag,
+) -> Option<u16> {
     match obj.element(tag) {
         Ok(elem) => elem.to_int::<u16>().ok(),
         Err(_) => None,
@@ -437,6 +476,11 @@ fn log_cmove_response_details(cmd_obj: &InMemDicomObject<StandardDataDictionary>
             Ok(s) => s.to_string(),
             Err(_) => format!("{:?}", elem.value()),
         };
-        log_info!("C-MOVE-RSP element: ({:04X},{:04X}) = {}", tag.0, tag.1, value);
+        log_info!(
+            "C-MOVE-RSP element: ({:04X},{:04X}) = {}",
+            tag.0,
+            tag.1,
+            value
+        );
     }
 }

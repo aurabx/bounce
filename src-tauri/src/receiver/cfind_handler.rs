@@ -13,6 +13,7 @@
 //! receive a C-FIND-RSP Failure response (0xA900).
 
 use crate::aura::query_api::QueryApiClient;
+use crate::dimse;
 use crate::query::cfind::extract_string_optional;
 use crate::query::models::{CfindResult, FindStudyRequest, QueryFilters};
 use crate::{log_error, log_info};
@@ -115,10 +116,7 @@ pub async fn handle_cfind(
     };
 
     let result_count = find_response.studies.len();
-    log_info!(
-        "C-FIND SCP: Aura returned {} studies",
-        result_count,
-    );
+    log_info!("C-FIND SCP: Aura returned {} studies", result_count,);
 
     // Send one Pending response per study.
     for study in find_response.studies {
@@ -161,8 +159,7 @@ fn send_cfind_pending(
     ts: &dicom::encoding::TransferSyntax,
     result: CfindResult,
 ) -> Result<(), String> {
-    let command_ts =
-        dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
+    let command_ts = dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
 
     // Build result dataset.
     let dataset = build_study_result_dataset(&result);
@@ -193,6 +190,28 @@ fn send_cfind_pending(
         })
         .map_err(|e| format!("C-FIND SCP: failed to send result data PDU: {}", e))?;
 
+    dimse::log_scp_response(
+        association.client_ae_title(),
+        "C-FIND-RSP",
+        presentation_context_id,
+        message_id,
+        0xFF00,
+        &[
+            (
+                "study_instance_uid",
+                dimse::format_optional_str(result.study_instance_uid.as_deref()),
+            ),
+            (
+                "accession_number",
+                dimse::format_optional_str(result.accession_number.as_deref()),
+            ),
+            (
+                "patient_id",
+                dimse::format_optional_str(result.patient_id.as_deref()),
+            ),
+        ],
+    );
+
     association
         .send(&Pdu::PData {
             data: vec![dicom_ul::pdu::PDataValue {
@@ -213,8 +232,7 @@ fn send_cfind_success(
     message_id: u16,
     presentation_context_id: u8,
 ) -> Result<(), String> {
-    let command_ts =
-        dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
+    let command_ts = dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
 
     let command = build_cfind_rsp_command(message_id, 0x0000);
     let mut command_bytes = Vec::new();
@@ -233,6 +251,15 @@ fn send_cfind_success(
         })
         .map_err(|e| format!("C-FIND SCP: failed to send Success command PDU: {}", e))?;
 
+    dimse::log_scp_response(
+        association.client_ae_title(),
+        "C-FIND-RSP",
+        presentation_context_id,
+        message_id,
+        0x0000,
+        &[],
+    );
+
     Ok(())
 }
 
@@ -243,8 +270,7 @@ fn send_cfind_failure(
     presentation_context_id: u8,
     status: u16,
 ) -> Result<(), String> {
-    let command_ts =
-        dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
+    let command_ts = dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
 
     let command = build_cfind_rsp_command(message_id, status);
     let mut command_bytes = Vec::new();
@@ -262,6 +288,15 @@ fn send_cfind_failure(
             }],
         })
         .map_err(|e| format!("C-FIND SCP: failed to send Failure command PDU: {}", e))?;
+
+    dimse::log_scp_response(
+        association.client_ae_title(),
+        "C-FIND-RSP",
+        presentation_context_id,
+        message_id,
+        status,
+        &[],
+    );
 
     Ok(())
 }
@@ -302,34 +337,25 @@ fn build_cfind_rsp_command(
             VR::US,
             dicom_value!(U16, [command_data_set_type]),
         ),
-        DataElement::new(
-            tags::STATUS,
-            VR::US,
-            dicom_value!(U16, [status]),
-        ),
+        DataElement::new(tags::STATUS, VR::US, dicom_value!(U16, [status])),
     ])
 }
 
 /// Build a DICOM dataset for a single STUDY-level C-FIND result.
-fn build_study_result_dataset(
-    result: &CfindResult,
-) -> InMemDicomObject<StandardDataDictionary> {
-    let mut elements: Vec<DataElement<InMemDicomObject<StandardDataDictionary>>> = vec![
-        DataElement::new(
+fn build_study_result_dataset(result: &CfindResult) -> InMemDicomObject<StandardDataDictionary> {
+    let mut elements: Vec<DataElement<InMemDicomObject<StandardDataDictionary>>> =
+        vec![DataElement::new(
             tags::QUERY_RETRIEVE_LEVEL,
             VR::CS,
             dicom_value!(Str, "STUDY"),
-        ),
-    ];
+        )];
 
     macro_rules! push_str {
         ($tag:expr, $vr:expr, $opt:expr) => {
             match &$opt {
-                Some(v) => elements.push(DataElement::new(
-                    $tag,
-                    $vr,
-                    dicom_value!(Str, v.as_str()),
-                )),
+                Some(v) => {
+                    elements.push(DataElement::new($tag, $vr, dicom_value!(Str, v.as_str())))
+                }
                 None => elements.push(DataElement::new($tag, $vr, dicom_value!())),
             }
         };
@@ -353,7 +379,11 @@ fn build_study_result_dataset(
     push_str!(tags::STUDY_TIME, VR::TM, result.study_time);
     push_str!(tags::STUDY_DESCRIPTION, VR::LO, result.study_description);
     push_str!(tags::ACCESSION_NUMBER, VR::SH, result.accession_number);
-    push_str!(tags::MODALITIES_IN_STUDY, VR::CS, result.modalities_in_study);
+    push_str!(
+        tags::MODALITIES_IN_STUDY,
+        VR::CS,
+        result.modalities_in_study
+    );
     push_str!(tags::PATIENT_NAME, VR::PN, result.patient_name);
     push_str!(tags::PATIENT_ID, VR::LO, result.patient_id);
     // PatientBirthDate (0010,0030)
@@ -383,13 +413,11 @@ mod tests {
 
     #[test]
     fn test_extract_filters_empty_identifier() {
-        let identifier = InMemDicomObject::from_element_iter(vec![
-            DataElement::new(
-                tags::QUERY_RETRIEVE_LEVEL,
-                VR::CS,
-                dicom_value!(Str, "STUDY"),
-            ),
-        ]);
+        let identifier = InMemDicomObject::from_element_iter(vec![DataElement::new(
+            tags::QUERY_RETRIEVE_LEVEL,
+            VR::CS,
+            dicom_value!(Str, "STUDY"),
+        )]);
 
         let filters = extract_filters(&identifier);
 
@@ -430,9 +458,11 @@ mod tests {
 
     #[test]
     fn test_extract_filters_falls_back_to_modality_tag() {
-        let identifier = InMemDicomObject::from_element_iter(vec![
-            DataElement::new(tags::MODALITY, VR::CS, dicom_value!(Str, "MR")),
-        ]);
+        let identifier = InMemDicomObject::from_element_iter(vec![DataElement::new(
+            tags::MODALITY,
+            VR::CS,
+            dicom_value!(Str, "MR"),
+        )]);
 
         let filters = extract_filters(&identifier);
         assert_eq!(filters.modality.as_deref(), Some("MR"));

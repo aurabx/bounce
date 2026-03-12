@@ -3,17 +3,18 @@
 //! Establishes an outbound DICOM association to a PACS and executes a
 //! Study Root C-FIND query, collecting results into [`CfindResult`] values.
 
+use crate::dimse;
 use crate::query::models::{CfindResult, PacsService, QueryFilters};
 use crate::{log_error, log_info};
-use dicom::core::{DataElement, Tag, VR};
 use dicom::core::header::Header;
+use dicom::core::{DataElement, Tag, VR};
 use dicom::dicom_value;
 use dicom::dictionary_std::tags;
-use dicom::object::{InMemDicomObject, StandardDataDictionary};
 use dicom::encoding::TransferSyntaxIndex;
+use dicom::object::{InMemDicomObject, StandardDataDictionary};
 use dicom_transfer_syntax_registry::TransferSyntaxRegistry;
 use dicom_ul::association::ClientAssociationOptions;
-use dicom_ul::pdu::{PDataValueType, PresentationContextResultReason, Pdu};
+use dicom_ul::pdu::{PDataValueType, Pdu, PresentationContextResultReason};
 use std::time::Duration;
 
 /// Study Root Query/Retrieve Information Model - FIND
@@ -21,6 +22,9 @@ const STUDY_ROOT_FIND_SOP_CLASS: &str = "1.2.840.10008.5.1.4.1.2.2.1";
 
 /// Maximum time to wait for the entire C-FIND operation (association + query + results).
 const CFIND_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Message ID used for outbound C-FIND requests on a fresh association.
+const CFIND_MESSAGE_ID: u16 = 1;
 
 /// Execute a C-FIND query against a remote PACS.
 ///
@@ -86,22 +90,16 @@ async fn execute_cfind_inner(
         .await
         .map_err(|e| format!("Failed to establish DICOM association with {}: {}", addr, e))?;
 
-    log_info!(
-        "C-FIND: association established with {}",
-        pacs.ae_title,
-    );
+    log_info!("C-FIND: association established with {}", pacs.ae_title,);
 
     // Find the accepted presentation context. Since we only proposed one
     // abstract syntax (Study Root FIND), the first accepted context is it.
-    let pc = association
-        .presentation_contexts()
-        .first()
-        .ok_or_else(|| {
-            format!(
-                "PACS {} did not accept Study Root FIND presentation context",
-                pacs.ae_title,
-            )
-        })?;
+    let pc = association.presentation_contexts().first().ok_or_else(|| {
+        format!(
+            "PACS {} did not accept Study Root FIND presentation context",
+            pacs.ae_title,
+        )
+    })?;
 
     // Verify the presentation context was actually accepted
     if pc.reason != PresentationContextResultReason::Acceptance {
@@ -153,10 +151,48 @@ async fn execute_cfind_inner(
             elem.to_str().unwrap_or_default(),
         );
     }
-    log_info!("C-FIND identifier bytes ({} bytes): {:02X?}", identifier_bytes.len(), &identifier_bytes);
+    log_info!(
+        "C-FIND identifier bytes ({} bytes): {:02X?}",
+        identifier_bytes.len(),
+        &identifier_bytes
+    );
 
     // Build the C-FIND-RQ command object
-    let command = build_cfind_command(1); // message ID = 1
+    let command = build_cfind_command(CFIND_MESSAGE_ID);
+
+    dimse::log_scu_request(
+        &pacs.ae_title,
+        &addr,
+        "C-FIND-RQ",
+        CFIND_MESSAGE_ID,
+        &[
+            ("query_level", query_level.to_string()),
+            (
+                "patient_id",
+                dimse::format_optional_str(filters.patient_id.as_deref()),
+            ),
+            (
+                "patient_name",
+                dimse::format_optional_str(filters.patient_name.as_deref()),
+            ),
+            (
+                "accession_number",
+                dimse::format_optional_str(filters.accession_number.as_deref()),
+            ),
+            (
+                "study_date",
+                dimse::format_optional_str(filters.study_date.as_deref()),
+            ),
+            (
+                "study_instance_uid",
+                dimse::format_optional_str(filters.study_instance_uid.as_deref()),
+            ),
+            (
+                "modality",
+                dimse::format_optional_str(filters.modality.as_deref()),
+            ),
+        ],
+    );
 
     let mut command_bytes = Vec::new();
     command
@@ -193,7 +229,10 @@ async fn execute_cfind_inner(
         .await
         .map_err(|e| format!("Failed to send C-FIND identifier: {}", e))?;
 
-    log_info!("C-FIND: request sent, awaiting responses");
+    log_info!(
+        "C-FIND: request sent for msg_id={}, awaiting responses",
+        CFIND_MESSAGE_ID,
+    );
 
     // Receive responses
     let mut results: Vec<CfindResult> = Vec::new();
@@ -222,12 +261,19 @@ async fn execute_cfind_inner(
                                 data_value.data.as_slice(),
                                 &command_ts,
                             )
-                            .map_err(|e| {
-                                format!("Failed to parse C-FIND-RSP command: {}", e)
-                            })?;
+                            .map_err(|e| format!("Failed to parse C-FIND-RSP command: {}", e))?;
 
                             let status = extract_status(&cmd_obj)?;
-                            log_info!("C-FIND: command status=0x{:04X} buffer_len={}", status, response_data_buffer.len());
+                            let response_message_id =
+                                extract_u16_optional(&cmd_obj, tags::MESSAGE_ID_BEING_RESPONDED_TO);
+                            dimse::log_scu_response(
+                                &pacs.ae_title,
+                                &addr,
+                                "C-FIND-RSP",
+                                response_message_id,
+                                status,
+                                &[("buffer_len", response_data_buffer.len().to_string())],
+                            );
 
                             match status {
                                 0x0000 => {
@@ -235,7 +281,11 @@ async fn execute_cfind_inner(
                                     // preceding Pending response whose data
                                     // arrived in a separate PData PDU.
                                     if !response_data_buffer.is_empty() {
-                                        match parse_cfind_result(&response_data_buffer, negotiated_ts, query_level) {
+                                        match parse_cfind_result(
+                                            &response_data_buffer,
+                                            negotiated_ts,
+                                            query_level,
+                                        ) {
                                             Ok(result) => results.push(result),
                                             Err(e) => {
                                                 log_error!(
@@ -247,10 +297,7 @@ async fn execute_cfind_inner(
                                         response_data_buffer.clear();
                                     }
 
-                                    log_info!(
-                                        "C-FIND: completed with {} results",
-                                        results.len()
-                                    );
+                                    log_info!("C-FIND: completed with {} results", results.len());
 
                                     // Release the association gracefully
                                     if let Err(e) = association.release().await {
@@ -267,13 +314,14 @@ async fn execute_cfind_inner(
                                     //
                                     // If we already have buffered data, parse it now.
                                     if !response_data_buffer.is_empty() {
-                                        match parse_cfind_result(&response_data_buffer, negotiated_ts, query_level) {
+                                        match parse_cfind_result(
+                                            &response_data_buffer,
+                                            negotiated_ts,
+                                            query_level,
+                                        ) {
                                             Ok(result) => results.push(result),
                                             Err(e) => {
-                                                log_error!(
-                                                    "C-FIND: failed to parse result: {}",
-                                                    e,
-                                                );
+                                                log_error!("C-FIND: failed to parse result: {}", e,);
                                             }
                                         }
                                         response_data_buffer.clear();
@@ -285,10 +333,8 @@ async fn execute_cfind_inner(
                                 }
                                 _ => {
                                     // Error status
-                                    let msg = format!(
-                                        "C-FIND failed with status 0x{:04X}",
-                                        status,
-                                    );
+                                    let msg =
+                                        format!("C-FIND failed with status 0x{:04X}", status,);
                                     log_error!("{}", msg);
 
                                     if let Err(e) = association.release().await {
@@ -301,6 +347,13 @@ async fn execute_cfind_inner(
                         }
                         PDataValueType::Data => {
                             // Accumulate data fragments
+                            dimse::log_scu_data(
+                                &pacs.ae_title,
+                                &addr,
+                                "C-FIND-RSP",
+                                data_value.data.len(),
+                                data_value.presentation_context_id,
+                            );
                             response_data_buffer.extend_from_slice(&data_value.data);
                         }
                         _ => {
@@ -327,6 +380,10 @@ async fn execute_cfind_inner(
     Ok(results)
 }
 
+fn extract_u16_optional(obj: &InMemDicomObject<StandardDataDictionary>, tag: Tag) -> Option<u16> {
+    obj.element(tag).ok()?.to_int::<u16>().ok()
+}
+
 /// Build the C-FIND-RQ command object.
 pub(crate) fn build_cfind_command(message_id: u16) -> InMemDicomObject<StandardDataDictionary> {
     InMemDicomObject::command_from_element_iter([
@@ -340,11 +397,7 @@ pub(crate) fn build_cfind_command(message_id: u16) -> InMemDicomObject<StandardD
             VR::US,
             dicom_value!(U16, [0x0020]), // C-FIND-RQ
         ),
-        DataElement::new(
-            tags::MESSAGE_ID,
-            VR::US,
-            dicom_value!(U16, [message_id]),
-        ),
+        DataElement::new(tags::MESSAGE_ID, VR::US, dicom_value!(U16, [message_id])),
         DataElement::new(
             tags::PRIORITY,
             VR::US,
@@ -367,7 +420,10 @@ pub(crate) fn build_cfind_command(message_id: u16) -> InMemDicomObject<StandardD
 /// - `"PATIENT"`: Patient-level tags (DOB, sex, number of studies)
 /// - `"SERIES"`: Series-level tags (series UID/number/description, modality, etc.)
 /// - `"STUDY"` (default): Study-level tags (study date/time, description, UID, etc.)
-pub(crate) fn build_cfind_identifier(query_level: &str, filters: &QueryFilters) -> InMemDicomObject<StandardDataDictionary> {
+pub(crate) fn build_cfind_identifier(
+    query_level: &str,
+    filters: &QueryFilters,
+) -> InMemDicomObject<StandardDataDictionary> {
     let is_patient_level = query_level.eq_ignore_ascii_case("PATIENT");
     let is_series_level = query_level.eq_ignore_ascii_case("SERIES");
     let level_str = if is_patient_level {
@@ -518,7 +574,11 @@ pub(crate) fn build_cfind_identifier(query_level: &str, filters: &QueryFilters) 
 /// The `query_level` determines which fields are required vs optional.
 /// For STUDY-level and SERIES-level queries, `StudyInstanceUID` is required.
 /// For SERIES-level queries, `SeriesInstanceUID` is also required.
-pub(crate) fn parse_cfind_result(data: &[u8], ts: &dicom::encoding::TransferSyntax, query_level: &str) -> Result<CfindResult, String> {
+pub(crate) fn parse_cfind_result(
+    data: &[u8],
+    ts: &dicom::encoding::TransferSyntax,
+    query_level: &str,
+) -> Result<CfindResult, String> {
     let obj = InMemDicomObject::read_dataset_with_ts(data, ts)
         .map_err(|e| format!("Failed to parse C-FIND result dataset: {}", e))?;
 
@@ -575,7 +635,9 @@ pub(crate) fn parse_cfind_result(data: &[u8], ts: &dicom::encoding::TransferSynt
 }
 
 /// Extract the Status (0000,0900) from a C-FIND-RSP command object.
-pub(crate) fn extract_status(obj: &InMemDicomObject<StandardDataDictionary>) -> Result<u16, String> {
+pub(crate) fn extract_status(
+    obj: &InMemDicomObject<StandardDataDictionary>,
+) -> Result<u16, String> {
     obj.element(tags::STATUS)
         .map_err(|_| "C-FIND-RSP missing Status tag".to_string())?
         .to_int::<u16>()
@@ -583,7 +645,10 @@ pub(crate) fn extract_status(obj: &InMemDicomObject<StandardDataDictionary>) -> 
 }
 
 /// Extract a string tag, returning `None` if missing or empty.
-pub(crate) fn extract_string_optional(obj: &InMemDicomObject<StandardDataDictionary>, tag: Tag) -> Option<String> {
+pub(crate) fn extract_string_optional(
+    obj: &InMemDicomObject<StandardDataDictionary>,
+    tag: Tag,
+) -> Option<String> {
     match obj.element(tag) {
         Ok(elem) => match elem.to_str() {
             Ok(s) => {
@@ -606,7 +671,10 @@ pub(crate) fn extract_string_optional(obj: &InMemDicomObject<StandardDataDiction
 // }
 
 /// Extract an integer from an IS (Integer String) element, returning `None` on failure.
-pub(crate) fn extract_integer_optional(obj: &InMemDicomObject<StandardDataDictionary>, tag: Tag) -> Option<u32> {
+pub(crate) fn extract_integer_optional(
+    obj: &InMemDicomObject<StandardDataDictionary>,
+    tag: Tag,
+) -> Option<u32> {
     match obj.element(tag) {
         Ok(elem) => match elem.to_str() {
             Ok(s) => s.trim().parse::<u32>().ok(),

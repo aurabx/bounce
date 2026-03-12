@@ -1,5 +1,6 @@
 use crate::aura::query_api::QueryApiClient;
 use crate::db::database::Database;
+use crate::dimse;
 use crate::receiver::cfind_handler;
 use crate::receiver::metadata::Metadata;
 use crate::transmitter::transmission::QueueUpload;
@@ -202,67 +203,32 @@ impl DICOMServer {
                                     let command_field =
                                         Self::extract_int_tag(&obj, tags::COMMAND_FIELD)?;
 
-                                    println!("Tags: {:?}", &obj.tags().collect::<Vec<_>>());
-
-                                    if let Ok(elem) = obj.element(tags::COMMAND_GROUP_LENGTH) {
-                                        println!(
-                                            "COMMAND_GROUP_LENGTH: {:?}",
-                                            elem.to_str()
-                                                .unwrap_or(std::borrow::Cow::Borrowed("?"))
-                                        );
-                                    }
-
-                                    if let Ok(elem) = obj.element(tags::AFFECTED_SOP_CLASS_UID) {
-                                        println!(
-                                            "AFFECTED_SOP_CLASS_UID: {:?}",
-                                            elem.to_str()
-                                                .unwrap_or(std::borrow::Cow::Borrowed("?"))
-                                        );
-                                    }
-
-                                    if let Ok(elem) = obj.element(tags::COMMAND_FIELD) {
-                                        println!(
-                                            "COMMAND_FIELD: {:?}",
-                                            elem.to_str()
-                                                .unwrap_or(std::borrow::Cow::Borrowed("?"))
-                                        );
-                                    }
-
-                                    if let Ok(elem) = obj.element(tags::MESSAGE_ID) {
-                                        println!(
-                                            "MESSAGE_ID: {:?}",
-                                            elem.to_str()
-                                                .unwrap_or(std::borrow::Cow::Borrowed("?"))
-                                        );
-                                    }
-
-                                    if let Ok(elem) = obj.element(tags::PRIORITY) {
-                                        println!(
-                                            "PRIORITY: {:?}",
-                                            elem.to_str()
-                                                .unwrap_or(std::borrow::Cow::Borrowed("?"))
-                                        );
-                                    }
-
-                                    if let Ok(elem) = obj.element(tags::COMMAND_DATA_SET_TYPE) {
-                                        println!(
-                                            "COMMAND_DATA_SET_TYPE: {:?}",
-                                            elem.to_str()
-                                                .unwrap_or(std::borrow::Cow::Borrowed("?"))
-                                        );
-                                    }
-
-                                    if let Ok(elem) = obj.element(tags::AFFECTED_SOP_INSTANCE_UID) {
-                                        println!(
-                                            "AFFECTED_SOP_INSTANCE_UID: {:?}",
-                                            elem.to_str()
-                                                .unwrap_or(std::borrow::Cow::Borrowed("?"))
-                                        );
-                                    }
+                                    let request_name = dimse::describe_request(command_field);
+                                    let incoming_message_id =
+                                        Self::extract_int_tag_optional(&obj, tags::MESSAGE_ID)
+                                            .unwrap_or(msgid);
 
                                     if command_field == 0x0030 {
+                                        dimse::log_scp_request(
+                                            association.client_ae_title(),
+                                            request_name,
+                                            data_value.presentation_context_id,
+                                            incoming_message_id,
+                                            &[(
+                                                "affected_sop_class_uid",
+                                                dimse::format_optional_str(
+                                                    Self::extract_string_tag_optional(
+                                                        &obj,
+                                                        tags::AFFECTED_SOP_CLASS_UID,
+                                                    )
+                                                    .as_deref(),
+                                                ),
+                                            )],
+                                        );
+
                                         // Handle C-ECHO-RQ
-                                        let cecho_response = self.create_cecho_response(msgid);
+                                        let cecho_response =
+                                            self.create_cecho_response(incoming_message_id);
                                         let mut cecho_data = Vec::new();
 
                                         cecho_response
@@ -280,6 +246,14 @@ impl DICOMServer {
                                                 data: cecho_data,
                                             }],
                                         };
+                                        dimse::log_scp_response(
+                                            association.client_ae_title(),
+                                            "C-ECHO-RSP",
+                                            data_value.presentation_context_id,
+                                            incoming_message_id,
+                                            0x0000,
+                                            &[],
+                                        );
                                         association.send(&pdu_response).whatever_context(
                                             "failed to send C-ECHO response object to SCU",
                                         )?;
@@ -318,22 +292,44 @@ impl DICOMServer {
 
                                         // Build the QueryApiClient from the current
                                         // config for this call.
-                                        let api_client = if let Some(ref app_handle) = self.app_handle {
+                                        let api_client = if let Some(ref app_handle) =
+                                            self.app_handle
+                                        {
                                             let cfg = load_config(app_handle.clone());
-                                            QueryApiClient::new(
-                                                cfg.get_api_endpoint(),
-                                                cfg.api_key,
-                                            )
+                                            QueryApiClient::new(cfg.get_api_endpoint(), cfg.api_key)
                                         } else {
                                             log_error!("C-FIND SCP: no app handle — cannot build API client");
                                             instance_buffer.clear();
                                             continue;
                                         };
 
-                                        log_info!(
-                                            "C-FIND SCP: received C-FIND-RQ (msg_id={} query_level={})",
+                                        dimse::log_scp_request(
+                                            association.client_ae_title(),
+                                            request_name,
+                                            data_value.presentation_context_id,
                                             find_msg_id,
-                                            query_level,
+                                            &[
+                                                ("query_level", query_level.clone()),
+                                                (
+                                                    "priority",
+                                                    dimse::format_optional_u16(
+                                                        Self::extract_int_tag_optional(
+                                                            &obj,
+                                                            tags::PRIORITY,
+                                                        ),
+                                                    ),
+                                                ),
+                                                (
+                                                    "affected_sop_class_uid",
+                                                    dimse::format_optional_str(
+                                                        Self::extract_string_tag_optional(
+                                                            &obj,
+                                                            tags::AFFECTED_SOP_CLASS_UID,
+                                                        )
+                                                        .as_deref(),
+                                                    ),
+                                                ),
+                                            ],
                                         );
 
                                         if let Err(e) = cfind_handler::handle_cfind(
@@ -349,7 +345,7 @@ impl DICOMServer {
                                             log_error!("C-FIND SCP: handler error: {}", e);
                                         }
                                     } else {
-                                        msgid = Self::extract_int_tag(&obj, tags::MESSAGE_ID)?;
+                                        msgid = incoming_message_id;
                                         sop_class_uid = Self::extract_string_tag(
                                             &obj,
                                             tags::AFFECTED_SOP_CLASS_UID,
@@ -358,6 +354,29 @@ impl DICOMServer {
                                             &obj,
                                             tags::AFFECTED_SOP_INSTANCE_UID,
                                         )?;
+
+                                        dimse::log_scp_request(
+                                            association.client_ae_title(),
+                                            request_name,
+                                            data_value.presentation_context_id,
+                                            msgid,
+                                            &[
+                                                (
+                                                    "priority",
+                                                    dimse::format_optional_u16(
+                                                        Self::extract_int_tag_optional(
+                                                            &obj,
+                                                            tags::PRIORITY,
+                                                        ),
+                                                    ),
+                                                ),
+                                                ("affected_sop_class_uid", sop_class_uid.clone()),
+                                                (
+                                                    "affected_sop_instance_uid",
+                                                    sop_instance_uid.clone(),
+                                                ),
+                                            ],
+                                        );
                                     }
                                     instance_buffer.clear();
                                 } else if data_value.value_type == PDataValueType::Data
@@ -381,11 +400,17 @@ impl DICOMServer {
                                     // Extract StudyInstanceUID
                                     let study_uid =
                                         Self::extract_string_tag(&obj, tags::STUDY_INSTANCE_UID)?;
-                                    println!("Received StudyInstanceUID: {}", study_uid);
-
                                     let series_uid =
                                         Self::extract_string_tag(&obj, tags::SERIES_INSTANCE_UID)?;
-                                    println!("Received SeriesInstanceUID: {}", series_uid);
+
+                                    dimse::log_scp_payload(
+                                        "C-STORE-RQ",
+                                        &[
+                                            ("study_instance_uid", study_uid.clone()),
+                                            ("series_instance_uid", series_uid.clone()),
+                                            ("sop_instance_uid", sop_instance_uid.clone()),
+                                        ],
+                                    );
 
                                     // let message = format!("Received Study: {}", study_uid);
 
@@ -476,6 +501,18 @@ impl DICOMServer {
                                         }],
                                     };
 
+                                    dimse::log_scp_response(
+                                        association.client_ae_title(),
+                                        "C-STORE-RSP",
+                                        data_value.presentation_context_id,
+                                        msgid,
+                                        0x0000,
+                                        &[
+                                            ("affected_sop_class_uid", sop_class_uid.clone()),
+                                            ("affected_sop_instance_uid", sop_instance_uid.clone()),
+                                        ],
+                                    );
+
                                     association.send(&pdu_response).whatever_context(
                                         "failed to send response object to SCU",
                                     )?;
@@ -552,11 +589,14 @@ impl DICOMServer {
     }
 
     fn extract_int_tag(obj: &InMemDicomObject, tag: Tag) -> Result<u16, Whatever> {
-        obj
-            .element(tag)
+        obj.element(tag)
             .whatever_context(format!("missing int tag {}", tag.element()))?
             .to_int()
             .whatever_context(format!("could not retrieve {}", tag.element()))
+    }
+
+    fn extract_int_tag_optional(obj: &InMemDicomObject, tag: Tag) -> Option<u16> {
+        obj.element(tag).ok()?.to_int::<u16>().ok()
     }
 
     /// Extract string tag from DICOM object, returning None if tag is missing or empty
