@@ -20,7 +20,13 @@
       "identifier": "opener:allow-open-path",
       "allow": [
         {
-          "path": "/Users/nigelheap/Library/Logs/com.aurabox.bounce/"
+          "path": "$APPLOG"
+        },
+        {
+          "path": "$APPLOG/*"
+        },
+        {
+          "path": "$APPLOG/logs.log"
         }
       ]
     }
