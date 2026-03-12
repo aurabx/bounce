@@ -176,19 +176,20 @@ fn send_cfind_pending(
         .write_dataset_with_ts(&mut command_bytes, &command_ts)
         .map_err(|e| format!("C-FIND SCP: failed to serialise Pending command: {}", e))?;
 
-    // Send data fragment first, then command — the DICOM standard requires
-    // the identifier/result data to precede the command response for Pending
-    // responses (PS3.7 §9.3.1.3).
+    // Per DICOM PS3.7 §9.3.1.3 and PS3.8 §9.3.1, the command P-DATA-TF must
+    // be sent before the dataset P-DATA-TF. The SCU uses CommandDataSetType
+    // in the command to know a dataset follows; sending data first violates
+    // the protocol and causes conformant SCUs (e.g. Orthanc) to discard it.
     association
         .send(&Pdu::PData {
             data: vec![dicom_ul::pdu::PDataValue {
                 presentation_context_id,
-                value_type: PDataValueType::Data,
+                value_type: PDataValueType::Command,
                 is_last: true,
-                data: dataset_bytes,
+                data: command_bytes,
             }],
         })
-        .map_err(|e| format!("C-FIND SCP: failed to send result data PDU: {}", e))?;
+        .map_err(|e| format!("C-FIND SCP: failed to send Pending command PDU: {}", e))?;
 
     dimse::log_scp_response(
         association.client_ae_title(),
@@ -216,12 +217,12 @@ fn send_cfind_pending(
         .send(&Pdu::PData {
             data: vec![dicom_ul::pdu::PDataValue {
                 presentation_context_id,
-                value_type: PDataValueType::Command,
+                value_type: PDataValueType::Data,
                 is_last: true,
-                data: command_bytes,
+                data: dataset_bytes,
             }],
         })
-        .map_err(|e| format!("C-FIND SCP: failed to send Pending command PDU: {}", e))?;
+        .map_err(|e| format!("C-FIND SCP: failed to send result data PDU: {}", e))?;
 
     Ok(())
 }
