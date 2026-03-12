@@ -185,3 +185,130 @@ pub struct PendingRetrievesResponse {
 pub struct RetrieveFailedPayload {
     pub error: String,
 }
+
+// ---------------------------------------------------------------------------
+// Aura-find models (POST /api/bounce/find)
+// ---------------------------------------------------------------------------
+
+/// Request body sent to `POST /api/bounce/find`.
+///
+/// All fields are optional. Omitting a field means "no filter on this
+/// attribute" (return all values). Field values follow DICOM wildcard
+/// conventions: `*` = any sequence, `?` = single character.
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct FindStudyRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub patient_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub patient_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub study_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accession_number: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modality: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub study_instance_uid: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub study_description: Option<String>,
+    /// Maximum results to return. Capped by Aura at 200.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
+impl FindStudyRequest {
+    /// Build a `FindStudyRequest` from a `QueryFilters` value.
+    ///
+    /// Only STUDY-level filters are supported; the `limit` field is left at
+    /// its server-side default (200) unless the caller sets it explicitly.
+    pub fn from_filters(filters: &QueryFilters) -> Self {
+        Self {
+            patient_name: filters.patient_name.clone(),
+            patient_id: filters.patient_id.clone(),
+            study_date: filters.study_date.clone(),
+            accession_number: filters.accession_number.clone(),
+            modality: filters.modality.clone(),
+            study_instance_uid: filters.study_instance_uid.clone(),
+            study_description: None,
+            limit: None,
+        }
+    }
+}
+
+/// A single study returned by `POST /api/bounce/find`.
+///
+/// Field names mirror the DICOM C-FIND STUDY-level response shape used
+/// by `PacsQueryResultsRequest` on the Aura side.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct FindStudyResult {
+    pub study_instance_uid: Option<String>,
+    pub study_date: Option<String>,
+    pub study_time: Option<String>,
+    pub study_description: Option<String>,
+    pub accession_number: Option<String>,
+    pub modalities_in_study: Option<serde_json::Value>,
+    pub number_of_series: Option<u32>,
+    pub number_of_instances: Option<u32>,
+    pub institution_name: Option<String>,
+    pub referring_physician_name: Option<String>,
+    pub patient_name: Option<String>,
+    pub patient_id: Option<String>,
+    pub patient_birth_date: Option<String>,
+    pub patient_sex: Option<String>,
+}
+
+impl FindStudyResult {
+    /// Convert an Aura find result into a [`CfindResult`] that Bounce can
+    /// encode into DICOM C-FIND response PDUs.
+    pub fn into_cfind_result(self) -> CfindResult {
+        // Aura returns modalities_in_study as an array (e.g. ["CT","MR"]).
+        // DICOM represents it as a backslash-separated string.
+        let modalities_in_study = match &self.modalities_in_study {
+            Some(serde_json::Value::Array(arr)) => {
+                let joined: Vec<String> = arr
+                    .iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect();
+                if joined.is_empty() {
+                    None
+                } else {
+                    Some(joined.join("\\"))
+                }
+            }
+            Some(serde_json::Value::String(s)) if !s.is_empty() => Some(s.clone()),
+            _ => None,
+        };
+
+        CfindResult {
+            patient_name: self.patient_name,
+            patient_id: self.patient_id,
+            study_date: self.study_date,
+            study_time: self.study_time,
+            study_description: self.study_description,
+            accession_number: self.accession_number,
+            study_instance_uid: self.study_instance_uid,
+            modality: None,
+            modalities_in_study,
+            number_of_series: self.number_of_series,
+            number_of_instances: self.number_of_instances,
+            series_instance_uid: None,
+            series_description: None,
+            series_number: None,
+            series_date: None,
+            series_time: None,
+            body_part_examined: None,
+            laterality: None,
+            institution_name: self.institution_name,
+            referring_physician_name: self.referring_physician_name,
+            patient_birth_date: self.patient_birth_date,
+            patient_sex: self.patient_sex,
+            number_of_patient_related_studies: None,
+        }
+    }
+}
+
+/// Response envelope returned by `POST /api/bounce/find`.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct FindStudiesResponse {
+    pub studies: Vec<FindStudyResult>,
+}

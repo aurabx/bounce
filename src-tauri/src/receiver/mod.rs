@@ -1,3 +1,4 @@
+pub mod cfind_handler;
 pub mod dicom_server;
 pub mod enums;
 pub mod metadata;

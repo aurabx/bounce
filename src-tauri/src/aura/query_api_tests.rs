@@ -859,6 +859,218 @@ mod tests {
     }
 
     // =======================================================================
+    // find_studies (POST /api/bounce/find)
+    // =======================================================================
+
+    #[tokio::test]
+    async fn test_find_studies_success_empty() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/api/bounce/find")
+            .match_header("Authorization", "Bearer test-api-key")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"studies":[]}"#)
+            .create_async()
+            .await;
+
+        use crate::query::models::FindStudyRequest;
+        let client = make_client(&server.url());
+        let resp = client
+            .find_studies(&FindStudyRequest::default())
+            .await
+            .unwrap();
+
+        assert!(resp.studies.is_empty());
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_find_studies_success_with_studies() {
+        let mut server = mockito::Server::new_async().await;
+        let body = r#"{
+            "studies": [
+                {
+                    "study_instance_uid": "1.2.840.113619.2.55.3.2831161.0",
+                    "study_date": "20240615",
+                    "study_time": "143022",
+                    "study_description": "CT CHEST WO CONTRAST",
+                    "accession_number": "ACC-001",
+                    "modalities_in_study": ["CT"],
+                    "number_of_series": 3,
+                    "number_of_instances": 245,
+                    "institution_name": "General Hospital",
+                    "referring_physician_name": "DR SMITH",
+                    "patient_name": "DOE^JOHN",
+                    "patient_id": "PAT-12345",
+                    "patient_birth_date": "19800101",
+                    "patient_sex": "M"
+                }
+            ]
+        }"#;
+
+        let mock = server
+            .mock("POST", "/api/bounce/find")
+            .match_header("Authorization", "Bearer test-api-key")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(body)
+            .create_async()
+            .await;
+
+        use crate::query::models::FindStudyRequest;
+        let client = make_client(&server.url());
+        let resp = client
+            .find_studies(&FindStudyRequest::default())
+            .await
+            .unwrap();
+
+        assert_eq!(resp.studies.len(), 1);
+        let study = &resp.studies[0];
+        assert_eq!(
+            study.study_instance_uid.as_deref(),
+            Some("1.2.840.113619.2.55.3.2831161.0")
+        );
+        assert_eq!(study.study_date.as_deref(), Some("20240615"));
+        assert_eq!(study.study_description.as_deref(), Some("CT CHEST WO CONTRAST"));
+        assert_eq!(study.accession_number.as_deref(), Some("ACC-001"));
+        assert_eq!(study.patient_name.as_deref(), Some("DOE^JOHN"));
+        assert_eq!(study.patient_id.as_deref(), Some("PAT-12345"));
+        assert_eq!(study.patient_birth_date.as_deref(), Some("19800101"));
+        assert_eq!(study.patient_sex.as_deref(), Some("M"));
+        assert_eq!(study.number_of_series, Some(3));
+        assert_eq!(study.number_of_instances, Some(245));
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_find_studies_sends_filters_in_body() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/api/bounce/find")
+            .match_header("Accept", "application/json")
+            .match_body(mockito::Matcher::PartialJsonString(
+                r#"{"patient_name":"DOE*","study_date":"20240615"}"#.to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"studies":[]}"#)
+            .create_async()
+            .await;
+
+        use crate::query::models::FindStudyRequest;
+        let client = make_client(&server.url());
+        client
+            .find_studies(&FindStudyRequest {
+                patient_name: Some("DOE*".to_string()),
+                study_date: Some("20240615".to_string()),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_find_studies_unauthorized() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/api/bounce/find")
+            .with_status(401)
+            .with_body(r#"{"message":"Unauthenticated."}"#)
+            .create_async()
+            .await;
+
+        use crate::query::models::FindStudyRequest;
+        let client = make_client(&server.url());
+        let result = client
+            .find_studies(&FindStudyRequest::default())
+            .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("401"), "Error should mention 401: {}", err);
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_find_studies_server_error() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/api/bounce/find")
+            .with_status(500)
+            .with_body("Internal Server Error")
+            .create_async()
+            .await;
+
+        use crate::query::models::FindStudyRequest;
+        let client = make_client(&server.url());
+        let result = client
+            .find_studies(&FindStudyRequest::default())
+            .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("500"), "Error should mention 500: {}", err);
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_find_studies_malformed_json() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/api/bounce/find")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"not_studies": true}"#)
+            .create_async()
+            .await;
+
+        use crate::query::models::FindStudyRequest;
+        let client = make_client(&server.url());
+        let result = client
+            .find_studies(&FindStudyRequest::default())
+            .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("Failed to parse"),
+            "Error should mention parsing: {}",
+            err
+        );
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_find_studies_omits_null_filters_from_body() {
+        let mut server = mockito::Server::new_async().await;
+        // The body should be {} when all filters are None (no keys at all)
+        let mock = server
+            .mock("POST", "/api/bounce/find")
+            .match_body(mockito::Matcher::JsonString("{}".to_string()))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"studies":[]}"#)
+            .create_async()
+            .await;
+
+        use crate::query::models::FindStudyRequest;
+        let client = make_client(&server.url());
+        client
+            .find_studies(&FindStudyRequest::default())
+            .await
+            .unwrap();
+
+        mock.assert_async().await;
+    }
+
+    // =======================================================================
     // Integration: DicomService -> PacsService -> execute_cfind
     // =======================================================================
 

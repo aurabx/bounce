@@ -8,8 +8,9 @@
 //! the `base_url` and `api_key` from the Tauri config store.
 
 use crate::query::models::{
-    CfindResult, PendingQueriesResponse, PendingRetrievesResponse, QueryFailedPayload,
-    QueryResultsPayload, RetrieveFailedPayload, ServicesResponse,
+    CfindResult, FindStudiesResponse, FindStudyRequest, PendingQueriesResponse,
+    PendingRetrievesResponse, QueryFailedPayload, QueryResultsPayload, RetrieveFailedPayload,
+    ServicesResponse,
 };
 use reqwest::Client;
 use serde_json::Value;
@@ -250,6 +251,52 @@ impl QueryApiClient {
             .await?;
 
         Self::handle_response(response).await
+    }
+
+    /// Query the authenticated organisation's studies in Aura.
+    ///
+    /// Calls `POST {base_url}/api/bounce/find` with an optional set of DICOM
+    /// filter attributes and returns the matching study list.
+    ///
+    /// This is used when Bounce acts as a C-FIND SCP: a connected SCU (e.g. a
+    /// PACS workstation) sends a C-FIND request to Bounce, and Bounce proxies
+    /// it into Aura's study database via this endpoint, then encodes the
+    /// response back to the SCU as DICOM C-FIND response PDUs.
+    pub async fn find_studies(
+        &self,
+        request: &FindStudyRequest,
+    ) -> anyhow::Result<FindStudiesResponse> {
+        let url = format!("{}/api/bounce/find", self.base_url);
+
+        let response = self
+            .client
+            .post(&url)
+            .header("Accept", "application/json")
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .json(request)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!(
+                "Failed to query Aura studies: HTTP {} - {}",
+                status,
+                body,
+            ));
+        }
+
+        let body = response.text().await?;
+        let parsed: FindStudiesResponse = serde_json::from_str(&body).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse find studies response: {}. Raw: {}",
+                e,
+                body,
+            )
+        })?;
+
+        Ok(parsed)
     }
 
     async fn handle_response(response: reqwest::Response) -> anyhow::Result<Value> {

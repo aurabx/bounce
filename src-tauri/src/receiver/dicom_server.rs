@@ -1,7 +1,9 @@
+use crate::aura::query_api::QueryApiClient;
 use crate::db::database::Database;
+use crate::receiver::cfind_handler;
 use crate::receiver::metadata::Metadata;
 use crate::transmitter::transmission::QueueUpload;
-use crate::{log_error, log_info, receiver, store};
+use crate::{load_config, log_error, log_info, receiver, store};
 use dicom::core::{DataElement, Tag, VR};
 use dicom::dicom_value;
 use dicom::dictionary_std::tags;
@@ -9,7 +11,7 @@ use dicom::encoding::TransferSyntaxIndex;
 use dicom::object::{FileMetaTableBuilder, InMemDicomObject, StandardDataDictionary};
 use dicom::transfer_syntax::TransferSyntaxRegistry;
 use dicom_ul::{pdu::PDataValueType, Pdu};
-use receiver::enums::ABSTRACT_SYNTAXES;
+use receiver::enums::{ABSTRACT_SYNTAXES, STUDY_ROOT_FIND};
 use snafu::{OptionExt, Report, ResultExt, Whatever};
 use std::fs;
 use std::net::{Ipv4Addr, SocketAddrV4, TcpStream};
@@ -140,6 +142,10 @@ impl DICOMServer {
         for uid in ABSTRACT_SYNTAXES {
             options = options.with_abstract_syntax(*uid);
         }
+
+        // Accept Study Root C-FIND so connected SCUs can query Aura's
+        // study database via Bounce.
+        options = options.with_abstract_syntax(STUDY_ROOT_FIND);
 
         let mut association = options
             .establish(scu_stream)
@@ -277,6 +283,71 @@ impl DICOMServer {
                                         association.send(&pdu_response).whatever_context(
                                             "failed to send C-ECHO response object to SCU",
                                         )?;
+                                    } else if command_field == 0x0020 {
+                                        // Handle C-FIND-RQ — proxy to Aura and stream
+                                        // results back to the requesting SCU.
+                                        let find_msg_id =
+                                            Self::extract_int_tag(&obj, tags::MESSAGE_ID)
+                                                .unwrap_or(1);
+
+                                        let query_level = Self::extract_string_tag_optional(
+                                            &obj,
+                                            tags::QUERY_RETRIEVE_LEVEL,
+                                        )
+                                        // QueryRetrieveLevel can arrive in the
+                                        // identifier dataset (Data PDU) rather
+                                        // than the command; parse it from there
+                                        // too if not present in the command.
+                                        .or_else(|| {
+                                            use crate::query::cfind::extract_string_optional;
+                                            use dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN;
+                                            let fallback_ts = IMPLICIT_VR_LITTLE_ENDIAN.erased();
+                                            InMemDicomObject::read_dataset_with_ts(
+                                                instance_buffer.as_slice(),
+                                                &fallback_ts,
+                                            )
+                                            .ok()
+                                            .and_then(|id| {
+                                                extract_string_optional(&id, tags::QUERY_RETRIEVE_LEVEL)
+                                            })
+                                        })
+                                        .unwrap_or_else(|| "STUDY".to_string());
+
+                                        let pc_id = data_value.presentation_context_id;
+                                        let identifier_bytes = instance_buffer.clone();
+
+                                        // Build the QueryApiClient from the current
+                                        // config for this call.
+                                        let api_client = if let Some(ref app_handle) = self.app_handle {
+                                            let cfg = load_config(app_handle.clone());
+                                            QueryApiClient::new(
+                                                cfg.get_api_endpoint(),
+                                                cfg.api_key,
+                                            )
+                                        } else {
+                                            log_error!("C-FIND SCP: no app handle — cannot build API client");
+                                            instance_buffer.clear();
+                                            continue;
+                                        };
+
+                                        log_info!(
+                                            "C-FIND SCP: received C-FIND-RQ (msg_id={} query_level={})",
+                                            find_msg_id,
+                                            query_level,
+                                        );
+
+                                        if let Err(e) = cfind_handler::handle_cfind(
+                                            &mut association,
+                                            &identifier_bytes,
+                                            find_msg_id,
+                                            pc_id,
+                                            &api_client,
+                                            &query_level,
+                                        )
+                                        .await
+                                        {
+                                            log_error!("C-FIND SCP: handler error: {}", e);
+                                        }
                                     } else {
                                         msgid = Self::extract_int_tag(&obj, tags::MESSAGE_ID)?;
                                         sop_class_uid = Self::extract_string_tag(

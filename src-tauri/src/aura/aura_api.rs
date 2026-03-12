@@ -1,6 +1,7 @@
 use crate::aura::query_api::QueryApiClient;
 use crate::query::models::{
-    CfindResult, PendingQueriesResponse, PendingRetrievesResponse, ServicesResponse,
+    CfindResult, FindStudiesResponse, FindStudyRequest, PendingQueriesResponse,
+    PendingRetrievesResponse, ServicesResponse,
 };
 use crate::{load_config, log_info};
 use anyhow::Error;
@@ -189,6 +190,18 @@ impl AuraApi {
     ) -> anyhow::Result<Value> {
         log_info!("Posting C-FIND results for query {}", query_id);
         self.query_client().post_query_results(query_id, results).await
+    }
+
+    /// Query Aura's study database on behalf of an inbound C-FIND from a
+    /// connected SCU.
+    ///
+    /// Calls `POST /api/bounce/find` and returns the matching studies.
+    #[allow(dead_code)] // called from dicom_server at runtime
+    pub async fn find_studies(
+        &self,
+        request: &FindStudyRequest,
+    ) -> anyhow::Result<FindStudiesResponse> {
+        self.query_client().find_studies(request).await
     }
 
     /// Report a C-FIND query failure to Aurabox.
