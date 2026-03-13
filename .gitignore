@@ -38,3 +38,4 @@ src-tauri/tmp/*
 src-tauri/logs/*
 .env
 keys/*
+/.automatic/
