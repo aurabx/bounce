@@ -94,7 +94,10 @@ async fn poll_and_execute(app: &AppHandle, api: &AuraApi) {
     };
 
     if !pending_retrieves.is_empty() {
-        log_info!("Query poller: {} pending retrieves", pending_retrieves.len());
+        log_info!(
+            "Query poller: {} pending retrieves",
+            pending_retrieves.len()
+        );
 
         for retrieve in pending_retrieves {
             execute_single_retrieve(api, &config, retrieve).await;
@@ -121,7 +124,14 @@ async fn execute_single_query(
         query.filters,
     );
 
-    match execute_cfind(calling_ae, &query.service, &query.query_level, &query.filters).await {
+    match execute_cfind(
+        calling_ae,
+        &query.service,
+        &query.query_level,
+        &query.filters,
+    )
+    .await
+    {
         Ok(results) => {
             let count = results.len();
             log_info!(
@@ -157,11 +167,7 @@ async fn execute_single_query(
 /// The C-MOVE tells the PACS to send the study to Bounce's C-STORE SCP.
 /// Once the PACS finishes sending, Bounce's DICOM server will have received
 /// the files and the normal upload workflow triggers automatically.
-async fn execute_single_retrieve(
-    api: &AuraApi,
-    config: &Config,
-    retrieve: PacsRetrieveRequest,
-) {
+async fn execute_single_retrieve(api: &AuraApi, config: &Config, retrieve: PacsRetrieveRequest) {
     let calling_ae = &config.ae_title;
     // Use Bounce's own AE title as the move destination so the PACS
     // sends the study to our C-STORE SCP.
@@ -178,7 +184,14 @@ async fn execute_single_retrieve(
         move_destination,
     );
 
-    match execute_cmove(calling_ae, &pacs_service, &retrieve.study_instance_uid, move_destination).await {
+    match execute_cmove(
+        calling_ae,
+        &pacs_service,
+        &retrieve.study_instance_uid,
+        move_destination,
+    )
+    .await
+    {
         Ok(()) => {
             log_info!(
                 "Query poller: C-MOVE {} completed successfully",

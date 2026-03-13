@@ -67,9 +67,7 @@ mod tests {
 
         // MoveDestination (0000,0600) should be "BOUNCE_SCP"
         let move_dest_tag = Tag(0x0000, 0x0600);
-        let move_dest = cmd
-            .element(move_dest_tag)
-            .expect("missing MoveDestination");
+        let move_dest = cmd.element(move_dest_tag).expect("missing MoveDestination");
         assert_eq!(
             move_dest.to_str().unwrap().trim_end_matches('\0').trim(),
             "BOUNCE_SCP"
@@ -80,11 +78,7 @@ mod tests {
     fn test_build_cmove_command_different_message_ids() {
         for id in [1u16, 100, 0xFFFF] {
             let cmd = build_cmove_command(id, "DEST");
-            let msg_id: u16 = cmd
-                .element(tags::MESSAGE_ID)
-                .unwrap()
-                .to_int()
-                .unwrap();
+            let msg_id: u16 = cmd.element(tags::MESSAGE_ID).unwrap().to_int().unwrap();
             assert_eq!(msg_id, id);
         }
     }
@@ -283,13 +277,34 @@ mod tests {
     #[test]
     fn test_describe_cmove_status_known_codes() {
         assert_eq!(describe_cmove_status(0x0000), "Success");
-        assert_eq!(describe_cmove_status(0xFF00), "Pending: sub-operations are continuing");
-        assert_eq!(describe_cmove_status(0xB000), "Warning: sub-operations complete, one or more failures or warnings");
-        assert_eq!(describe_cmove_status(0xA701), "Refused: out of resources, unable to calculate number of matches");
-        assert_eq!(describe_cmove_status(0xA702), "Refused: out of resources, unable to perform sub-operations");
-        assert_eq!(describe_cmove_status(0xA801), "Refused: move destination unknown");
-        assert_eq!(describe_cmove_status(0xA900), "Identifier does not match SOP Class");
-        assert_eq!(describe_cmove_status(0xFE00), "Cancel: sub-operations terminated due to cancel request");
+        assert_eq!(
+            describe_cmove_status(0xFF00),
+            "Pending: sub-operations are continuing"
+        );
+        assert_eq!(
+            describe_cmove_status(0xB000),
+            "Warning: sub-operations complete, one or more failures or warnings"
+        );
+        assert_eq!(
+            describe_cmove_status(0xA701),
+            "Refused: out of resources, unable to calculate number of matches"
+        );
+        assert_eq!(
+            describe_cmove_status(0xA702),
+            "Refused: out of resources, unable to perform sub-operations"
+        );
+        assert_eq!(
+            describe_cmove_status(0xA801),
+            "Refused: move destination unknown"
+        );
+        assert_eq!(
+            describe_cmove_status(0xA900),
+            "Identifier does not match SOP Class"
+        );
+        assert_eq!(
+            describe_cmove_status(0xFE00),
+            "Cancel: sub-operations terminated due to cancel request"
+        );
     }
 
     #[test]
@@ -364,14 +379,12 @@ mod tests {
                     }
                 }
                 // Accept the Study Root MOVE SOP class
-                options =
-                    options.with_abstract_syntax("1.2.840.10008.5.1.4.1.2.2.2");
+                options = options.with_abstract_syntax("1.2.840.10008.5.1.4.1.2.2.2");
 
                 let mut association = options.establish(std_stream).unwrap();
 
                 let command_ts =
-                    dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN
-                        .erased();
+                    dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
 
                 // Receive C-MOVE-RQ command + identifier
                 let mut pc_id: u8 = 1;
@@ -505,14 +518,12 @@ mod tests {
                         options = options.with_transfer_syntax(ts.uid());
                     }
                 }
-                options =
-                    options.with_abstract_syntax("1.2.840.10008.5.1.4.1.2.2.2");
+                options = options.with_abstract_syntax("1.2.840.10008.5.1.4.1.2.2.2");
 
                 let mut association = options.establish(std_stream).unwrap();
 
                 let command_ts =
-                    dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN
-                        .erased();
+                    dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
 
                 // Receive C-MOVE-RQ
                 let mut pc_id: u8 = 1;
@@ -545,11 +556,7 @@ mod tests {
                             VR::UI,
                             dicom_value!(Str, "1.2.840.10008.5.1.4.1.2.2.2"),
                         ),
-                        DataElement::new(
-                            tags::COMMAND_FIELD,
-                            VR::US,
-                            dicom_value!(U16, [0x8021]),
-                        ),
+                        DataElement::new(tags::COMMAND_FIELD, VR::US, dicom_value!(U16, [0x8021])),
                         DataElement::new(
                             tags::MESSAGE_ID_BEING_RESPONDED_TO,
                             VR::US,
@@ -560,11 +567,7 @@ mod tests {
                             VR::US,
                             dicom_value!(U16, [0x0101]),
                         ),
-                        DataElement::new(
-                            tags::STATUS,
-                            VR::US,
-                            dicom_value!(U16, [0xFF00u16]),
-                        ),
+                        DataElement::new(tags::STATUS, VR::US, dicom_value!(U16, [0xFF00u16])),
                         DataElement::new(
                             tags::NUMBER_OF_REMAINING_SUBOPERATIONS,
                             VR::US,
@@ -601,11 +604,7 @@ mod tests {
                         VR::UI,
                         dicom_value!(Str, "1.2.840.10008.5.1.4.1.2.2.2"),
                     ),
-                    DataElement::new(
-                        tags::COMMAND_FIELD,
-                        VR::US,
-                        dicom_value!(U16, [0x8021]),
-                    ),
+                    DataElement::new(tags::COMMAND_FIELD, VR::US, dicom_value!(U16, [0x8021])),
                     DataElement::new(
                         tags::MESSAGE_ID_BEING_RESPONDED_TO,
                         VR::US,
@@ -616,11 +615,7 @@ mod tests {
                         VR::US,
                         dicom_value!(U16, [0x0101]),
                     ),
-                    DataElement::new(
-                        tags::STATUS,
-                        VR::US,
-                        dicom_value!(U16, [0x0000u16]),
-                    ),
+                    DataElement::new(tags::STATUS, VR::US, dicom_value!(U16, [0x0000u16])),
                     DataElement::new(
                         tags::NUMBER_OF_COMPLETED_SUBOPERATIONS,
                         VR::US,
@@ -657,7 +652,11 @@ mod tests {
         };
 
         let result = execute_cmove("BOUNCE", &pacs, "1.2.840.99999", "BOUNCE").await;
-        assert!(result.is_ok(), "C-MOVE should succeed after Pending: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "C-MOVE should succeed after Pending: {:?}",
+            result.err()
+        );
 
         scp_handle.await.unwrap();
     }
@@ -693,14 +692,12 @@ mod tests {
                         options = options.with_transfer_syntax(ts.uid());
                     }
                 }
-                options =
-                    options.with_abstract_syntax("1.2.840.10008.5.1.4.1.2.2.2");
+                options = options.with_abstract_syntax("1.2.840.10008.5.1.4.1.2.2.2");
 
                 let mut association = options.establish(std_stream).unwrap();
 
                 let command_ts =
-                    dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN
-                        .erased();
+                    dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
 
                 // Receive C-MOVE-RQ
                 let mut pc_id: u8 = 1;
@@ -732,11 +729,7 @@ mod tests {
                         VR::UI,
                         dicom_value!(Str, "1.2.840.10008.5.1.4.1.2.2.2"),
                     ),
-                    DataElement::new(
-                        tags::COMMAND_FIELD,
-                        VR::US,
-                        dicom_value!(U16, [0x8021]),
-                    ),
+                    DataElement::new(tags::COMMAND_FIELD, VR::US, dicom_value!(U16, [0x8021])),
                     DataElement::new(
                         tags::MESSAGE_ID_BEING_RESPONDED_TO,
                         VR::US,
@@ -828,14 +821,12 @@ mod tests {
                         options = options.with_transfer_syntax(ts.uid());
                     }
                 }
-                options =
-                    options.with_abstract_syntax("1.2.840.10008.5.1.4.1.2.2.2");
+                options = options.with_abstract_syntax("1.2.840.10008.5.1.4.1.2.2.2");
 
                 let mut association = options.establish(std_stream).unwrap();
 
                 let command_ts =
-                    dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN
-                        .erased();
+                    dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
 
                 // Receive C-MOVE-RQ
                 let mut pc_id: u8 = 1;
@@ -870,11 +861,7 @@ mod tests {
                         VR::UI,
                         dicom_value!(Str, "1.2.840.10008.5.1.4.1.2.2.2"),
                     ),
-                    DataElement::new(
-                        tags::COMMAND_FIELD,
-                        VR::US,
-                        dicom_value!(U16, [0x8021]),
-                    ),
+                    DataElement::new(tags::COMMAND_FIELD, VR::US, dicom_value!(U16, [0x8021])),
                     DataElement::new(
                         tags::MESSAGE_ID_BEING_RESPONDED_TO,
                         VR::US,
@@ -885,11 +872,7 @@ mod tests {
                         VR::US,
                         dicom_value!(U16, [0x0101]),
                     ),
-                    DataElement::new(
-                        tags::STATUS,
-                        VR::US,
-                        dicom_value!(U16, [0xC000u16]),
-                    ),
+                    DataElement::new(tags::STATUS, VR::US, dicom_value!(U16, [0xC000u16])),
                     DataElement::new(
                         error_comment_tag,
                         VR::LO,
@@ -976,14 +959,12 @@ mod tests {
                         options = options.with_transfer_syntax(ts.uid());
                     }
                 }
-                options =
-                    options.with_abstract_syntax("1.2.840.10008.5.1.4.1.2.2.2");
+                options = options.with_abstract_syntax("1.2.840.10008.5.1.4.1.2.2.2");
 
                 let mut association = options.establish(std_stream).unwrap();
 
                 let command_ts =
-                    dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN
-                        .erased();
+                    dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
 
                 // Receive C-MOVE-RQ
                 let mut pc_id: u8 = 1;
@@ -1015,11 +996,7 @@ mod tests {
                         VR::UI,
                         dicom_value!(Str, "1.2.840.10008.5.1.4.1.2.2.2"),
                     ),
-                    DataElement::new(
-                        tags::COMMAND_FIELD,
-                        VR::US,
-                        dicom_value!(U16, [0x8021]),
-                    ),
+                    DataElement::new(tags::COMMAND_FIELD, VR::US, dicom_value!(U16, [0x8021])),
                     DataElement::new(
                         tags::MESSAGE_ID_BEING_RESPONDED_TO,
                         VR::US,
@@ -1077,7 +1054,11 @@ mod tests {
 
         // Warning status 0xB000 should be treated as success
         let result = execute_cmove("BOUNCE", &pacs, "1.2.3.4.5", "BOUNCE").await;
-        assert!(result.is_ok(), "C-MOVE with warning should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "C-MOVE with warning should succeed: {:?}",
+            result.err()
+        );
 
         scp_handle.await.unwrap();
     }

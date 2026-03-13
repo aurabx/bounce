@@ -107,7 +107,8 @@ impl AuraApi {
         });
 
         if let Some(pid) = &patient_id {
-            payload.as_object_mut()
+            payload
+                .as_object_mut()
                 .unwrap()
                 .insert("patient_id".to_string(), Value::String(pid.clone()));
         }
@@ -189,7 +190,9 @@ impl AuraApi {
         results: Vec<CfindResult>,
     ) -> anyhow::Result<Value> {
         log_info!("Posting C-FIND results for query {}", query_id);
-        self.query_client().post_query_results(query_id, results).await
+        self.query_client()
+            .post_query_results(query_id, results)
+            .await
     }
 
     /// Query Aura's study database on behalf of an inbound C-FIND from a
@@ -205,11 +208,7 @@ impl AuraApi {
     }
 
     /// Report a C-FIND query failure to Aurabox.
-    pub async fn post_query_failed(
-        &self,
-        query_id: &str,
-        error: String,
-    ) -> anyhow::Result<Value> {
+    pub async fn post_query_failed(&self, query_id: &str, error: String) -> anyhow::Result<Value> {
         log_info!("Posting C-FIND failure for query {}", query_id);
         self.query_client().post_query_failed(query_id, error).await
     }
@@ -229,7 +228,9 @@ impl AuraApi {
     /// Report a C-MOVE retrieve as completed to Aurabox.
     pub async fn post_retrieve_completed(&self, retrieve_id: &str) -> anyhow::Result<Value> {
         log_info!("Posting C-MOVE retrieve completed for {}", retrieve_id);
-        self.query_client().post_retrieve_completed(retrieve_id).await
+        self.query_client()
+            .post_retrieve_completed(retrieve_id)
+            .await
     }
 
     /// Report a C-MOVE retrieve failure to Aurabox.
@@ -239,7 +240,9 @@ impl AuraApi {
         error: String,
     ) -> anyhow::Result<Value> {
         log_info!("Posting C-MOVE retrieve failure for {}", retrieve_id);
-        self.query_client().post_retrieve_failed(retrieve_id, error).await
+        self.query_client()
+            .post_retrieve_failed(retrieve_id, error)
+            .await
     }
 
     async fn handle_response(response: Response) -> Result<Value, Error> {

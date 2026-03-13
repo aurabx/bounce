@@ -341,10 +341,7 @@ mod tests {
             .await;
 
         let client = make_client(&server.url());
-        let resp = client
-            .post_query_results("q-empty", vec![])
-            .await
-            .unwrap();
+        let resp = client.post_query_results("q-empty", vec![]).await.unwrap();
         assert_eq!(resp["status"], "ok");
 
         mock.assert_async().await;
@@ -569,7 +566,10 @@ mod tests {
         assert_eq!(resp.retrieves[0].service.ae_title, "PACS_SCP");
         assert_eq!(resp.retrieves[0].service.host, "192.168.1.100");
         assert_eq!(resp.retrieves[0].service.port, 104);
-        assert_eq!(resp.retrieves[0].study_instance_uid, "1.2.840.113619.2.55.3.123");
+        assert_eq!(
+            resp.retrieves[0].study_instance_uid,
+            "1.2.840.113619.2.55.3.123"
+        );
         assert_eq!(resp.retrieves[0].patient_id.as_deref(), Some("PID001"));
 
         mock.assert_async().await;
@@ -932,7 +932,10 @@ mod tests {
             Some("1.2.840.113619.2.55.3.2831161.0")
         );
         assert_eq!(study.study_date.as_deref(), Some("20240615"));
-        assert_eq!(study.study_description.as_deref(), Some("CT CHEST WO CONTRAST"));
+        assert_eq!(
+            study.study_description.as_deref(),
+            Some("CT CHEST WO CONTRAST")
+        );
         assert_eq!(study.accession_number.as_deref(), Some("ACC-001"));
         assert_eq!(study.patient_name.as_deref(), Some("DOE^JOHN"));
         assert_eq!(study.patient_id.as_deref(), Some("PAT-12345"));
@@ -985,9 +988,7 @@ mod tests {
 
         use crate::query::models::FindStudyRequest;
         let client = make_client(&server.url());
-        let result = client
-            .find_studies(&FindStudyRequest::default())
-            .await;
+        let result = client.find_studies(&FindStudyRequest::default()).await;
 
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
@@ -1008,9 +1009,7 @@ mod tests {
 
         use crate::query::models::FindStudyRequest;
         let client = make_client(&server.url());
-        let result = client
-            .find_studies(&FindStudyRequest::default())
-            .await;
+        let result = client.find_studies(&FindStudyRequest::default()).await;
 
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
@@ -1032,9 +1031,7 @@ mod tests {
 
         use crate::query::models::FindStudyRequest;
         let client = make_client(&server.url());
-        let result = client
-            .find_studies(&FindStudyRequest::default())
-            .await;
+        let result = client.find_studies(&FindStudyRequest::default()).await;
 
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
@@ -1117,15 +1114,13 @@ mod tests {
                         options = options.with_transfer_syntax(ts.uid());
                     }
                 }
-                options =
-                    options.with_abstract_syntax("1.2.840.10008.5.1.4.1.2.2.1");
+                options = options.with_abstract_syntax("1.2.840.10008.5.1.4.1.2.2.1");
 
                 let mut association = options.establish(std_stream).unwrap();
 
                 // Commands are always Implicit VR LE per DICOM standard
                 let command_ts =
-                    dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN
-                        .erased();
+                    dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
 
                 // Use the negotiated transfer syntax for data (identifier/results)
                 let negotiated_ts_uid = association
@@ -1133,7 +1128,8 @@ mod tests {
                     .first()
                     .map(|pc| pc.transfer_syntax.clone())
                     .unwrap_or_else(|| "1.2.840.10008.1.2".to_string());
-                let fallback_ts = dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
+                let fallback_ts =
+                    dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
                 let ts = dicom::transfer_syntax::TransferSyntaxRegistry
                     .get(&negotiated_ts_uid)
                     .unwrap_or(&fallback_ts);
@@ -1168,16 +1164,8 @@ mod tests {
                         VR::PN,
                         dicom_value!(Str, "INTEGRATION^TEST"),
                     ),
-                    DataElement::new(
-                        tags::PATIENT_ID,
-                        VR::LO,
-                        dicom_value!(Str, "INT-001"),
-                    ),
-                    DataElement::new(
-                        tags::STUDY_DATE,
-                        VR::DA,
-                        dicom_value!(Str, "20250101"),
-                    ),
+                    DataElement::new(tags::PATIENT_ID, VR::LO, dicom_value!(Str, "INT-001")),
+                    DataElement::new(tags::STUDY_DATE, VR::DA, dicom_value!(Str, "20250101")),
                     DataElement::new(
                         tags::STUDY_INSTANCE_UID,
                         VR::UI,
@@ -1196,11 +1184,7 @@ mod tests {
                         VR::UI,
                         dicom_value!(Str, "1.2.840.10008.5.1.4.1.2.2.1"),
                     ),
-                    DataElement::new(
-                        tags::COMMAND_FIELD,
-                        VR::US,
-                        dicom_value!(U16, [0x8020]),
-                    ),
+                    DataElement::new(tags::COMMAND_FIELD, VR::US, dicom_value!(U16, [0x8020])),
                     DataElement::new(
                         tags::MESSAGE_ID_BEING_RESPONDED_TO,
                         VR::US,
@@ -1211,11 +1195,7 @@ mod tests {
                         VR::US,
                         dicom_value!(U16, [0x0000]),
                     ),
-                    DataElement::new(
-                        tags::STATUS,
-                        VR::US,
-                        dicom_value!(U16, [0xFF00u16]),
-                    ),
+                    DataElement::new(tags::STATUS, VR::US, dicom_value!(U16, [0xFF00u16])),
                 ]);
 
                 let mut cmd_bytes = Vec::new();
@@ -1252,11 +1232,7 @@ mod tests {
                         VR::UI,
                         dicom_value!(Str, "1.2.840.10008.5.1.4.1.2.2.1"),
                     ),
-                    DataElement::new(
-                        tags::COMMAND_FIELD,
-                        VR::US,
-                        dicom_value!(U16, [0x8020]),
-                    ),
+                    DataElement::new(tags::COMMAND_FIELD, VR::US, dicom_value!(U16, [0x8020])),
                     DataElement::new(
                         tags::MESSAGE_ID_BEING_RESPONDED_TO,
                         VR::US,
@@ -1267,11 +1243,7 @@ mod tests {
                         VR::US,
                         dicom_value!(U16, [0x0101]),
                     ),
-                    DataElement::new(
-                        tags::STATUS,
-                        VR::US,
-                        dicom_value!(U16, [0x0000u16]),
-                    ),
+                    DataElement::new(tags::STATUS, VR::US, dicom_value!(U16, [0x0000u16])),
                 ]);
 
                 let mut cmd_bytes = Vec::new();
@@ -1352,10 +1324,7 @@ mod tests {
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].study_instance_uid.as_deref(), Some("1.2.3.999"));
-        assert_eq!(
-            results[0].patient_name.as_deref(),
-            Some("INTEGRATION^TEST")
-        );
+        assert_eq!(results[0].patient_name.as_deref(), Some("INTEGRATION^TEST"));
         assert_eq!(results[0].patient_id.as_deref(), Some("INT-001"));
         assert_eq!(results[0].study_date.as_deref(), Some("20250101"));
 

@@ -28,6 +28,20 @@ pub struct DICOMServer {
     database: Database,
 }
 
+#[derive(Clone)]
+enum PendingDimseCommand {
+    CStore {
+        message_id: u16,
+        sop_class_uid: String,
+        sop_instance_uid: String,
+    },
+    CFind {
+        message_id: u16,
+        presentation_context_id: u8,
+        query_level: String,
+    },
+}
+
 impl DICOMServer {
     pub fn new(config: Config, app_handle: AppHandle) -> Self {
         let database = app_handle.state::<Database>().inner().clone();
@@ -118,9 +132,7 @@ impl DICOMServer {
 
         let mut buffer: Vec<u8> = Vec::with_capacity(max_pdu_length as usize);
         let mut instance_buffer: Vec<u8> = Vec::with_capacity(1024 * 1024);
-        let mut msgid = 1;
-        let mut sop_class_uid = "".to_string();
-        let mut sop_instance_uid = "".to_string();
+        let mut pending_command: Option<PendingDimseCommand> = None;
 
         let mut options = dicom_ul::association::ServerAssociationOptions::new()
             .accept_any()
@@ -206,9 +218,10 @@ impl DICOMServer {
                                     let request_name = dimse::describe_request(command_field);
                                     let incoming_message_id =
                                         Self::extract_int_tag_optional(&obj, tags::MESSAGE_ID)
-                                            .unwrap_or(msgid);
+                                            .unwrap_or(1);
 
                                     if command_field == 0x0030 {
+                                        pending_command = None;
                                         dimse::log_scp_request(
                                             association.client_ae_title(),
                                             request_name,
@@ -258,50 +271,14 @@ impl DICOMServer {
                                             "failed to send C-ECHO response object to SCU",
                                         )?;
                                     } else if command_field == 0x0020 {
-                                        // Handle C-FIND-RQ — proxy to Aura and stream
-                                        // results back to the requesting SCU.
                                         let find_msg_id =
                                             Self::extract_int_tag(&obj, tags::MESSAGE_ID)
                                                 .unwrap_or(1);
-
                                         let query_level = Self::extract_string_tag_optional(
                                             &obj,
                                             tags::QUERY_RETRIEVE_LEVEL,
                                         )
-                                        // QueryRetrieveLevel can arrive in the
-                                        // identifier dataset (Data PDU) rather
-                                        // than the command; parse it from there
-                                        // too if not present in the command.
-                                        .or_else(|| {
-                                            use crate::query::cfind::extract_string_optional;
-                                            use dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN;
-                                            let fallback_ts = IMPLICIT_VR_LITTLE_ENDIAN.erased();
-                                            InMemDicomObject::read_dataset_with_ts(
-                                                instance_buffer.as_slice(),
-                                                &fallback_ts,
-                                            )
-                                            .ok()
-                                            .and_then(|id| {
-                                                extract_string_optional(&id, tags::QUERY_RETRIEVE_LEVEL)
-                                            })
-                                        })
                                         .unwrap_or_else(|| "STUDY".to_string());
-
-                                        let pc_id = data_value.presentation_context_id;
-                                        let identifier_bytes = instance_buffer.clone();
-
-                                        // Build the QueryApiClient from the current
-                                        // config for this call.
-                                        let api_client = if let Some(ref app_handle) =
-                                            self.app_handle
-                                        {
-                                            let cfg = load_config(app_handle.clone());
-                                            QueryApiClient::new(cfg.get_api_endpoint(), cfg.api_key)
-                                        } else {
-                                            log_error!("C-FIND SCP: no app handle — cannot build API client");
-                                            instance_buffer.clear();
-                                            continue;
-                                        };
 
                                         dimse::log_scp_request(
                                             association.client_ae_title(),
@@ -332,25 +309,19 @@ impl DICOMServer {
                                             ],
                                         );
 
-                                        if let Err(e) = cfind_handler::handle_cfind(
-                                            &mut association,
-                                            &identifier_bytes,
-                                            find_msg_id,
-                                            pc_id,
-                                            &api_client,
-                                            &query_level,
-                                        )
-                                        .await
-                                        {
-                                            log_error!("C-FIND SCP: handler error: {}", e);
-                                        }
-                                    } else {
-                                        msgid = incoming_message_id;
-                                        sop_class_uid = Self::extract_string_tag(
+                                        pending_command = Some(PendingDimseCommand::CFind {
+                                            message_id: find_msg_id,
+                                            presentation_context_id: data_value
+                                                .presentation_context_id,
+                                            query_level,
+                                        });
+                                    } else if command_field == 0x0001 {
+                                        let message_id = incoming_message_id;
+                                        let sop_class_uid = Self::extract_string_tag(
                                             &obj,
                                             tags::AFFECTED_SOP_CLASS_UID,
                                         )?;
-                                        sop_instance_uid = Self::extract_string_tag(
+                                        let sop_instance_uid = Self::extract_string_tag(
                                             &obj,
                                             tags::AFFECTED_SOP_INSTANCE_UID,
                                         )?;
@@ -359,7 +330,7 @@ impl DICOMServer {
                                             association.client_ae_title(),
                                             request_name,
                                             data_value.presentation_context_id,
-                                            msgid,
+                                            message_id,
                                             &[
                                                 (
                                                     "priority",
@@ -377,12 +348,36 @@ impl DICOMServer {
                                                 ),
                                             ],
                                         );
+                                        pending_command = Some(PendingDimseCommand::CStore {
+                                            message_id,
+                                            sop_class_uid: sop_class_uid.clone(),
+                                            sop_instance_uid: sop_instance_uid.clone(),
+                                        });
+                                    } else {
+                                        pending_command = None;
+                                        dimse::log_scp_request(
+                                            association.client_ae_title(),
+                                            request_name,
+                                            data_value.presentation_context_id,
+                                            incoming_message_id,
+                                            &[],
+                                        );
                                     }
                                     instance_buffer.clear();
                                 } else if data_value.value_type == PDataValueType::Data
                                     && data_value.is_last
                                 {
                                     instance_buffer.append(&mut data_value.data);
+
+                                    let Some(current_command) = pending_command.clone() else {
+                                        log_info!(
+                                            "DIMSE SCP: received data fragment with no pending command pc_id={} len={}",
+                                            data_value.presentation_context_id,
+                                            instance_buffer.len(),
+                                        );
+                                        instance_buffer.clear();
+                                        continue;
+                                    };
 
                                     let presentation_context = association
                                         .presentation_contexts()
@@ -397,125 +392,174 @@ impl DICOMServer {
                                     )
                                     .whatever_context("failed to read DICOM data object")?;
 
-                                    // Extract StudyInstanceUID
-                                    let study_uid =
-                                        Self::extract_string_tag(&obj, tags::STUDY_INSTANCE_UID)?;
-                                    let series_uid =
-                                        Self::extract_string_tag(&obj, tags::SERIES_INSTANCE_UID)?;
+                                    match current_command {
+                                        PendingDimseCommand::CFind {
+                                            message_id,
+                                            presentation_context_id,
+                                            query_level,
+                                        } => {
+                                            let api_client = if let Some(ref app_handle) =
+                                                self.app_handle
+                                            {
+                                                let cfg = load_config(app_handle.clone());
+                                                QueryApiClient::new(
+                                                    cfg.get_api_endpoint(),
+                                                    cfg.api_key,
+                                                )
+                                            } else {
+                                                log_error!("C-FIND SCP: no app handle — cannot build API client");
+                                                instance_buffer.clear();
+                                                pending_command = None;
+                                                continue;
+                                            };
 
-                                    dimse::log_scp_payload(
-                                        "C-STORE-RQ",
-                                        &[
-                                            ("study_instance_uid", study_uid.clone()),
-                                            ("series_instance_uid", series_uid.clone()),
-                                            ("sop_instance_uid", sop_instance_uid.clone()),
-                                        ],
-                                    );
-
-                                    // let message = format!("Received Study: {}", study_uid);
-
-                                    let file_meta = FileMetaTableBuilder::new()
-                                        .transfer_syntax(ts)
-                                        .build()
-                                        .whatever_context(
-                                            "failed to build DICOM meta file information",
-                                        )?;
-
-                                    // write the files to the current directory with their SOPInstanceUID as filenames
-                                    let mut file_path = out_dir.to_path_buf();
-
-                                    file_path.push(study_uid.trim_end_matches('\0'));
-                                    // let study_dir = file_path.clone();
-
-                                    file_path.push(series_uid.trim_end_matches('\0'));
-                                    let series_dir = file_path.clone();
-
-                                    if !series_dir.exists() {
-                                        fs::create_dir_all(&series_dir).whatever_context(
-                                            format!(
-                                                "Failed to create study directory: {}",
-                                                series_dir.display()
-                                            ),
-                                        )?;
-                                    }
-
-                                    file_path.push(
-                                        sop_instance_uid.trim_end_matches('\0').to_string()
-                                            + ".dcm",
-                                    );
-
-                                    log_info!("Stored {}", file_path.display());
-
-                                    if let Err(err) = Metadata::update_study_metadata_json(
-                                        &self.database,
-                                        out_dir,
-                                        &obj,
-                                    )
-                                    .await
-                                    {
-                                        log_error!("Failed to update study metadata: {}", err);
-                                    }
-
-                                    let file_obj = obj.with_exact_meta(file_meta);
-
-                                    file_obj
-                                        .write_to_file(&file_path)
-                                        .whatever_context("could not save DICOM object to file")?;
-
-                                    //let state = self.app_handle.state::<AppState>();
-                                    if let Some(app_handle) = &self.app_handle {
-                                        app_handle
-                                            .emit(
-                                                "queue-study",
-                                                QueueUpload {
-                                                    study_uid: &study_uid,
-                                                },
+                                            if let Err(e) = cfind_handler::handle_cfind(
+                                                &mut association,
+                                                instance_buffer.as_slice(),
+                                                message_id,
+                                                presentation_context_id,
+                                                &api_client,
+                                                &query_level,
                                             )
-                                            .unwrap();
+                                            .await
+                                            {
+                                                log_error!("C-FIND SCP: handler error: {}", e);
+                                            }
+                                        }
+                                        PendingDimseCommand::CStore {
+                                            message_id,
+                                            sop_class_uid,
+                                            sop_instance_uid,
+                                        } => {
+                                            // Extract StudyInstanceUID
+                                            let study_uid = Self::extract_string_tag(
+                                                &obj,
+                                                tags::STUDY_INSTANCE_UID,
+                                            )?;
+                                            let series_uid = Self::extract_string_tag(
+                                                &obj,
+                                                tags::SERIES_INSTANCE_UID,
+                                            )?;
+
+                                            dimse::log_scp_payload(
+                                                "C-STORE-RQ",
+                                                &[
+                                                    ("study_instance_uid", study_uid.clone()),
+                                                    ("series_instance_uid", series_uid.clone()),
+                                                    ("sop_instance_uid", sop_instance_uid.clone()),
+                                                ],
+                                            );
+
+                                            let file_meta = FileMetaTableBuilder::new()
+                                                .transfer_syntax(ts)
+                                                .build()
+                                                .whatever_context(
+                                                    "failed to build DICOM meta file information",
+                                                )?;
+
+                                            let mut file_path = out_dir.to_path_buf();
+                                            file_path.push(study_uid.trim_end_matches('\0'));
+                                            file_path.push(series_uid.trim_end_matches('\0'));
+                                            let series_dir = file_path.clone();
+
+                                            if !series_dir.exists() {
+                                                fs::create_dir_all(&series_dir).whatever_context(
+                                                    format!(
+                                                        "Failed to create study directory: {}",
+                                                        series_dir.display()
+                                                    ),
+                                                )?;
+                                            }
+
+                                            file_path.push(
+                                                sop_instance_uid.trim_end_matches('\0').to_string()
+                                                    + ".dcm",
+                                            );
+
+                                            log_info!("Stored {}", file_path.display());
+
+                                            if let Err(err) = Metadata::update_study_metadata_json(
+                                                &self.database,
+                                                out_dir,
+                                                &obj,
+                                            )
+                                            .await
+                                            {
+                                                log_error!(
+                                                    "Failed to update study metadata: {}",
+                                                    err
+                                                );
+                                            }
+
+                                            let file_obj = obj.with_exact_meta(file_meta);
+
+                                            file_obj.write_to_file(&file_path).whatever_context(
+                                                "could not save DICOM object to file",
+                                            )?;
+
+                                            if let Some(app_handle) = &self.app_handle {
+                                                app_handle
+                                                    .emit(
+                                                        "queue-study",
+                                                        QueueUpload {
+                                                            study_uid: &study_uid,
+                                                        },
+                                                    )
+                                                    .unwrap();
+                                            }
+
+                                            let ts = dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN
+                                                .erased();
+
+                                            let obj = self.create_cstore_response(
+                                                message_id,
+                                                &sop_class_uid,
+                                                &sop_instance_uid,
+                                            );
+
+                                            let mut obj_data = Vec::new();
+
+                                            obj.write_dataset_with_ts(&mut obj_data, &ts)
+                                                .whatever_context(
+                                                    "could not write response object",
+                                                )?;
+
+                                            let pdu_response = Pdu::PData {
+                                                data: vec![dicom_ul::pdu::PDataValue {
+                                                    presentation_context_id: data_value
+                                                        .presentation_context_id,
+                                                    value_type: PDataValueType::Command,
+                                                    is_last: true,
+                                                    data: obj_data,
+                                                }],
+                                            };
+
+                                            dimse::log_scp_response(
+                                                association.client_ae_title(),
+                                                "C-STORE-RSP",
+                                                data_value.presentation_context_id,
+                                                message_id,
+                                                0x0000,
+                                                &[
+                                                    (
+                                                        "affected_sop_class_uid",
+                                                        sop_class_uid.clone(),
+                                                    ),
+                                                    (
+                                                        "affected_sop_instance_uid",
+                                                        sop_instance_uid.clone(),
+                                                    ),
+                                                ],
+                                            );
+
+                                            association.send(&pdu_response).whatever_context(
+                                                "failed to send response object to SCU",
+                                            )?;
+                                        }
                                     }
 
-                                    // send C-STORE-RSP object
-                                    // commands are always in implict VR LE
-                                    let ts =
-                                        dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN
-                                            .erased();
-
-                                    let obj = self.create_cstore_response(
-                                        msgid,
-                                        &sop_class_uid,
-                                        &sop_instance_uid,
-                                    );
-
-                                    let mut obj_data = Vec::new();
-
-                                    obj.write_dataset_with_ts(&mut obj_data, &ts)
-                                        .whatever_context("could not write response object")?;
-
-                                    let pdu_response = Pdu::PData {
-                                        data: vec![dicom_ul::pdu::PDataValue {
-                                            presentation_context_id: data_value
-                                                .presentation_context_id,
-                                            value_type: PDataValueType::Command,
-                                            is_last: true,
-                                            data: obj_data,
-                                        }],
-                                    };
-
-                                    dimse::log_scp_response(
-                                        association.client_ae_title(),
-                                        "C-STORE-RSP",
-                                        data_value.presentation_context_id,
-                                        msgid,
-                                        0x0000,
-                                        &[
-                                            ("affected_sop_class_uid", sop_class_uid.clone()),
-                                            ("affected_sop_instance_uid", sop_instance_uid.clone()),
-                                        ],
-                                    );
-
-                                    association.send(&pdu_response).whatever_context(
-                                        "failed to send response object to SCU",
-                                    )?;
+                                    pending_command = None;
+                                    instance_buffer.clear();
                                 }
                             }
                         }

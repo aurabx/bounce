@@ -71,11 +71,7 @@ mod tests {
     fn test_build_cfind_command_different_message_ids() {
         for id in [1u16, 100, 0xFFFF] {
             let cmd = build_cfind_command(id);
-            let msg_id: u16 = cmd
-                .element(tags::MESSAGE_ID)
-                .unwrap()
-                .to_int()
-                .unwrap();
+            let msg_id: u16 = cmd.element(tags::MESSAGE_ID).unwrap().to_int().unwrap();
             assert_eq!(msg_id, id);
         }
     }
@@ -109,7 +105,9 @@ mod tests {
         assert!(ident.element(tags::STUDY_INSTANCE_UID).is_ok());
 
         // PatientName should be present but empty (return key)
-        let pn = ident.element(tags::PATIENT_NAME).expect("missing PatientName");
+        let pn = ident
+            .element(tags::PATIENT_NAME)
+            .expect("missing PatientName");
         let pn_str = pn.to_str().unwrap_or_default();
         assert!(pn_str.is_empty() || pn_str.trim().is_empty());
     }
@@ -122,7 +120,9 @@ mod tests {
         };
         let ident = build_cfind_identifier("STUDY", &filters);
 
-        let pn = ident.element(tags::PATIENT_NAME).expect("missing PatientName");
+        let pn = ident
+            .element(tags::PATIENT_NAME)
+            .expect("missing PatientName");
         assert_eq!(pn.to_str().unwrap().trim_end_matches('\0'), "DOE^JOHN");
     }
 
@@ -303,7 +303,9 @@ mod tests {
         };
         let ident = build_cfind_identifier("PATIENT", &filters);
 
-        let pn = ident.element(tags::PATIENT_NAME).expect("missing PatientName");
+        let pn = ident
+            .element(tags::PATIENT_NAME)
+            .expect("missing PatientName");
         assert_eq!(pn.to_str().unwrap().trim_end_matches('\0'), "*ATHU*");
     }
 
@@ -532,9 +534,7 @@ mod tests {
 
         let result = parse_cfind_result(&bytes, &ts, "STUDY");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .contains("missing StudyInstanceUID"));
+        assert!(result.unwrap_err().contains("missing StudyInstanceUID"));
     }
 
     #[test]
@@ -555,11 +555,7 @@ mod tests {
     #[test]
     fn test_parse_cfind_result_strips_null_terminators() {
         let obj = InMemDicomObject::from_element_iter(vec![
-            DataElement::new(
-                tags::PATIENT_NAME,
-                VR::PN,
-                dicom_value!(Str, "DOE^JOHN\0"),
-            ),
+            DataElement::new(tags::PATIENT_NAME, VR::PN, dicom_value!(Str, "DOE^JOHN\0")),
             DataElement::new(
                 tags::STUDY_INSTANCE_UID,
                 VR::UI,
@@ -592,7 +588,10 @@ mod tests {
 
         let ts = ivr_le!();
         let result = parse_cfind_result(&bytes, &ts, "PATIENT").expect("failed to parse");
-        assert_eq!(result.patient_name.as_deref(), Some("ATHUKORALA^Premachandra^^Prof"));
+        assert_eq!(
+            result.patient_name.as_deref(),
+            Some("ATHUKORALA^Premachandra^^Prof")
+        );
         assert_eq!(result.patient_id.as_deref(), Some("60.53799"));
         assert_eq!(result.patient_birth_date.as_deref(), Some("19511007"));
         assert_eq!(result.patient_sex.as_deref(), Some("M"));
@@ -639,9 +638,11 @@ mod tests {
     // =======================================================================
 
     fn make_status_obj(status: u16) -> InMemDicomObject {
-        InMemDicomObject::command_from_element_iter([
-            DataElement::new(tags::STATUS, VR::US, dicom_value!(U16, [status])),
-        ])
+        InMemDicomObject::command_from_element_iter([DataElement::new(
+            tags::STATUS,
+            VR::US,
+            dicom_value!(U16, [status]),
+        )])
     }
 
     #[test]
@@ -738,7 +739,10 @@ mod tests {
             VR::IS,
             dicom_value!(Str, "42"),
         )]);
-        assert_eq!(extract_integer_optional(&obj, Tag(0x0020, 0x1206)), Some(42));
+        assert_eq!(
+            extract_integer_optional(&obj, Tag(0x0020, 0x1206)),
+            Some(42)
+        );
     }
 
     #[test]
@@ -806,15 +810,13 @@ mod tests {
                         options = options.with_transfer_syntax(ts.uid());
                     }
                 }
-                options =
-                    options.with_abstract_syntax("1.2.840.10008.5.1.4.1.2.2.1");
+                options = options.with_abstract_syntax("1.2.840.10008.5.1.4.1.2.2.1");
 
                 let mut association = options.establish(std_stream).unwrap();
 
                 // Commands are always Implicit VR LE per DICOM standard
                 let command_ts =
-                    dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN
-                        .erased();
+                    dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
 
                 // Use the negotiated transfer syntax for data (identifier/results)
                 let negotiated_ts_uid = association
@@ -822,7 +824,8 @@ mod tests {
                     .first()
                     .map(|pc| pc.transfer_syntax.clone())
                     .unwrap_or_else(|| "1.2.840.10008.1.2".to_string());
-                let fallback_ts = dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
+                let fallback_ts =
+                    dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
                 let ts = dicom::transfer_syntax::TransferSyntaxRegistry
                     .get(&negotiated_ts_uid)
                     .unwrap_or(&fallback_ts);
@@ -869,11 +872,7 @@ mod tests {
                             VR::LO,
                             dicom_value!(Str, format!("PID{}", i).as_str()),
                         ),
-                        DataElement::new(
-                            tags::STUDY_DATE,
-                            VR::DA,
-                            dicom_value!(Str, "20240101"),
-                        ),
+                        DataElement::new(tags::STUDY_DATE, VR::DA, dicom_value!(Str, "20240101")),
                         DataElement::new(
                             tags::STUDY_INSTANCE_UID,
                             VR::UI,
@@ -887,37 +886,25 @@ mod tests {
                         .unwrap();
 
                     // Build Pending C-FIND-RSP command
-                    let pending_cmd =
-                        InMemDicomObject::command_from_element_iter([
-                            DataElement::new(
-                                tags::AFFECTED_SOP_CLASS_UID,
-                                VR::UI,
-                                dicom_value!(
-                                    Str,
-                                    "1.2.840.10008.5.1.4.1.2.2.1"
-                                ),
-                            ),
-                            DataElement::new(
-                                tags::COMMAND_FIELD,
-                                VR::US,
-                                dicom_value!(U16, [0x8020]),
-                            ), // C-FIND-RSP
-                            DataElement::new(
-                                tags::MESSAGE_ID_BEING_RESPONDED_TO,
-                                VR::US,
-                                dicom_value!(U16, [1]),
-                            ),
-                            DataElement::new(
-                                tags::COMMAND_DATA_SET_TYPE,
-                                VR::US,
-                                dicom_value!(U16, [0x0000]),
-                            ), // Dataset present
-                            DataElement::new(
-                                tags::STATUS,
-                                VR::US,
-                                dicom_value!(U16, [0xFF00u16]),
-                            ), // Pending
-                        ]);
+                    let pending_cmd = InMemDicomObject::command_from_element_iter([
+                        DataElement::new(
+                            tags::AFFECTED_SOP_CLASS_UID,
+                            VR::UI,
+                            dicom_value!(Str, "1.2.840.10008.5.1.4.1.2.2.1"),
+                        ),
+                        DataElement::new(tags::COMMAND_FIELD, VR::US, dicom_value!(U16, [0x8020])), // C-FIND-RSP
+                        DataElement::new(
+                            tags::MESSAGE_ID_BEING_RESPONDED_TO,
+                            VR::US,
+                            dicom_value!(U16, [1]),
+                        ),
+                        DataElement::new(
+                            tags::COMMAND_DATA_SET_TYPE,
+                            VR::US,
+                            dicom_value!(U16, [0x0000]),
+                        ), // Dataset present
+                        DataElement::new(tags::STATUS, VR::US, dicom_value!(U16, [0xFF00u16])), // Pending
+                    ]);
 
                     let mut cmd_bytes = Vec::new();
                     pending_cmd
@@ -948,34 +935,25 @@ mod tests {
                 }
 
                 // Send final Success C-FIND-RSP (no dataset)
-                let success_cmd =
-                    InMemDicomObject::command_from_element_iter([
-                        DataElement::new(
-                            tags::AFFECTED_SOP_CLASS_UID,
-                            VR::UI,
-                            dicom_value!(Str, "1.2.840.10008.5.1.4.1.2.2.1"),
-                        ),
-                        DataElement::new(
-                            tags::COMMAND_FIELD,
-                            VR::US,
-                            dicom_value!(U16, [0x8020]),
-                        ),
-                        DataElement::new(
-                            tags::MESSAGE_ID_BEING_RESPONDED_TO,
-                            VR::US,
-                            dicom_value!(U16, [1]),
-                        ),
-                        DataElement::new(
-                            tags::COMMAND_DATA_SET_TYPE,
-                            VR::US,
-                            dicom_value!(U16, [0x0101]),
-                        ), // No dataset
-                        DataElement::new(
-                            tags::STATUS,
-                            VR::US,
-                            dicom_value!(U16, [0x0000u16]),
-                        ), // Success
-                    ]);
+                let success_cmd = InMemDicomObject::command_from_element_iter([
+                    DataElement::new(
+                        tags::AFFECTED_SOP_CLASS_UID,
+                        VR::UI,
+                        dicom_value!(Str, "1.2.840.10008.5.1.4.1.2.2.1"),
+                    ),
+                    DataElement::new(tags::COMMAND_FIELD, VR::US, dicom_value!(U16, [0x8020])),
+                    DataElement::new(
+                        tags::MESSAGE_ID_BEING_RESPONDED_TO,
+                        VR::US,
+                        dicom_value!(U16, [1]),
+                    ),
+                    DataElement::new(
+                        tags::COMMAND_DATA_SET_TYPE,
+                        VR::US,
+                        dicom_value!(U16, [0x0101]),
+                    ), // No dataset
+                    DataElement::new(tags::STATUS, VR::US, dicom_value!(U16, [0x0000u16])), // Success
+                ]);
 
                 let mut cmd_bytes = Vec::new();
                 success_cmd
@@ -1088,15 +1066,13 @@ mod tests {
                         options = options.with_transfer_syntax(ts.uid());
                     }
                 }
-                options =
-                    options.with_abstract_syntax("1.2.840.10008.5.1.4.1.2.2.1");
+                options = options.with_abstract_syntax("1.2.840.10008.5.1.4.1.2.2.1");
 
                 let mut association = options.establish(std_stream).unwrap();
 
                 // Commands are always Implicit VR LE per DICOM standard
                 let command_ts =
-                    dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN
-                        .erased();
+                    dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
 
                 // Consume C-FIND-RQ command + data
                 let mut pc_id: u8 = 1;
@@ -1122,34 +1098,25 @@ mod tests {
                 }
 
                 // Immediately send Success (no results)
-                let success_cmd =
-                    InMemDicomObject::command_from_element_iter([
-                        DataElement::new(
-                            tags::AFFECTED_SOP_CLASS_UID,
-                            VR::UI,
-                            dicom_value!(Str, "1.2.840.10008.5.1.4.1.2.2.1"),
-                        ),
-                        DataElement::new(
-                            tags::COMMAND_FIELD,
-                            VR::US,
-                            dicom_value!(U16, [0x8020]),
-                        ),
-                        DataElement::new(
-                            tags::MESSAGE_ID_BEING_RESPONDED_TO,
-                            VR::US,
-                            dicom_value!(U16, [1]),
-                        ),
-                        DataElement::new(
-                            tags::COMMAND_DATA_SET_TYPE,
-                            VR::US,
-                            dicom_value!(U16, [0x0101]),
-                        ),
-                        DataElement::new(
-                            tags::STATUS,
-                            VR::US,
-                            dicom_value!(U16, [0x0000u16]),
-                        ),
-                    ]);
+                let success_cmd = InMemDicomObject::command_from_element_iter([
+                    DataElement::new(
+                        tags::AFFECTED_SOP_CLASS_UID,
+                        VR::UI,
+                        dicom_value!(Str, "1.2.840.10008.5.1.4.1.2.2.1"),
+                    ),
+                    DataElement::new(tags::COMMAND_FIELD, VR::US, dicom_value!(U16, [0x8020])),
+                    DataElement::new(
+                        tags::MESSAGE_ID_BEING_RESPONDED_TO,
+                        VR::US,
+                        dicom_value!(U16, [1]),
+                    ),
+                    DataElement::new(
+                        tags::COMMAND_DATA_SET_TYPE,
+                        VR::US,
+                        dicom_value!(U16, [0x0101]),
+                    ),
+                    DataElement::new(tags::STATUS, VR::US, dicom_value!(U16, [0x0000u16])),
+                ]);
 
                 let mut cmd_bytes = Vec::new();
                 success_cmd

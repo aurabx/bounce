@@ -7,6 +7,7 @@
 //! The main [`super::aura_api::AuraApi`] delegates to this client, resolving
 //! the `base_url` and `api_key` from the Tauri config store.
 
+use crate::log_info;
 use crate::query::models::{
     CfindResult, FindStudiesResponse, FindStudyRequest, PendingQueriesResponse,
     PendingRetrievesResponse, QueryFailedPayload, QueryResultsPayload, RetrieveFailedPayload,
@@ -63,11 +64,7 @@ impl QueryApiClient {
 
         let body = response.text().await?;
         let parsed: ServicesResponse = serde_json::from_str(&body).map_err(|e| {
-            anyhow::anyhow!(
-                "Failed to parse services response: {}. Raw: {}",
-                e,
-                body,
-            )
+            anyhow::anyhow!("Failed to parse services response: {}. Raw: {}", e, body,)
         })?;
 
         Ok(parsed)
@@ -118,10 +115,7 @@ impl QueryApiClient {
         query_id: &str,
         results: Vec<CfindResult>,
     ) -> anyhow::Result<Value> {
-        let url = format!(
-            "{}/api/bounce/queries/{}/results",
-            self.base_url, query_id,
-        );
+        let url = format!("{}/api/bounce/queries/{}/results", self.base_url, query_id,);
 
         let payload = QueryResultsPayload { results };
 
@@ -140,15 +134,8 @@ impl QueryApiClient {
     /// Report a C-FIND query failure to Aurabox.
     ///
     /// Calls `POST {base_url}/api/bounce/queries/{id}/failed`.
-    pub async fn post_query_failed(
-        &self,
-        query_id: &str,
-        error: String,
-    ) -> anyhow::Result<Value> {
-        let url = format!(
-            "{}/api/bounce/queries/{}/failed",
-            self.base_url, query_id,
-        );
+    pub async fn post_query_failed(&self, query_id: &str, error: String) -> anyhow::Result<Value> {
+        let url = format!("{}/api/bounce/queries/{}/failed", self.base_url, query_id,);
 
         let payload = QueryFailedPayload { error };
 
@@ -268,6 +255,8 @@ impl QueryApiClient {
     ) -> anyhow::Result<FindStudiesResponse> {
         let url = format!("{}/api/bounce/find", self.base_url);
 
+        log_info!("Aura query: POST {} filters={:?}", url, request,);
+
         let response = self
             .client
             .post(&url)
@@ -277,9 +266,20 @@ impl QueryApiClient {
             .send()
             .await?;
 
+        log_info!(
+            "Aura query: response status {} from {}",
+            response.status(),
+            url
+        );
+
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
+            log_info!(
+                "Aura query: non-success response body from {} => {}",
+                url,
+                body,
+            );
             return Err(anyhow::anyhow!(
                 "Failed to query Aura studies: HTTP {} - {}",
                 status,
@@ -295,6 +295,12 @@ impl QueryApiClient {
                 body,
             )
         })?;
+
+        log_info!(
+            "Aura query: parsed {} studies from {}",
+            parsed.studies.len(),
+            url,
+        );
 
         Ok(parsed)
     }
