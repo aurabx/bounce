@@ -14,7 +14,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 # App platform
-tauri = { version = "2.9", features = ["tray-icon", "image-ico", "image-png", "unstable"] }
+tauri = { version = "2.10", features = ["tray-icon", "image-ico", "image-png", "unstable"] }
 
 # Async runtime
 tokio = { version = "1.43.2", features = ["full"] }

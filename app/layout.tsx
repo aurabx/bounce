@@ -18,20 +18,18 @@ export const metadata: Metadata = {
 export default function RootLayout({ children, }: {
   children: React.ReactNode
 }) {
-
-
   return (
-      <Providers>
-          <EventHandler>
-              <html lang="en" className="h-full">
-                  <body className={cn('h-full bg-background antialiased', inter.className)}>
-                    <PageLayout>
-                        {children}
-                    </PageLayout>
-                  </body>
-              </html>
-          </EventHandler>
-          <Tray/>
-      </Providers>
+      <html lang="en" className="h-full">
+          <body className={cn('h-full bg-background antialiased', inter.className)}>
+              <Providers>
+                  <EventHandler>
+                      <PageLayout>
+                          {children}
+                      </PageLayout>
+                      <Tray/>
+                  </EventHandler>
+              </Providers>
+          </body>
+      </html>
   )
 }

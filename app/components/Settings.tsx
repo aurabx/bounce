@@ -27,7 +27,7 @@ export default function Settings() {
     const save = async (e: any) => {
         e.preventDefault();
 
-        let store =  await load('store.json', { autoSave: false });
+        let store =  await load('store.json', { autoSave: false } as any);
 
         for (const fieldKey of fieldKeys) {
             console.log(fieldKey, settings?.[fieldKey])
@@ -83,7 +83,7 @@ export default function Settings() {
 
 
     const loadStore = async () => {
-        let store =  await load('store.json', { autoSave: false });
+        let store =  await load('store.json', { autoSave: false } as any);
         let values =  await store.entries();
 
         let data: { [key: string]: any } = {}
@@ -102,7 +102,7 @@ export default function Settings() {
     const resetApp = async (e: any) => {
         e.preventDefault();
 
-        let store =  await load('store.json', { autoSave: false });
+        let store =  await load('store.json', { autoSave: false } as any);
         await store.clear()
         await store.reset()
 

@@ -9,7 +9,7 @@ export const useSetupComplete = () => {
         // Async operations go inside useEffect
         async function fetchSetupStatus() {
             try {
-                const store = await load('store.json', { autoSave: false });
+                const store = await load('store.json', { autoSave: false } as any);
                 const status = await store.get('setup_complete');
                 setSetupComplete(status === true);
             } catch (error) {

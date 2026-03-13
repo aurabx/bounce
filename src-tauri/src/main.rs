@@ -298,6 +298,9 @@ fn main() {
                 .target(Target::new(TargetKind::LogDir {
                     file_name: Some("logs".to_string()),
                 }))
+                .target(Target::new(TargetKind::Stdout))
+                .target(Target::new(TargetKind::Webview))
+                .level(log::LevelFilter::Info)
                 .build(),
         )
         .on_window_event(|window, event| {

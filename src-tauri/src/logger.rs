@@ -166,9 +166,6 @@ impl log::Log for LogtailLogger {
 
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
-            // Print to stdout for local development
-            println!("[{}] {}", record.level(), record.args());
-
             // Only queue for remote sending if enabled
             if !self.enable.load(Ordering::Relaxed) {
                 return;

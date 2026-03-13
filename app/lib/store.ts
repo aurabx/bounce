@@ -7,8 +7,18 @@ export interface RunningDetail {
     value: string,
 }
 
+export interface LogEntry {
+    id: string,
+    level: 'trace' | 'debug' | 'info' | 'warn' | 'error',
+    message: string,
+    source: 'event' | 'system',
+    timestamp: string,
+}
+
+const MAX_LOG_ENTRIES = 2000
+
 export interface State {
-    logs: string[]
+    logs: LogEntry[]
     studies: Study[],
     running: boolean,
     runningDetail: RunningDetail[],
@@ -29,8 +39,15 @@ export const mainSlice = createSlice({
     name: 'main',
     initialState,
     reducers: {
-        logMessage: (state, action: PayloadAction<string>) => {
+        logMessage: (state, action: PayloadAction<LogEntry>) => {
             state.logs.push(action.payload)
+
+            if (state.logs.length > MAX_LOG_ENTRIES) {
+                state.logs.splice(0, state.logs.length - MAX_LOG_ENTRIES)
+            }
+        },
+        clearLogs: (state) => {
+            state.logs = []
         },
         setRunning(state, action: PayloadAction<boolean>){
             state.running = action.payload;
@@ -54,7 +71,7 @@ export const mainSlice = createSlice({
 })
 
 // Action creators are generated for each case reducer function
-export const { logMessage, setRunning, setRunningDetail, setCurrentStudies, setError, setErrors, setDicomServices } = mainSlice.actions
+export const { logMessage, clearLogs, setRunning, setRunningDetail, setCurrentStudies, setError, setErrors, setDicomServices } = mainSlice.actions
 
 export const makeStore = () => {
     return configureStore({
