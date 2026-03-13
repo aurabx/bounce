@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "Linear": {
+      "type": "http",
+      "url": "https://mcp.linear.app/mcp"
+    },
+    "Sentry": {
+      "type": "http",
+      "url": "https://mcp.sentry.dev/mcp"
+    },
+    "automatic": {
+      "args": [
+        "mcp-serve"
+      ],
+      "command": "/Applications/Automatic.app/Contents/MacOS/automatic"
+    }
+  }
+}
