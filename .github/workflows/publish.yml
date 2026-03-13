@@ -3,7 +3,8 @@ name: "publish"
 on:
   push:
     branches:
-      - release
+      - main
+  workflow_dispatch:
 
 jobs:
   # First job: Check if a draft release exists, create one if not
