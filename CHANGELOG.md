@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0] - 2026-03-13
+
+### Added
+
+- Implemented C-FIND SCP to proxy inbound DICOM queries to the Aura backend.
+- Added DIMSE request and response traffic logging for inbound associations.
+- Streamed backend logs into the app UI for real-time visibility.
+
+### Fixed
+
+- Fixed C-FIND response to send the command PDU before the dataset PDU, matching the DICOM standard ordering.
+- Fixed DIMSE query handling to wait for complete datasets before processing requests.
+- Fixed opening the log file from the app log directory.
+
+### Internal
+
+- Added Automatic agent project configuration and linked Claude skills to local agent skills.
+- Added `bounce-release` skill for the release workflow.
+
 ## [1.2.1] - 2026-02-21
 
 ### Fixed
