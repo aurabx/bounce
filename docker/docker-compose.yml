@@ -8,7 +8,7 @@ services:
       - "8042:8042"
     volumes:
       - orthanc-data:/var/lib/orthanc/db
-      - ./docker/orthanc.json:/etc/orthanc/orthanc.json:ro
+      - ./orthanc.json:/etc/orthanc/orthanc.json:ro
     environment:
       ORTHANC__NAME: "Test PACS"
     restart: unless-stopped
