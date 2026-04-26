@@ -9,6 +9,10 @@ This document describes the high-level architecture of Bounce, a DICOM C-STORE r
 - [Data Flow](#data-flow)
 - [Technology Stack](#technology-stack)
 - [Module Descriptions](#module-descriptions)
+- [Security Considerations](#security-considerations)
+- [Performance Characteristics](#performance-characteristics)
+- [Extension Points](#extension-points)
+- [Future Enhancements](#future-enhancements)
 
 ---
 
@@ -422,23 +426,82 @@ pub struct Config {
 
 ## Performance Characteristics
 
-### Throughput
+This section documents the concurrency model, hard limits, and known
+bottlenecks observed in the current implementation. Numbers and file
+references reflect the code as of writing — verify against the source
+before relying on them for capacity planning.
 
-- **DICOM Receiver**: Handles concurrent connections (one per study/series)
-- **Upload Speed**: Limited by network bandwidth (chunked at 5MB)
-- **Compression**: Async ZIP compression (doesn't block receiver)
+### DICOM Reception (Inbound)
+
+| Aspect                       | Limit                              | Source                                                              |
+|------------------------------|------------------------------------|---------------------------------------------------------------------|
+| Concurrent associations      | No explicit cap                    | Bare `listener.accept()` loop in `src-tauri/src/receiver/dicom_server.rs` |
+| Per-association processing   | Serialized (one PDU at a time)     | `run_store_sync()` is blocking; one DICOM op at a time per connection |
+| TCP backlog                  | OS default (~128 on Linux/macOS)   | `listener.bind()` does not set an explicit backlog                  |
+| Tokio worker threads         | `num_cpus` (Tokio default)         | `tokio = { features = ["full"] }` in `src-tauri/Cargo.toml`         |
+| File descriptors             | OS `ulimit -n` (typically 1024–10240) | Not raised by the application                                    |
+
+**Practical ceiling.** Reception is bounded by `min(OS file descriptors,
+TCP backlog backpressure)`. The application does not enforce a maximum
+number of concurrent associations, so a misbehaving or hostile peer can
+open associations until the OS file-descriptor limit is exhausted. Only
+`num_cpus` associations can perform CPU-bound work concurrently; the
+rest queue on Tokio workers.
+
+### TUS Upload (Outbound)
+
+| Aspect                  | Limit                  | Source                                                                 |
+|-------------------------|------------------------|------------------------------------------------------------------------|
+| Concurrent uploads      | **1 study at a time**  | Single `reqwest::Client`, sequential `send_study()` in `src-tauri/src/transmitter/transmission.rs` |
+| Chunk size              | **5 MB** (hardcoded)   | `src-tauri/src/transmitter/transmission.rs`                            |
+| Study debounce          | **10 seconds** (hardcoded) | `src-tauri/src/transmitter/transmission.rs`                        |
+| HTTP connection pool    | reqwest default (~32)  | `Client::new()` is unconfigured                                        |
+
+**Practical ceiling.** Upload throughput is dominated by the
+single-study, sequential-chunk model. Sustained MB/s per study is
+approximately `5 MB / (network RTT + server-ack time)`. End-to-end
+study cadence is `≥ debounce + (study size / effective link speed)`.
+Uploads are the dominant bottleneck for end-to-end throughput.
+
+### Database
+
+- SQLite is opened via `SqlitePool::connect()` in
+  `src-tauri/src/db/database.rs` with no explicit pool size and no WAL
+  mode set.
+- Each received DICOM instance triggers an individual
+  `create_or_update_study()` call; writes are not batched.
+- SQLite serializes writes globally, so high-rate inbound DICOM
+  produces lock contention on the receiver path.
 
 ### Resource Usage
 
-- **Memory**: Minimal (files streamed, not loaded entirely into RAM)
-- **Disk**: Temporary storage for studies (auto-cleanup available)
-- **CPU**: Low when idle, moderate during compression/upload
+- **Memory**: Minimal — files are streamed to disk and read back in
+  chunks for upload; full studies are not held in memory.
+- **Disk**: Temporary storage per study under the configured base
+  directory; optional auto-cleanup via `delete_after_success`.
+- **CPU**: Low when idle, moderate during ZIP compression and TLS
+  encryption of outbound chunks.
 
-### Scalability
+### Configurable Limits
 
-- Single-threaded DICOM receiver (adequate for typical use cases)
-- Async I/O prevents blocking on network operations
-- Database pagination for large study lists
+There are currently **no user-configurable knobs** for concurrency,
+chunk size, pool sizes, or association caps. The settings surface
+exposes only port, IP address, AE title, base directory,
+`delete_after_success`, and `send_logs`.
+
+### Known Bottlenecks and Mitigation Candidates
+
+The following are recognised limitations rather than defects. Address
+them only when motivated by a concrete capacity requirement:
+
+1. **Single-flight uploads.** A configurable upload concurrency knob
+   backed by a `Semaphore` would allow parallel TUS sessions when
+   bandwidth is available.
+2. **SQLite contention.** Enabling WAL mode and batching study/instance
+   writes would reduce lock contention under heavy inbound load.
+3. **Unbounded associations.** An explicit association semaphore in the
+   accept loop would prevent file-descriptor exhaustion from a runaway
+   or hostile peer.
 
 ---
 
