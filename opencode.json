@@ -1,19 +1,22 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "Linear": {
-      "type": "remote",
-      "url": "https://mcp.linear.app/mcp"
-    },
     "Sentry": {
-      "type": "remote",
-      "url": "https://mcp.sentry.dev/mcp"
+      "command": [
+        "/Applications/Automatic.app/Contents/MacOS/automatic",
+        "mcp-proxy",
+        "Sentry"
+      ],
+      "type": "local"
     },
     "automatic": {
       "command": [
         "/Applications/Automatic.app/Contents/MacOS/automatic",
         "mcp-serve"
       ],
+      "environment": {
+        "AUTOMATIC_PROJECT": "bounce"
+      },
       "type": "local"
     }
   }

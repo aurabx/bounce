@@ -136,6 +136,31 @@ The application runs behind healthcare firewalls, receives DICOM files from PACS
 - Add inline code comments for complex DICOM protocol handling or medical imaging logic
 - Update `docs/CONFIGURATION.md` when adding new user settings
 
+<!-- automatic:groups:start -->
+## Related Projects
+The following projects are related to this one. They are provided for context — explore or reference them when relevant to the current task.
+
+### Aura
+The Aurabox application and related projects
+**aura**
+Location: `../aura`
+**lasso**
+Location: `../lasso`
+**uhura**
+Location: `../uhura`
+**lift**
+Location: `../lift`
+**starfleet**
+Location: `../starfleet`
+**skills**
+Location: `../skills`
+**ravana**
+Location: `../../_experiments/ravana`
+**tus-server**
+Location: `../tus-server`
+
+<!-- automatic:groups:end -->
+
 <!-- automatic:rules:start -->
 # Working with the Automatic MCP Service
 
