@@ -9,9 +9,9 @@
 
 use crate::log_info;
 use crate::query::models::{
-    CfindResult, FindStudiesResponse, FindStudyRequest, PendingQueriesResponse,
-    PendingRetrievesResponse, QueryFailedPayload, QueryResultsPayload, RetrieveFailedPayload,
-    ServicesResponse,
+    CfindResult, FindStudiesResponse, FindStudyRequest, PendingJobsResponse,
+    PendingQueriesResponse, QueryFailedPayload, QueryResultsPayload, RetrieveFailedPayload,
+    SendFailedPayload, SendProgressPayload, ServicesResponse,
 };
 use reqwest::Client;
 use serde_json::Value;
@@ -152,14 +152,15 @@ impl QueryApiClient {
     }
 
     // -------------------------------------------------------------------
-    // C-MOVE retrieve endpoints
+    // Unified jobs endpoint
     // -------------------------------------------------------------------
 
-    /// Fetch pending C-MOVE retrieve requests from Aurabox for this gateway.
+    /// Fetch all pending jobs (retrieves and sends) for this gateway.
     ///
-    /// Calls `GET {base_url}/api/bounce/retrieves/pending`.
-    pub async fn fetch_pending_retrieves(&self) -> anyhow::Result<PendingRetrievesResponse> {
-        let url = format!("{}/api/bounce/retrieves/pending", self.base_url);
+    /// Calls `GET {base_url}/api/bounce/jobs/pending`. The response is a
+    /// tagged-union list discriminated by `type` — see [`crate::query::models::Job`].
+    pub async fn fetch_pending_jobs(&self) -> anyhow::Result<PendingJobsResponse> {
+        let url = format!("{}/api/bounce/jobs/pending", self.base_url);
 
         let response = self
             .client
@@ -174,16 +175,16 @@ impl QueryApiClient {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
             return Err(anyhow::anyhow!(
-                "Failed to fetch pending retrieves: HTTP {} - {}",
+                "Failed to fetch pending jobs: HTTP {} - {}",
                 status,
                 body,
             ));
         }
 
         let body = response.text().await?;
-        let parsed: PendingRetrievesResponse = serde_json::from_str(&body).map_err(|e| {
+        let parsed: PendingJobsResponse = serde_json::from_str(&body).map_err(|e| {
             anyhow::anyhow!(
-                "Failed to parse pending retrieves response: {}. Raw: {}",
+                "Failed to parse pending jobs response: {}. Raw: {}",
                 e,
                 body,
             )
@@ -191,6 +192,10 @@ impl QueryApiClient {
 
         Ok(parsed)
     }
+
+    // -------------------------------------------------------------------
+    // C-MOVE retrieve lifecycle endpoints
+    // -------------------------------------------------------------------
 
     /// Report a C-MOVE retrieve as completed to Aurabox.
     ///
@@ -227,6 +232,76 @@ impl QueryApiClient {
         );
 
         let payload = RetrieveFailedPayload { error };
+
+        let response = self
+            .client
+            .post(&url)
+            .header("Accept", "application/json")
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .json(&payload)
+            .send()
+            .await?;
+
+        Self::handle_response(response).await
+    }
+
+    // -------------------------------------------------------------------
+    // C-STORE send lifecycle endpoints
+    // -------------------------------------------------------------------
+
+    /// Report mid-send progress to Aurabox.
+    ///
+    /// Calls `POST {base_url}/api/bounce/sends/{id}/progress`.
+    pub async fn post_send_progress(
+        &self,
+        send_id: &str,
+        instances_sent: u32,
+        instance_count: Option<u32>,
+    ) -> anyhow::Result<Value> {
+        let url = format!("{}/api/bounce/sends/{}/progress", self.base_url, send_id);
+
+        let payload = SendProgressPayload {
+            instances_sent,
+            instance_count,
+        };
+
+        let response = self
+            .client
+            .post(&url)
+            .header("Accept", "application/json")
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .json(&payload)
+            .send()
+            .await?;
+
+        Self::handle_response(response).await
+    }
+
+    /// Mark a send as completed once every instance has been C-STOREd.
+    ///
+    /// Calls `POST {base_url}/api/bounce/sends/{id}/completed`.
+    pub async fn post_send_completed(&self, send_id: &str) -> anyhow::Result<Value> {
+        let url = format!("{}/api/bounce/sends/{}/completed", self.base_url, send_id);
+
+        let response = self
+            .client
+            .post(&url)
+            .header("Accept", "application/json")
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .json(&serde_json::json!({}))
+            .send()
+            .await?;
+
+        Self::handle_response(response).await
+    }
+
+    /// Report a send failure to Aurabox.
+    ///
+    /// Calls `POST {base_url}/api/bounce/sends/{id}/failed`.
+    pub async fn post_send_failed(&self, send_id: &str, error: String) -> anyhow::Result<Value> {
+        let url = format!("{}/api/bounce/sends/{}/failed", self.base_url, send_id);
+
+        let payload = SendFailedPayload { error };
 
         let response = self
             .client

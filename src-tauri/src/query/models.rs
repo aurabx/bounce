@@ -165,21 +165,6 @@ impl From<RetrieveService> for PacsService {
     }
 }
 
-/// A single pending retrieve request fetched from Aurabox.
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct PacsRetrieveRequest {
-    pub id: String,
-    pub service: RetrieveService,
-    pub study_instance_uid: String,
-    pub patient_id: Option<String>,
-}
-
-/// The wrapper returned by `GET /api/bounce/retrieves/pending`.
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct PendingRetrievesResponse {
-    pub retrieves: Vec<PacsRetrieveRequest>,
-}
-
 /// Payload sent to `POST /api/bounce/retrieves/{id}/failed`.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RetrieveFailedPayload {
@@ -311,4 +296,94 @@ impl FindStudyResult {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FindStudiesResponse {
     pub studies: Vec<FindStudyResult>,
+}
+
+// ---------------------------------------------------------------------------
+// Unified jobs endpoint (`GET /api/bounce/jobs/pending`)
+// ---------------------------------------------------------------------------
+
+/// Destination PACS service for an outbound C-STORE send.
+///
+/// Same connection shape as [`RetrieveService`], but conceptually distinct:
+/// a retrieve fetches *from* a PACS, a send pushes *to* one.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SendDestination {
+    pub id: String,
+    pub ae_title: String,
+    pub host: String,
+    pub port: u16,
+}
+
+impl From<SendDestination> for PacsService {
+    fn from(svc: SendDestination) -> Self {
+        PacsService {
+            ae_title: svc.ae_title,
+            host: svc.host,
+            port: svc.port,
+        }
+    }
+}
+
+/// WADO-RS source describing where Bounce should fetch the study bytes from.
+///
+/// `wado_base_url` + `study_path` form the absolute URL to GET. `jwt` is a
+/// short-lived, study-scoped bearer token minted by Aura at job creation time
+/// and accepted by Uhura's WADO-RS surface.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct WadoSource {
+    pub wado_base_url: String,
+    pub study_path: String,
+    pub jwt: String,
+}
+
+/// A retrieve job entry within the unified jobs payload.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RetrieveJob {
+    pub id: String,
+    pub service: RetrieveService,
+    pub study_instance_uid: String,
+    pub patient_id: Option<String>,
+}
+
+/// A send job entry within the unified jobs payload.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SendJob {
+    pub id: String,
+    pub destination: SendDestination,
+    pub study_instance_uid: String,
+    /// `None` means send all series; `Some(_)` restricts to the listed UIDs.
+    pub series_uids: Option<Vec<String>>,
+    pub source: WadoSource,
+}
+
+/// Tagged-union representation of a pending job.
+///
+/// Aura discriminates on the `type` field:
+///   - `"retrieve"` → C-MOVE pull from a remote PACS into Aurabox
+///   - `"send"`     → C-STORE push from Aurabox out to a remote PACS
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum Job {
+    Retrieve(RetrieveJob),
+    Send(SendJob),
+}
+
+/// Wrapper returned by `GET /api/bounce/jobs/pending`.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PendingJobsResponse {
+    pub jobs: Vec<Job>,
+}
+
+/// Payload sent to `POST /api/bounce/sends/{id}/progress`.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SendProgressPayload {
+    pub instances_sent: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instance_count: Option<u32>,
+}
+
+/// Payload sent to `POST /api/bounce/sends/{id}/failed`.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SendFailedPayload {
+    pub error: String,
 }

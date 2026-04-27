@@ -5,6 +5,7 @@ mod dimse;
 mod logger;
 mod query;
 mod receiver;
+mod send;
 mod store;
 mod transmitter;
 

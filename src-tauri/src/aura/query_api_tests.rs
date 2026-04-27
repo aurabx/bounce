@@ -510,93 +510,58 @@ mod tests {
     }
 
     // =======================================================================
-    // fetch_pending_retrieves
+    // fetch_pending_jobs (unified retrieves + sends)
     // =======================================================================
 
     #[tokio::test]
-    async fn test_fetch_pending_retrieves_success_empty() {
+    async fn test_fetch_pending_jobs_empty() {
         let mut server = mockito::Server::new_async().await;
         let mock = server
-            .mock("GET", "/api/bounce/retrieves/pending")
+            .mock("GET", "/api/bounce/jobs/pending")
             .match_header("Authorization", "Bearer test-api-key")
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body(r#"{"retrieves":[]}"#)
+            .with_body(r#"{"jobs":[]}"#)
             .create_async()
             .await;
 
         let client = make_client(&server.url());
-        let resp = client.fetch_pending_retrieves().await.unwrap();
+        let resp = client.fetch_pending_jobs().await.unwrap();
 
-        assert!(resp.retrieves.is_empty());
+        assert!(resp.jobs.is_empty());
         mock.assert_async().await;
     }
 
     #[tokio::test]
-    async fn test_fetch_pending_retrieves_success_with_retrieve() {
+    async fn test_fetch_pending_jobs_mixed() {
+        use crate::query::models::Job;
         let mut server = mockito::Server::new_async().await;
         let body = r#"{
-            "retrieves": [{
-                "id": "ret-1",
-                "service": {
-                    "id": "svc-pacs-1",
-                    "ae_title": "PACS_SCP",
-                    "host": "192.168.1.100",
-                    "port": 104
-                },
-                "study_instance_uid": "1.2.840.113619.2.55.3.123",
-                "patient_id": "PID001"
-            }]
-        }"#;
-
-        let mock = server
-            .mock("GET", "/api/bounce/retrieves/pending")
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(body)
-            .create_async()
-            .await;
-
-        let client = make_client(&server.url());
-        let resp = client.fetch_pending_retrieves().await.unwrap();
-
-        assert_eq!(resp.retrieves.len(), 1);
-        assert_eq!(resp.retrieves[0].id, "ret-1");
-        assert_eq!(resp.retrieves[0].service.id, "svc-pacs-1");
-        assert_eq!(resp.retrieves[0].service.ae_title, "PACS_SCP");
-        assert_eq!(resp.retrieves[0].service.host, "192.168.1.100");
-        assert_eq!(resp.retrieves[0].service.port, 104);
-        assert_eq!(
-            resp.retrieves[0].study_instance_uid,
-            "1.2.840.113619.2.55.3.123"
-        );
-        assert_eq!(resp.retrieves[0].patient_id.as_deref(), Some("PID001"));
-
-        mock.assert_async().await;
-    }
-
-    #[tokio::test]
-    async fn test_fetch_pending_retrieves_multiple() {
-        let mut server = mockito::Server::new_async().await;
-        let body = r#"{
-            "retrieves": [
+            "jobs": [
                 {
+                    "type": "retrieve",
                     "id": "ret-1",
                     "service": {"id": "svc-a", "ae_title": "A", "host": "1.1.1.1", "port": 104},
                     "study_instance_uid": "1.2.3.100",
                     "patient_id": "PID-A"
                 },
                 {
-                    "id": "ret-2",
-                    "service": {"id": "svc-b", "ae_title": "B", "host": "2.2.2.2", "port": 11112},
+                    "type": "send",
+                    "id": "send-1",
+                    "destination": {"id": "svc-b", "ae_title": "DEST", "host": "2.2.2.2", "port": 104},
                     "study_instance_uid": "1.2.3.200",
-                    "patient_id": null
+                    "series_uids": null,
+                    "source": {
+                        "wado_base_url": "https://uhura/dicomweb/v3/raw",
+                        "study_path": "/studies/1.2.3.200",
+                        "jwt": "TOKEN"
+                    }
                 }
             ]
         }"#;
 
         let mock = server
-            .mock("GET", "/api/bounce/retrieves/pending")
+            .mock("GET", "/api/bounce/jobs/pending")
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(body)
@@ -604,28 +569,26 @@ mod tests {
             .await;
 
         let client = make_client(&server.url());
-        let resp = client.fetch_pending_retrieves().await.unwrap();
+        let resp = client.fetch_pending_jobs().await.unwrap();
 
-        assert_eq!(resp.retrieves.len(), 2);
-        assert_eq!(resp.retrieves[0].id, "ret-1");
-        assert_eq!(resp.retrieves[1].id, "ret-2");
-        assert!(resp.retrieves[1].patient_id.is_none());
-
+        assert_eq!(resp.jobs.len(), 2);
+        assert!(matches!(resp.jobs[0], Job::Retrieve(_)));
+        assert!(matches!(resp.jobs[1], Job::Send(_)));
         mock.assert_async().await;
     }
 
     #[tokio::test]
-    async fn test_fetch_pending_retrieves_unauthorized() {
+    async fn test_fetch_pending_jobs_unauthorized() {
         let mut server = mockito::Server::new_async().await;
         let mock = server
-            .mock("GET", "/api/bounce/retrieves/pending")
+            .mock("GET", "/api/bounce/jobs/pending")
             .with_status(401)
             .with_body(r#"{"message":"Unauthenticated."}"#)
             .create_async()
             .await;
 
         let client = make_client(&server.url());
-        let result = client.fetch_pending_retrieves().await;
+        let result = client.fetch_pending_jobs().await;
 
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
@@ -634,46 +597,89 @@ mod tests {
         mock.assert_async().await;
     }
 
+    // =======================================================================
+    // post_send_progress / completed / failed
+    // =======================================================================
+
     #[tokio::test]
-    async fn test_fetch_pending_retrieves_malformed_json() {
+    async fn test_post_send_progress_includes_counts() {
         let mut server = mockito::Server::new_async().await;
         let mock = server
-            .mock("GET", "/api/bounce/retrieves/pending")
+            .mock("POST", "/api/bounce/sends/send-1/progress")
+            .match_header("Authorization", "Bearer test-api-key")
+            .match_body(mockito::Matcher::PartialJson(serde_json::json!({
+                "instances_sent": 5,
+                "instance_count": 12
+            })))
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body(r#"not json at all"#)
+            .with_body(r#"{"message":"ok"}"#)
             .create_async()
             .await;
 
         let client = make_client(&server.url());
-        let result = client.fetch_pending_retrieves().await;
-
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(
-            err.contains("Failed to parse"),
-            "Error should mention parsing: {}",
-            err
-        );
+        client
+            .post_send_progress("send-1", 5, Some(12))
+            .await
+            .unwrap();
 
         mock.assert_async().await;
     }
 
     #[tokio::test]
-    async fn test_fetch_pending_retrieves_sends_correct_headers() {
+    async fn test_post_send_completed_success() {
         let mut server = mockito::Server::new_async().await;
         let mock = server
-            .mock("GET", "/api/bounce/retrieves/pending")
+            .mock("POST", "/api/bounce/sends/send-1/completed")
             .match_header("Authorization", "Bearer test-api-key")
-            .match_header("Accept", "application/json")
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body(r#"{"retrieves":[]}"#)
+            .with_body(r#"{"message":"ok"}"#)
             .create_async()
             .await;
 
         let client = make_client(&server.url());
-        client.fetch_pending_retrieves().await.unwrap();
+        let resp = client.post_send_completed("send-1").await.unwrap();
+        assert_eq!(resp["message"], "ok");
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_post_send_completed_409_when_already_finished() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/api/bounce/sends/send-1/completed")
+            .with_status(409)
+            .with_body(r#"{"message":"send already finished"}"#)
+            .create_async()
+            .await;
+
+        let client = make_client(&server.url());
+        let result = client.post_send_completed("send-1").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("409"));
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_post_send_failed_includes_error_message() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/api/bounce/sends/send-1/failed")
+            .match_body(mockito::Matcher::PartialJson(serde_json::json!({
+                "error": "destination refused association"
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"message":"ok"}"#)
+            .create_async()
+            .await;
+
+        let client = make_client(&server.url());
+        client
+            .post_send_failed("send-1", "destination refused association".to_string())
+            .await
+            .unwrap();
 
         mock.assert_async().await;
     }

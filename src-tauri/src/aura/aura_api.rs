@@ -1,7 +1,7 @@
 use crate::aura::query_api::QueryApiClient;
 use crate::query::models::{
-    CfindResult, FindStudiesResponse, FindStudyRequest, PendingQueriesResponse,
-    PendingRetrievesResponse, ServicesResponse,
+    CfindResult, FindStudiesResponse, FindStudyRequest, PendingJobsResponse,
+    PendingQueriesResponse, ServicesResponse,
 };
 use crate::{load_config, log_info};
 use anyhow::Error;
@@ -214,16 +214,19 @@ impl AuraApi {
     }
 
     // -------------------------------------------------------------------
-    // C-MOVE retrieve polling endpoints
+    // Unified jobs polling endpoint
     //
-    // These delegate to [`QueryApiClient`] which contains the HTTP logic
-    // and can be tested independently with a mock HTTP server.
+    // Returns a tagged-union list of retrieves and sends in one call.
     // -------------------------------------------------------------------
 
-    /// Fetch pending C-MOVE retrieve requests from Aurabox for this gateway.
-    pub async fn fetch_pending_retrieves(&self) -> anyhow::Result<PendingRetrievesResponse> {
-        self.query_client().fetch_pending_retrieves().await
+    /// Fetch all pending jobs (retrieves + sends) for this gateway.
+    pub async fn fetch_pending_jobs(&self) -> anyhow::Result<PendingJobsResponse> {
+        self.query_client().fetch_pending_jobs().await
     }
+
+    // -------------------------------------------------------------------
+    // C-MOVE retrieve lifecycle endpoints
+    // -------------------------------------------------------------------
 
     /// Report a C-MOVE retrieve as completed to Aurabox.
     pub async fn post_retrieve_completed(&self, retrieve_id: &str) -> anyhow::Result<Value> {
@@ -243,6 +246,34 @@ impl AuraApi {
         self.query_client()
             .post_retrieve_failed(retrieve_id, error)
             .await
+    }
+
+    // -------------------------------------------------------------------
+    // C-STORE send lifecycle endpoints
+    // -------------------------------------------------------------------
+
+    /// Report mid-send progress to Aurabox.
+    pub async fn post_send_progress(
+        &self,
+        send_id: &str,
+        instances_sent: u32,
+        instance_count: Option<u32>,
+    ) -> anyhow::Result<Value> {
+        self.query_client()
+            .post_send_progress(send_id, instances_sent, instance_count)
+            .await
+    }
+
+    /// Mark a send as completed.
+    pub async fn post_send_completed(&self, send_id: &str) -> anyhow::Result<Value> {
+        log_info!("Posting C-STORE send completed for {}", send_id);
+        self.query_client().post_send_completed(send_id).await
+    }
+
+    /// Report a send failure to Aurabox.
+    pub async fn post_send_failed(&self, send_id: &str, error: String) -> anyhow::Result<Value> {
+        log_info!("Posting C-STORE send failure for {}", send_id);
+        self.query_client().post_send_failed(send_id, error).await
     }
 
     async fn handle_response(response: Response) -> Result<Value, Error> {

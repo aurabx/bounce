@@ -210,6 +210,49 @@ The backend handles all DICOM operations, file management, database interactions
    └─> Emit "queue-study" event with study_uid
 ```
 
+### Outbound Send (Aurabox → remote PACS, C-STORE SCU)
+
+The send pipeline is the inverse of the receive pipeline: instead of accepting
+images from a PACS and uploading them to Aurabox, Bounce fetches a study held in
+Aurabox and pushes it via DIMSE to a destination PACS.
+
+```
+1. Aura queues a PacsSend (study_uid + destination AE + WADO source/JWT)
+   │
+2. Bounce poll cycle (query/poller.rs)
+   ├─> AuraApi::fetch_pending_jobs()  ← unified jobs endpoint
+   ├─> Split into retrieves (sequential) and sends (semaphore-bounded)
+   │
+3. Per send (send/worker.rs, capped at 2 concurrent per gateway)
+   ├─> WADO-RS GET {wado_base}{study_path}
+   │     - Accept: multipart/related; type=application/dicom
+   │     - Authorization: Bearer {study-scoped JWT minted by Aura}
+   │     - Body parsed via send/uhura_client.rs into FileDicomObjects
+   │
+   ├─> Optional series filter (job.series_uids)
+   │
+   ├─> AuraApi::post_send_progress(0, total)  ← initial UI signal
+   │
+   ├─> query/cstore.rs::execute_cstore()
+   │     - Open association proposing one PC per distinct SOP class
+   │     - Transfer syntaxes offered: Explicit VR LE, Implicit VR LE,
+   │       JPEG Baseline (Process 1)
+   │     - For each instance:
+   │         · build C-STORE-RQ command
+   │         · serialize dataset with the negotiated TS for the matching PC
+   │         · send Command + Data PDUs
+   │         · receive C-STORE-RSP, classify status as success / warning / error
+   │     - Returns a SendReport (successes + failures)
+   │
+   ├─> If all instances stored → AuraApi::post_send_completed()
+   └─> Otherwise              → AuraApi::post_send_failed(summary)
+```
+
+The send path treats a job as atomic for v1: any instance-level failure is
+reported as a send-level failure with the first failing instance's status code
+and ErrorComment surfaced. Mid-send TCP recovery, on-the-fly transcoding, and
+sub-series-level granularity are deferred — see Future Enhancements.
+
 ### Uploading Studies
 
 ```
@@ -529,7 +572,18 @@ Add authentication layer in `receiver/` or use DICOM TLS
 
 - **Multi-destination routing**: Send to multiple cloud providers
 - **HL7 integration**: Receive ADT messages for patient context
-- **DICOM Query/Retrieve**: Act as C-FIND/C-MOVE SCP
+- **C-MOVE SCP / C-GET SCP**: Let workstations pull studies *from* Aurabox via
+  Bounce. Bounce already acts as a C-FIND SCP and a C-STORE SCU/SCP; this would
+  close the matrix and remove the dependency on the web viewer / share path for
+  workstation-initiated retrieval.
+- **On-the-fly transcoding for outbound C-STORE**: When a destination PACS does
+  not accept any of the syntaxes Aurabox holds the study in, transcode to
+  Explicit VR Little Endian before sending (currently the send fails with a
+  clear error in that case).
+- **Mid-send resume**: Reopen the association and resume from the next un-acked
+  SOP instance UID after a transient TCP failure during a send.
+- **Per-destination concurrency**: Cap concurrent C-STORE associations per
+  destination PACS rather than per gateway.
 - **DICOM TLS**: Secure DICOM communications
 - **Web UI without Tauri**: Optional web-based management interface
 - **Docker deployment**: Containerized deployment option

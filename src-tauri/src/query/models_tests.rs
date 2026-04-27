@@ -809,138 +809,144 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // PacsRetrieveRequest
+    // PendingJobsResponse (unified retrieves + sends, tagged-union)
     // -----------------------------------------------------------------------
 
     #[test]
-    fn test_pacs_retrieve_request_deserialize_full() {
+    fn test_pending_jobs_response_empty() {
+        let json = r#"{"jobs":[]}"#;
+        let resp: PendingJobsResponse = serde_json::from_str(json).unwrap();
+        assert!(resp.jobs.is_empty());
+    }
+
+    #[test]
+    fn test_pending_jobs_response_retrieve_variant() {
         let json = r#"{
-            "id": "ret-123",
-            "service": {
-                "id": "svc-pacs-1",
-                "ae_title": "PACS_SCP",
-                "host": "192.168.1.100",
-                "port": 104
-            },
-            "study_instance_uid": "1.2.840.113619.2.55.3.123",
-            "patient_id": "PID001"
+            "jobs": [{
+                "type": "retrieve",
+                "id": "ret-1",
+                "service": {"id": "svc-a", "ae_title": "A", "host": "1.1.1.1", "port": 104},
+                "study_instance_uid": "1.2.3.100",
+                "patient_id": "PID-A"
+            }]
         }"#;
 
-        let req: PacsRetrieveRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(req.id, "ret-123");
-        assert_eq!(req.service.id, "svc-pacs-1");
-        assert_eq!(req.service.ae_title, "PACS_SCP");
-        assert_eq!(req.service.host, "192.168.1.100");
-        assert_eq!(req.service.port, 104);
-        assert_eq!(req.study_instance_uid, "1.2.840.113619.2.55.3.123");
-        assert_eq!(req.patient_id.as_deref(), Some("PID001"));
+        let resp: PendingJobsResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.jobs.len(), 1);
+        match &resp.jobs[0] {
+            Job::Retrieve(r) => {
+                assert_eq!(r.id, "ret-1");
+                assert_eq!(r.service.ae_title, "A");
+                assert_eq!(r.study_instance_uid, "1.2.3.100");
+                assert_eq!(r.patient_id.as_deref(), Some("PID-A"));
+            }
+            other => panic!("expected Retrieve variant, got {:?}", other),
+        }
     }
 
     #[test]
-    fn test_pacs_retrieve_request_deserialize_null_patient_id() {
+    fn test_pending_jobs_response_send_variant() {
         let json = r#"{
-            "id": "ret-456",
-            "service": {
-                "id": "svc-2",
-                "ae_title": "ARCHIVE",
-                "host": "10.0.0.2",
-                "port": 11112
-            },
-            "study_instance_uid": "1.2.3.4.5",
-            "patient_id": null
+            "jobs": [{
+                "type": "send",
+                "id": "send-9",
+                "destination": {"id": "svc-b", "ae_title": "DEST", "host": "10.0.0.5", "port": 104},
+                "study_instance_uid": "1.2.3.200",
+                "series_uids": ["1.2.3.4.5", "1.2.3.4.6"],
+                "source": {
+                    "wado_base_url": "https://uhura.example/dicomweb/v3/raw",
+                    "study_path": "/studies/1.2.3.200",
+                    "jwt": "eyTOKEN"
+                }
+            }]
         }"#;
 
-        let req: PacsRetrieveRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(req.id, "ret-456");
-        assert!(req.patient_id.is_none());
+        let resp: PendingJobsResponse = serde_json::from_str(json).unwrap();
+        match &resp.jobs[0] {
+            Job::Send(s) => {
+                assert_eq!(s.id, "send-9");
+                assert_eq!(s.destination.ae_title, "DEST");
+                assert_eq!(s.destination.port, 104);
+                assert_eq!(s.study_instance_uid, "1.2.3.200");
+                assert_eq!(
+                    s.series_uids.as_deref(),
+                    Some(&["1.2.3.4.5".to_string(), "1.2.3.4.6".to_string()][..])
+                );
+                assert_eq!(s.source.wado_base_url, "https://uhura.example/dicomweb/v3/raw");
+                assert_eq!(s.source.study_path, "/studies/1.2.3.200");
+                assert_eq!(s.source.jwt, "eyTOKEN");
+            }
+            other => panic!("expected Send variant, got {:?}", other),
+        }
     }
 
     #[test]
-    fn test_pacs_retrieve_request_roundtrip() {
-        let original = PacsRetrieveRequest {
-            id: "ret-789".to_string(),
-            service: RetrieveService {
-                id: "svc-3".to_string(),
-                ae_title: "REMOTE".to_string(),
-                host: "10.0.0.5".to_string(),
-                port: 4242,
-            },
-            study_instance_uid: "1.2.840.99999".to_string(),
-            patient_id: Some("PAT-42".to_string()),
-        };
-
-        let json = serde_json::to_string(&original).unwrap();
-        let deserialized: PacsRetrieveRequest = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized.id, original.id);
-        assert_eq!(deserialized.service.ae_title, original.service.ae_title);
-        assert_eq!(deserialized.study_instance_uid, original.study_instance_uid);
-        assert_eq!(deserialized.patient_id, original.patient_id);
-    }
-
-    // -----------------------------------------------------------------------
-    // PendingRetrievesResponse
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn test_pending_retrieves_response_empty() {
-        let json = r#"{"retrieves":[]}"#;
-        let resp: PendingRetrievesResponse = serde_json::from_str(json).unwrap();
-        assert!(resp.retrieves.is_empty());
-    }
-
-    #[test]
-    fn test_pending_retrieves_response_multiple() {
+    fn test_pending_jobs_response_send_with_null_series() {
         let json = r#"{
-            "retrieves": [
+            "jobs": [{
+                "type": "send",
+                "id": "send-all",
+                "destination": {"id": "d1", "ae_title": "D", "host": "x", "port": 4242},
+                "study_instance_uid": "1.2.3.300",
+                "series_uids": null,
+                "source": {"wado_base_url": "https://u/", "study_path": "/s/x", "jwt": "j"}
+            }]
+        }"#;
+
+        let resp: PendingJobsResponse = serde_json::from_str(json).unwrap();
+        match &resp.jobs[0] {
+            Job::Send(s) => assert!(s.series_uids.is_none()),
+            other => panic!("expected Send variant, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_pending_jobs_response_mixed() {
+        let json = r#"{
+            "jobs": [
                 {
-                    "id": "ret-1",
+                    "type": "retrieve",
+                    "id": "r-1",
                     "service": {"id": "svc-a", "ae_title": "A", "host": "1.1.1.1", "port": 104},
-                    "study_instance_uid": "1.2.3.100",
-                    "patient_id": "PID-A"
+                    "study_instance_uid": "1.2.3.r",
+                    "patient_id": null
                 },
                 {
-                    "id": "ret-2",
-                    "service": {"id": "svc-b", "ae_title": "B", "host": "2.2.2.2", "port": 11112},
-                    "study_instance_uid": "1.2.3.200",
-                    "patient_id": null
+                    "type": "send",
+                    "id": "s-1",
+                    "destination": {"id": "svc-b", "ae_title": "B", "host": "2.2.2.2", "port": 104},
+                    "study_instance_uid": "1.2.3.s",
+                    "series_uids": null,
+                    "source": {"wado_base_url": "https://u", "study_path": "/p", "jwt": "j"}
                 }
             ]
         }"#;
 
-        let resp: PendingRetrievesResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(resp.retrieves.len(), 2);
-        assert_eq!(resp.retrieves[0].id, "ret-1");
-        assert_eq!(resp.retrieves[0].study_instance_uid, "1.2.3.100");
-        assert_eq!(resp.retrieves[0].patient_id.as_deref(), Some("PID-A"));
-        assert_eq!(resp.retrieves[1].id, "ret-2");
-        assert_eq!(resp.retrieves[1].service.ae_title, "B");
-        assert!(resp.retrieves[1].patient_id.is_none());
+        let resp: PendingJobsResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.jobs.len(), 2);
+        assert!(matches!(resp.jobs[0], Job::Retrieve(_)));
+        assert!(matches!(resp.jobs[1], Job::Send(_)));
     }
 
     #[test]
-    fn test_pending_retrieves_response_roundtrip() {
-        let original = PendingRetrievesResponse {
-            retrieves: vec![PacsRetrieveRequest {
-                id: "ret-rt".to_string(),
-                service: RetrieveService {
-                    id: "svc-rt".to_string(),
-                    ae_title: "RT_PACS".to_string(),
-                    host: "10.0.0.99".to_string(),
-                    port: 104,
-                },
-                study_instance_uid: "1.2.3.roundtrip".to_string(),
-                patient_id: Some("RT-PAT".to_string()),
-            }],
+    fn test_send_progress_payload_omits_null_instance_count() {
+        let payload = SendProgressPayload {
+            instances_sent: 5,
+            instance_count: None,
         };
+        let json = serde_json::to_string(&payload).unwrap();
+        assert!(json.contains("\"instances_sent\":5"));
+        assert!(!json.contains("instance_count"));
+    }
 
-        let json = serde_json::to_string(&original).unwrap();
-        let deserialized: PendingRetrievesResponse = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized.retrieves.len(), 1);
-        assert_eq!(deserialized.retrieves[0].id, "ret-rt");
-        assert_eq!(
-            deserialized.retrieves[0].study_instance_uid,
-            "1.2.3.roundtrip"
-        );
+    #[test]
+    fn test_send_progress_payload_includes_instance_count_when_set() {
+        let payload = SendProgressPayload {
+            instances_sent: 5,
+            instance_count: Some(12),
+        };
+        let json = serde_json::to_string(&payload).unwrap();
+        assert!(json.contains("\"instance_count\":12"));
     }
 
     // -----------------------------------------------------------------------
