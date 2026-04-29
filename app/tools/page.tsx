@@ -9,7 +9,6 @@ import {Study} from "@/app/lib/types";
 import { v4 as uuidv4 } from 'uuid';
 import { Card, CardContent, CardHeader, CardTitle } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
-import PacsServices from "@/app/components/PacsServices";
 
 type Commands = {
     [key: string]: string
@@ -66,9 +65,7 @@ export default function Page() {
 
     return (
         <>
-            <PacsServices />
-
-            <Card className="mt-4">
+            <Card>
                 <CardHeader>
                      <CardTitle>Developer Tools</CardTitle>
                 </CardHeader>

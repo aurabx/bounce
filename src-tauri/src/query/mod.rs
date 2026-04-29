@@ -1,3 +1,4 @@
+pub mod cecho;
 pub mod cfind;
 pub mod cmove;
 pub mod cstore;

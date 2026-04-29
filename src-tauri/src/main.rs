@@ -12,9 +12,11 @@ mod transmitter;
 use crate::aura::aura_api::AuraApi;
 use crate::db::database::Database;
 use crate::logger::{set_remote_logging_enabled, setup_logger_with_config, LogtailConfig};
+use crate::query::cecho::execute_cecho;
 use crate::query::cfind::execute_cfind;
 use crate::query::models::{CfindResult, DicomService, PacsService, QueryFilters};
 use crate::receiver::server::init_server_state;
+use crate::store::pacs_cache::{load_cached_services, save_cached_services};
 use crate::transmitter::transmission::{QueueUpload, Transmission};
 use std::sync::Arc;
 use store::config::Config;
@@ -225,19 +227,73 @@ async fn cfind_query(
     execute_cfind(&config.ae_title, &pacs, "STUDY", &filters).await
 }
 
-/// Fetch the list of configured DICOM services (remote PACS) from Aurabox.
-///
-/// Returns the services available for this gateway, including their Aurabox
-/// IDs, labels, and connection details. Useful for populating the UI's PACS
-/// selector for manual C-FIND queries.
+/// Return the locally cached PACS services list. Reads synchronously from
+/// the Tauri plugin-store so the PACS tab can render immediately on mount,
+/// even when Aurabox is unreachable. Empty if no refresh has yet succeeded.
 #[tauri::command]
-async fn fetch_dicom_services(app: AppHandle) -> Result<Vec<DicomService>, String> {
-    let api = AuraApi::new(app);
+fn list_pacs_services(app: AppHandle) -> Result<Vec<DicomService>, String> {
+    Ok(load_cached_services(&app))
+}
+
+/// Fetch the configured PACS services list from Aurabox, persist the
+/// response into the local cache, and return the fresh list. The Refresh
+/// button on the PACS tab and the startup probe both call this; the cache
+/// is only updated on a successful round trip so a transient failure does
+/// not blank the UI.
+#[tauri::command]
+async fn refresh_pacs_services(app: AppHandle) -> Result<Vec<DicomService>, String> {
+    let api = AuraApi::new(app.clone());
     let response = api
         .fetch_services()
         .await
-        .map_err(|e| format!("Failed to fetch DICOM services: {}", e))?;
+        .map_err(|e| format!("Failed to fetch PACS services: {}", e))?;
+
+    save_cached_services(&app, &response.services)?;
+
     Ok(response.services)
+}
+
+/// Result of a single C-ECHO attempt against a configured PACS.
+///
+/// `latency_ms` is wall-clock from the initial association request to the
+/// C-ECHO-RSP arriving — it includes association setup, not just the round
+/// trip of the C-ECHO PDU itself.
+#[derive(serde::Serialize)]
+struct EchoResult {
+    ok: bool,
+    latency_ms: Option<u64>,
+    error: Option<String>,
+}
+
+/// Run a C-ECHO against the cached PACS service identified by `service_id`.
+///
+/// Looks the service up in the local cache rather than re-fetching from
+/// Aurabox so the click-to-echo path is fast and works offline. Returns a
+/// shaped result rather than `Result<_, String>` so the UI can render
+/// success and failure consistently inline next to the row.
+#[tauri::command]
+async fn echo_pacs_service(app: AppHandle, service_id: String) -> Result<EchoResult, String> {
+    let services = load_cached_services(&app);
+    let service = services
+        .into_iter()
+        .find(|s| s.id == service_id)
+        .ok_or_else(|| format!("PACS service {} not in cache; refresh and try again", service_id))?;
+
+    let config = load_config(app);
+    let pacs: PacsService = service.into();
+
+    match execute_cecho(&config.ae_title, &pacs).await {
+        Ok(report) => Ok(EchoResult {
+            ok: true,
+            latency_ms: Some(report.latency_ms),
+            error: None,
+        }),
+        Err(e) => Ok(EchoResult {
+            ok: false,
+            latency_ms: None,
+            error: Some(e),
+        }),
+    }
 }
 
 #[tauri::command]
@@ -317,6 +373,36 @@ fn main() {
             // Initialize and manage server state
             app.manage(Arc::new(Mutex::new(init_server_state())));
 
+            // Refresh the PACS services cache from Aurabox in the background
+            // so the PACS tab shows fresh data on first open. Skipped if the
+            // API key is unset; failures are logged and leave the cache as-is.
+            let pacs_refresh_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let cfg = Config::load(pacs_refresh_handle.clone());
+                if cfg.api_key.trim().is_empty() {
+                    return;
+                }
+
+                let api = AuraApi::new(pacs_refresh_handle.clone());
+                match api.fetch_services().await {
+                    Ok(resp) => {
+                        if let Err(e) =
+                            save_cached_services(&pacs_refresh_handle, &resp.services)
+                        {
+                            log_error!("Startup PACS cache refresh: save failed: {}", e);
+                        } else {
+                            log_info!(
+                                "Startup PACS cache refresh: cached {} services",
+                                resp.services.len()
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        log_error!("Startup PACS cache refresh: fetch failed: {}", e);
+                    }
+                }
+            });
+
             Ok(())
         })
         .plugin(tauri_plugin_shell::init())
@@ -350,7 +436,9 @@ fn main() {
             api_start_upload,
             current_studies,
             cfind_query,
-            fetch_dicom_services,
+            list_pacs_services,
+            refresh_pacs_services,
+            echo_pacs_service,
             show_window,
             update_send_logs,
             verify_connectivity

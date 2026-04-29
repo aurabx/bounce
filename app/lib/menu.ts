@@ -3,7 +3,8 @@ import {
     InboxStackIcon,
     CommandLineIcon,
     Cog6ToothIcon,
-    WrenchScrewdriverIcon
+    WrenchScrewdriverIcon,
+    ServerStackIcon
 } from '@heroicons/react/24/outline';
 
 export type NavigationItem = {
@@ -23,6 +24,11 @@ export const items: NavigationItem[] = [{
     href: "/studies",
     title: "Studies",
     icon: InboxStackIcon
+},{
+    label: "PACS",
+    href: "/pacs",
+    title: "PACS",
+    icon: ServerStackIcon
 },{
     label: "Logs",
     href: "/logs",

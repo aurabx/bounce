@@ -19,3 +19,9 @@ export interface DicomService {
     host: string,
     port: number,
 }
+
+export interface EchoResult {
+    ok: boolean,
+    latency_ms: number | null,
+    error: string | null,
+}
