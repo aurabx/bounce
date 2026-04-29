@@ -17,6 +17,14 @@ export interface LogEntry {
 
 const MAX_LOG_ENTRIES = 2000
 
+export type ConnectivityStatus = 'idle' | 'checking' | 'ok' | 'failed';
+
+export interface ConnectivityState {
+    status: ConnectivityStatus,
+    error: string | null,
+    lastCheckedAt: number | null,
+}
+
 export interface State {
     logs: LogEntry[]
     studies: Study[],
@@ -24,6 +32,7 @@ export interface State {
     runningDetail: RunningDetail[],
     errors: string[],
     dicomServices: DicomService[],
+    connectivity: ConnectivityState,
 }
 
 const initialState: State = {
@@ -33,6 +42,11 @@ const initialState: State = {
     runningDetail: [],
     errors: [],
     dicomServices: [],
+    connectivity: {
+        status: 'idle',
+        error: null,
+        lastCheckedAt: null,
+    },
 }
 
 export const mainSlice = createSlice({
@@ -66,12 +80,38 @@ export const mainSlice = createSlice({
         },
         setDicomServices(state, action: PayloadAction<DicomService[]>){
             state.dicomServices = action.payload
-        }
+        },
+        setConnectivityChecking(state){
+            state.connectivity.status = 'checking'
+            state.connectivity.error = null
+        },
+        setConnectivityOk(state){
+            state.connectivity.status = 'ok'
+            state.connectivity.error = null
+            state.connectivity.lastCheckedAt = Date.now()
+        },
+        setConnectivityFailed(state, action: PayloadAction<string>){
+            state.connectivity.status = 'failed'
+            state.connectivity.error = action.payload
+            state.connectivity.lastCheckedAt = Date.now()
+        },
     },
 })
 
 // Action creators are generated for each case reducer function
-export const { logMessage, clearLogs, setRunning, setRunningDetail, setCurrentStudies, setError, setErrors, setDicomServices } = mainSlice.actions
+export const {
+    logMessage,
+    clearLogs,
+    setRunning,
+    setRunningDetail,
+    setCurrentStudies,
+    setError,
+    setErrors,
+    setDicomServices,
+    setConnectivityChecking,
+    setConnectivityOk,
+    setConnectivityFailed,
+} = mainSlice.actions
 
 export const makeStore = () => {
     return configureStore({

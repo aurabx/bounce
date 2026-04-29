@@ -6,6 +6,7 @@ import {useAppSelector} from "@/app/lib/hook";
 import { cn } from "@/app/lib/utils";
 import {useSetupComplete} from "@/app/lib/customHooks";
 import Settings from "@/app/components/Settings";
+import ConnectivityStatus from "@/app/components/ConnectivityStatus";
 import { Button } from "@/app/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/app/components/ui/card";
 import { Badge } from "@/app/components/ui/badge";
@@ -91,6 +92,10 @@ export default function Page() {
                         </div>
                     </CardContent>
                 </Card>
+
+                <div className="md:col-span-2">
+                    <ConnectivityStatus />
+                </div>
             </div>
 
             {running && (

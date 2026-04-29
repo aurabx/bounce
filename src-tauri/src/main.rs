@@ -45,6 +45,34 @@ fn update_send_logs(enabled: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// Verify that the currently saved API key can authenticate against the
+/// Aurabox API. Performs a GET against the bounce uploader config endpoint
+/// and returns the resolved endpoint URL on success.
+///
+/// Returns an error string suitable for direct display in the UI when the
+/// request fails (network error, 401/403, malformed key, etc.).
+#[tauri::command]
+async fn verify_connectivity(app: AppHandle) -> Result<String, String> {
+    let config = load_config(app.clone());
+
+    if config.api_key.trim().is_empty() {
+        return Err("API key is not set.".to_string());
+    }
+
+    if config.region_from_api_key().is_none() {
+        return Err("API key is malformed (expected aura_<region>_bounce_…).".to_string());
+    }
+
+    let endpoint = config.get_api_endpoint();
+    let aura_api = AuraApi::new(app);
+
+    aura_api
+        .upload_config()
+        .await
+        .map(|_| endpoint)
+        .map_err(|e| format!("Could not reach {}: {}", config.get_api_endpoint(), e))
+}
+
 #[tauri::command]
 async fn reset_app(app: AppHandle) -> Result<(), String> {
     let database = app.state::<Database>();
@@ -324,7 +352,8 @@ fn main() {
             cfind_query,
             fetch_dicom_services,
             show_window,
-            update_send_logs
+            update_send_logs,
+            verify_connectivity
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

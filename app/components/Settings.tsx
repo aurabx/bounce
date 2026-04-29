@@ -1,7 +1,7 @@
 'use client';
 
 import {load} from '@tauri-apps/plugin-store';
-import {Suspense, useEffect, useState, useCallback} from 'react'
+import {Suspense, useEffect, useState} from 'react'
 import {fields, fieldKeys} from "@/app/lib/fields";
 import { Alert, AlertTitle, AlertDescription } from "@/app/components/ui/alert";
 import { Button } from "@/app/components/ui/button";
@@ -12,6 +12,8 @@ import {useSetupComplete} from "@/app/lib/customHooks";
 import {cn} from "@/app/lib/utils";
 import {invoke} from "@tauri-apps/api/core";
 import { relaunch } from '@tauri-apps/plugin-process';
+import {useAppDispatch, useAppSelector} from "@/app/lib/hook";
+import {verifyConnectivity} from "@/app/lib/server";
 
 export default function Settings() {
 
@@ -21,8 +23,17 @@ export default function Settings() {
     const [env, setEnv] = useState<string|null>(null);
     const router = useRouter();
     const { setupComplete } = useSetupComplete();
+    const dispatch = useAppDispatch();
+    const connectivity = useAppSelector((state) => state.main.connectivity);
+    const verifying = connectivity.status === 'checking';
+    const verifyError = connectivity.status === 'failed' ? connectivity.error : null;
 
-
+    const deriveEnv = (apiKey: string | null | undefined): string | null => {
+        if (!apiKey) return null;
+        const parts = apiKey.split('_');
+        const last = parts[parts.length - 1];
+        return ['local', 'dev', 'staging'].includes(last) ? last : null;
+    };
 
     const save = async (e: any) => {
         e.preventDefault();
@@ -30,7 +41,17 @@ export default function Settings() {
         let store =  await load('store.json', { autoSave: false } as any);
 
         for (const fieldKey of fieldKeys) {
-            console.log(fieldKey, settings?.[fieldKey])
+            // Internal-only flags (prefixed with _) are not persisted.
+            if (fieldKey === 'api_key') {
+                // Only overwrite the stored API key when the user has typed a
+                // new value. An empty input means "no change" — the previously
+                // saved key stays intact and unrevealed.
+                const next = (settings?.api_key ?? '').toString().trim();
+                if (next.length > 0) {
+                    await store.set('api_key', next);
+                }
+                continue;
+            }
             await store.set(fieldKey, settings?.[fieldKey] ?? '')
         }
 
@@ -43,25 +64,32 @@ export default function Settings() {
         // Update remote logging flag in the backend without requiring a restart
         await invoke('update_send_logs', { enabled: settings?.['send_logs'] === 'yes' });
 
-        setSaved(true);
-        setTimeout(() => setSaved(false), 3000)
+        // Update env warning from whatever key is now stored (may be the new
+        // one or the existing one, depending on whether the user changed it).
+        const persistedKey = (await store.get('api_key')) as string | null;
+        setEnv(deriveEnv(persistedKey));
 
-        await checkApiKey()
+        // Reset the form's API key state: hide any value the user just typed
+        // and re-enter masked-display mode now that a key is saved.
+        setSettings((prev) => ({
+            ...prev,
+            api_key: '',
+            _has_api_key: !!persistedKey && persistedKey.length > 0,
+        }));
 
-        if (!setupComplete){
+        // Verify connectivity using the now-persisted key. Result lands in
+        // Redux so the dashboard's status card updates too.
+        const verifyOk = await verifyConnectivity(dispatch);
+        if (verifyOk) {
+            setSaved(true);
+            setTimeout(() => setSaved(false), 3000)
+        }
+
+        if (!setupComplete && verifyOk){
             router.push('/')
             window.location.reload()
         }
     };
-
-    const checkApiKey = useCallback(async () => {
-        if (settings && settings.api_key) {
-            const parts = settings.api_key.split('_');
-            const last = parts[parts.length - 1];
-
-            ['local', 'dev', 'staging'].includes(last) ? setEnv(last) : setEnv(null);
-        }
-    }, [settings]);
 
     const setField = async (key: string, value: any) => {
         setSettings({
@@ -84,7 +112,6 @@ export default function Settings() {
 
     const loadStore = async () => {
         let store =  await load('store.json', { autoSave: false } as any);
-        let values =  await store.entries();
 
         let data: { [key: string]: any } = {}
         for (const fieldKey of fieldKeys) {
@@ -94,6 +121,19 @@ export default function Settings() {
                 if (fieldKey === 'ip_address') val = '0.0.0.0';
                 if (fieldKey === 'send_logs') val = 'yes';
             }
+
+            // The API key is never copied into form state. We expose only
+            // a boolean indicating whether one is currently saved, plus a
+            // pre-derived environment label for the warning banner. This
+            // makes it impossible to read the saved key out of the UI.
+            if (fieldKey === 'api_key') {
+                const existing = typeof val === 'string' ? val : '';
+                data['api_key'] = '';
+                data['_has_api_key'] = existing.length > 0;
+                setEnv(deriveEnv(existing));
+                continue;
+            }
+
             data[fieldKey] = val
         }
         setSettings(data)
@@ -134,18 +174,38 @@ export default function Settings() {
     useEffect(() => {
         loadStore().then(async () => {
             setLoaded(true)
+            // Auto-verify connectivity on mount whenever a key is already
+            // configured. With no key there is nothing meaningful to check
+            // — leave the status as whatever it was (likely 'idle').
+            const store = await load('store.json', { autoSave: false } as any);
+            const existingKey = (await store.get('api_key')) as string | null;
+            if (existingKey && existingKey.length > 0) {
+                await verifyConnectivity(dispatch);
+            }
         })
-    }, [])
+    }, [dispatch])
 
+    // When the user types a new key in the form, reflect the implied env in
+    // the warning banner immediately. We deliberately do not derive env from
+    // a saved key here — loadStore() already did that on mount.
     useEffect(() => {
-        checkApiKey().then()
-    }, [checkApiKey]);
+        const typed = (settings?.api_key ?? '') as string;
+        if (typed.length > 0) {
+            setEnv(deriveEnv(typed));
+        }
+    }, [settings?.api_key]);
 
     return (
         <div className="space-y-4">
             {saved && <Alert variant="default" className="bg-green-50 text-green-800 border-green-200">
                 <AlertTitle>Success</AlertTitle>
-                <AlertDescription>Settings saved successfully.</AlertDescription>
+                <AlertDescription>Settings saved and connectivity verified.</AlertDescription>
+            </Alert>}
+            {verifyError && <Alert variant="destructive">
+                <AlertTitle>Connectivity check failed</AlertTitle>
+                <AlertDescription>
+                    Settings were saved, but Bounce could not reach Aurabox with the configured API key. {verifyError}
+                </AlertDescription>
             </Alert>}
             {env && <Alert variant="destructive">
                 <AlertTitle>Environment Warning</AlertTitle>
@@ -187,8 +247,9 @@ export default function Settings() {
                                     )}
                                     <Button
                                         type="submit"
+                                        disabled={verifying}
                                     >
-                                        Save
+                                        {verifying ? 'Verifying…' : 'Save'}
                                     </Button>
                                 </div>
                             </div>

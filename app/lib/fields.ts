@@ -1,5 +1,6 @@
 import TextInput from "@/app/components/Fields/TextInput";
 import SelectInput from "@/app/components/Fields/SelectInput";
+import ApiKeyInput from "@/app/components/Fields/ApiKeyInput";
 
 
 export const fieldKeys = [
@@ -20,7 +21,7 @@ export const fields = [{
         help: 'You can generate an api key in the account section of Aurabox',
         fullWidth: true,
     },
-    component: TextInput
+    component: ApiKeyInput
 },{
     config: {
         label: 'Port',
