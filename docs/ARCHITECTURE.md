@@ -6,6 +6,8 @@ This document describes the high-level architecture of Bounce, a DICOM C-STORE r
 
 - [System Overview](#system-overview)
 - [Component Architecture](#component-architecture)
+- [DICOM Endpoint Model](#dicom-endpoint-model)
+- [Aurabox Communication](#aurabox-communication)
 - [Data Flow](#data-flow)
 - [Technology Stack](#technology-stack)
 - [Module Descriptions](#module-descriptions)
@@ -178,6 +180,240 @@ The backend handles all DICOM operations, file management, database interactions
 - Optional remote logging to Better Stack (Logtail)
 - Structured log formatting
 - Frontend log viewer integration
+
+---
+
+## DICOM Endpoint Model
+
+Bounce participates in DICOM communication in three distinct roles. Each role
+has a different model for *which* endpoint(s) it talks to and *where the
+endpoint configuration lives*. Understanding this split is essential before
+making changes to networking, configuration, or job dispatch.
+
+### Roles at a glance
+
+| Role | Direction | Endpoints | Source of truth |
+|------|-----------|-----------|-----------------|
+| C-STORE SCP (receiver) | Inbound  | **Single** listening socket | Local `Config` (`store/config.rs`) |
+| C-FIND SCU (query)     | Outbound | **Many** remote PACS        | Aurabox (per-job payload) |
+| C-MOVE SCU (retrieve)  | Outbound | **Many** remote PACS        | Aurabox (per-job payload) |
+| C-STORE SCU (send)     | Outbound | **Many** destination PACS   | Aurabox (per-job payload) |
+
+### Inbound: single locally-configured listener
+
+Bounce's receiver (`receiver/dicom_server.rs`) binds **one** TCP socket and
+advertises **one** AE title. The listening parameters are stored locally and
+edited via the Settings UI:
+
+- `ip_address` — bind address (default `0.0.0.0`)
+- `port`       — listening port (default `9090`; `104` is the DICOM well-known port)
+- `ae_title`   — AE title advertised on associations (default `BOUNCE`)
+
+These three fields live on the [`Config`](../src-tauri/src/store/config.rs)
+struct and are persisted by the Tauri `plugin-store`. There is no list of
+listeners — a Bounce instance is a single SCP. Multiple upstream
+modalities/PACS may *connect to* this one listener concurrently, but Bounce
+itself exposes one endpoint to the network.
+
+Calling AE titles are **not** allow-listed in config; the SCP accepts
+associations from any caller that can reach the socket. Access control is
+delegated to the network layer (firewall, VPN, on-prem segmentation).
+
+### Outbound: many endpoints, all supplied by Aurabox
+
+For every outbound DIMSE role (C-FIND, C-MOVE, C-STORE-as-SCU), the remote
+PACS connection details are **not** stored in Bounce's local config. Instead,
+they arrive as part of each job payload fetched from Aurabox by
+`query/poller.rs`:
+
+- `PacsQueryRequest.service` — C-FIND target
+  ([models.rs:30](../src-tauri/src/query/models.rs))
+- `RetrieveJob.service` — C-MOVE source
+  ([models.rs:343](../src-tauri/src/query/models.rs))
+- `SendJob.destination` — C-STORE SCU target
+  ([models.rs:352](../src-tauri/src/query/models.rs))
+
+All three carry the same connection shape (`ae_title`, `host`, `port`) and
+collapse into the lightweight [`PacsService`](../src-tauri/src/query/models.rs)
+before being handed to the DIMSE execution code. This is why
+`PacsService: From<DicomService> | From<RetrieveService> | From<SendDestination>`
+is implemented three times — same wire-level shape, different job context.
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                          Aurabox                                  │
+│  (source of truth for all remote PACS Bounce can talk to)         │
+│                                                                   │
+│   PACS A (host:port, AE)   PACS B (host:port, AE)   PACS C ...    │
+└─────────────────────────┬─────────────────────────────────────────┘
+                          │  GET /api/bounce/jobs/pending
+                          │  (job payload contains connection details)
+                          ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                          Bounce                                   │
+│                                                                   │
+│   query/poller.rs ─► dispatch by job.type                         │
+│        │                                                          │
+│        ├─► RetrieveJob  → query/cmove.rs   (per-job target)       │
+│        ├─► SendJob      → send/worker.rs   (per-job destination)  │
+│        └─► PacsQuery…   → query/cfind.rs   (per-job service)      │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+#### Implications
+
+- **No "remote PACS" entries exist in Bounce's settings.** Operators add,
+  remove, or rename PACS in Aurabox; Bounce picks them up automatically on the
+  next poll cycle. This keeps the on-prem deployment thin and means PACS
+  topology can be changed without touching the desktop client.
+- **Calling AE title for outbound associations.** When Bounce initiates an
+  outbound association (C-FIND, C-MOVE, C-STORE SCU), it uses its own
+  `ae_title` from local config as the *calling* AE — the same value it
+  advertises on the SCP side. The *called* AE is taken from the job payload.
+- **Job-scoped trust.** Bounce will dial whatever `host`/`port` arrives in a
+  job. Authenticity is therefore anchored on the Aurabox API call (TLS +
+  scoped API key). A compromised Aurabox tenancy could redirect Bounce to an
+  arbitrary host; this is an accepted trust boundary for v1.
+- **No local fallback.** If Aurabox is unreachable, Bounce cannot perform any
+  outbound DIMSE operation, because it has no cached or operator-supplied
+  PACS list. This is intentional: a single source of truth eliminates drift
+  between cloud and on-prem service catalogs.
+
+### What this means for changes
+
+- Adding a new outbound DIMSE role: extend the unified jobs endpoint and the
+  poller dispatch. Do **not** add PACS connection fields to `Config`.
+- Adding multi-listener support (e.g., separate AE titles for separate
+  tenancies): this would require extending `Config` from a single record to a
+  collection and updating `receiver/dicom_server.rs` to bind multiple sockets.
+  Currently out of scope.
+- Local PACS allow-listing on the SCP: not currently supported; would need to
+  be added to `Config` and enforced in `receiver/server.rs` at association
+  acceptance.
+
+---
+
+## Aurabox Communication
+
+Bounce does not receive its *operational* configuration from Aurabox — local
+fields (`api_key`, `port`, `ae_title`, `ip_address`, `base_dir`,
+`delete_after_success`, `send_logs`) live in the Tauri `plugin-store` and are
+edited from the Settings UI. What Aurabox provides over HTTP is a small,
+read-only set of **uploader config**, a **services catalog**, and **per-job
+payloads**. There is no push channel; everything is HTTP polling or
+on-demand fetches.
+
+### Authentication and base URL
+
+Both the credential and the routing destination collapse onto a single local
+field, `api_key`. The key has the shape:
+
+```
+aura_<region>_bounce_<user>_<token>_<env>
+```
+
+- **Bearer token.** Every request sets `Authorization: Bearer {api_key}`
+  (e.g. [`aura_api.rs:47`](../src-tauri/src/aura/aura_api.rs),
+  [`query_api.rs:51`](../src-tauri/src/aura/query_api.rs)).
+- **Base URL.** Derived by
+  [`Config::get_api_endpoint()`](../src-tauri/src/store/config.rs).
+  `region_from_api_key()` selects the host
+  (`https://{region}.aurabox.app`); `mode_from_api_key()` overrides it for
+  `staging`, `dev`, and `local` environments.
+
+There is no separate "Aurabox URL" setting — rotating tenancies or
+environments is done by issuing a new API key, not by reconfiguring Bounce.
+
+### Endpoints consumed
+
+| Endpoint | Method | Purpose | Caller |
+|----------|--------|---------|--------|
+| `/api/bounce/config` | GET | Uploader config: TUS `endpoint`, `token`, `bucket`, `mode`, `assembly_id`, plus a `lift` block | [`aura_api.rs::upload_config`](../src-tauri/src/aura/aura_api.rs) |
+| `/api/bounce/queries/services` | GET | Available remote PACS catalog (`DicomService[]`) for UI display | [`query_api.rs::fetch_services`](../src-tauri/src/aura/query_api.rs) |
+| `/api/bounce/queries/pending` | GET | Pending C-FIND queries (legacy) | [`query_api.rs::fetch_pending_queries`](../src-tauri/src/aura/query_api.rs) |
+| `/api/bounce/jobs/pending` | GET | Unified jobs payload (retrieves + sends); each job carries its own PACS connection details | [`query_api.rs::fetch_pending_jobs`](../src-tauri/src/aura/query_api.rs) |
+| `/api/bounce/find` | POST | Ad-hoc study search proxied to Aurabox | [`query_api.rs::find_studies`](../src-tauri/src/aura/query_api.rs) |
+| `/api/bounce/queries/{id}/results` | POST | Report C-FIND results | `query_api.rs::post_query_results` |
+| `/api/bounce/queries/{id}/failed` | POST | Report C-FIND failure | `query_api.rs::post_query_failed` |
+| `/api/bounce/retrieves/{id}/completed` | POST | Report C-MOVE completion | `query_api.rs::post_retrieve_completed` |
+| `/api/bounce/retrieves/{id}/failed` | POST | Report C-MOVE failure | `query_api.rs::post_retrieve_failed` |
+| `/api/bounce/sends/{id}/progress` | POST | Stream send progress | `query_api.rs::post_send_progress` |
+| `/api/bounce/sends/{id}/completed` | POST | Report C-STORE SCU completion | `query_api.rs::post_send_completed` |
+| `/api/bounce/sends/{id}/failed` | POST | Report C-STORE SCU failure | `query_api.rs::post_send_failed` |
+| `/api/bounce/upload/init` | POST | Begin a study upload (assembly handshake) | `aura_api.rs::upload_init` |
+| `/api/bounce/upload/{path}` | POST | Complete a study upload | `aura_api.rs::upload_save` |
+
+Of the GETs, only `/api/bounce/config` resembles "config from Aurabox" — it
+carries the dynamic parts of the upload pipeline (TUS endpoint, bearer token,
+S3 bucket). The other GETs return *work* (jobs, queries) or *catalog data*
+(services), not settings.
+
+### When fetches happen
+
+```
+                ┌─────────────────────────────────────────┐
+                │  Startup (main.rs)                      │
+                │   ├─ load Config from plugin-store      │
+                │   └─ AuraApi::upload_config()           │
+                │        (probe; surfaces "Could not      │
+                │         reach …" if it fails)           │
+                └─────────────────────────────────────────┘
+                                  │
+                                  ▼
+                ┌─────────────────────────────────────────┐
+                │  Background poller (query/poller.rs)    │
+                │   loop every POLL_INTERVAL (5 s):       │
+                │     ├─ skip if api_key is empty         │
+                │     ├─ fetch_pending_queries()          │
+                │     └─ fetch_pending_jobs()             │
+                │          ├─ retrieves: sequential       │
+                │          └─ sends: semaphore (max 2)    │
+                └─────────────────────────────────────────┘
+                                  │
+                                  ▼
+                ┌─────────────────────────────────────────┐
+                │  On-demand                              │
+                │   ├─ fetch_services()  (UI dropdowns)   │
+                │   ├─ find_studies()    (study search)   │
+                │   ├─ upload_config()   (per upload,     │
+                │   │     fresh — no caching)             │
+                │   └─ post_*           (job reporting)   │
+                └─────────────────────────────────────────┘
+```
+
+Key cadence facts:
+
+- Poll cadence is fixed at [`POLL_INTERVAL = 5 s`](../src-tauri/src/query/poller.rs);
+  there is no exponential backoff, but the tick is skipped entirely when
+  `api_key` is empty so an unconfigured install does not generate traffic.
+- Outbound C-STORE sends are dispatched into a tokio task pool capped at
+  [`MAX_CONCURRENT_SENDS = 2`](../src-tauri/src/query/poller.rs) per Bounce
+  gateway. Retrieves run sequentially because they all share the local SCP
+  receive pipeline.
+- Uploader config is **not cached**. Every upload calls
+  `aura_api.upload_config()` again, so Aurabox can rotate the TUS bearer or
+  retarget the bucket without restarting Bounce — change takes effect on the
+  next upload.
+
+### Trust and offline behaviour
+
+Authenticity is anchored entirely on TLS plus the local API key. Notable
+consequences:
+
+- **Receive path is independent of Aurabox.** The C-STORE SCP keeps
+  accepting associations and queuing studies on disk even when Aurabox is
+  unreachable. Backlogged studies upload when connectivity returns.
+- **Outbound DIMSE requires Aurabox.** C-FIND, C-MOVE, and C-STORE SCU jobs
+  all originate from the polled jobs feed. Bounce holds no offline cache of
+  jobs or the services catalog, so a partition stops outbound work entirely.
+- **Uploads require Aurabox.** Without a fresh `upload_config()` response
+  Bounce cannot start a TUS upload; partial/in-flight uploads continue
+  against the existing TUS endpoint and resume per the TUS protocol when
+  reconnected.
+- **Trust transitivity.** A compromised Aurabox tenancy could redirect
+  Bounce to dial arbitrary `host`/`port`/`AE` values via the jobs feed. This
+  is an accepted v1 trust boundary; mitigations (signed job payloads, local
+  PACS allow-list) are out of scope.
 
 ---
 
