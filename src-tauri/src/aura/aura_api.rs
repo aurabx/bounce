@@ -1,7 +1,7 @@
-use crate::aura::query_api::QueryApiClient;
+use crate::aura::query_api::{MoveResolveOutcome, QueryApiClient};
 use crate::query::models::{
-    CfindResult, FindStudiesResponse, FindStudyRequest, PendingJobsResponse,
-    PendingQueriesResponse, ServicesResponse,
+    CfindResult, FindStudiesResponse, FindStudyRequest, MoveResolveRequest,
+    PendingJobsResponse, PendingQueriesResponse, ServicesResponse,
 };
 use crate::{load_config, log_info};
 use anyhow::Error;
@@ -222,6 +222,20 @@ impl AuraApi {
     /// Fetch all pending jobs (retrieves + sends) for this gateway.
     pub async fn fetch_pending_jobs(&self) -> anyhow::Result<PendingJobsResponse> {
         self.query_client().fetch_pending_jobs().await
+    }
+
+    // -------------------------------------------------------------------
+    // Workstation-initiated retrieve resolution (Bounce as C-MOVE / C-GET SCP)
+    // -------------------------------------------------------------------
+
+    /// Resolve a study UID to a WADO-RS source so Bounce can serve a
+    /// workstation-initiated retrieve.
+    #[allow(dead_code)] // called from dicom_server at runtime via QueryApiClient
+    pub async fn resolve_move(
+        &self,
+        request: &MoveResolveRequest,
+    ) -> anyhow::Result<MoveResolveOutcome> {
+        self.query_client().resolve_move(request).await
     }
 
     // -------------------------------------------------------------------

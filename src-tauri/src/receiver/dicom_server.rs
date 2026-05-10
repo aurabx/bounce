@@ -2,6 +2,7 @@ use crate::aura::query_api::QueryApiClient;
 use crate::db::database::Database;
 use crate::dimse;
 use crate::receiver::cfind_handler;
+use crate::receiver::cmove_handler;
 use crate::receiver::metadata::Metadata;
 use crate::transmitter::transmission::QueueUpload;
 use crate::{load_config, log_error, log_info, receiver, store};
@@ -12,7 +13,7 @@ use dicom::encoding::TransferSyntaxIndex;
 use dicom::object::{FileMetaTableBuilder, InMemDicomObject, StandardDataDictionary};
 use dicom::transfer_syntax::TransferSyntaxRegistry;
 use dicom_ul::{pdu::PDataValueType, Pdu};
-use receiver::enums::{ABSTRACT_SYNTAXES, STUDY_ROOT_FIND};
+use receiver::enums::{ABSTRACT_SYNTAXES, STUDY_ROOT_FIND, STUDY_ROOT_MOVE};
 use snafu::{OptionExt, Report, ResultExt, Whatever};
 use std::fs;
 use std::net::{Ipv4Addr, SocketAddrV4, TcpStream};
@@ -39,6 +40,11 @@ enum PendingDimseCommand {
         message_id: u16,
         presentation_context_id: u8,
         query_level: String,
+    },
+    CMove {
+        message_id: u16,
+        presentation_context_id: u8,
+        move_destination_ae: String,
     },
 }
 
@@ -159,6 +165,11 @@ impl DICOMServer {
         // Accept Study Root C-FIND so connected SCUs can query Aura's
         // study database via Bounce.
         options = options.with_abstract_syntax(STUDY_ROOT_FIND);
+
+        // Accept Study Root C-MOVE so connected SCUs can pull studies from
+        // Aurabox. Bounce fetches the bytes from Uhura via WADO-RS and
+        // forwards them to the move-destination AE via C-STORE SCU.
+        options = options.with_abstract_syntax(STUDY_ROOT_MOVE);
 
         let mut association = options
             .establish(scu_stream)
@@ -353,6 +364,57 @@ impl DICOMServer {
                                             sop_class_uid: sop_class_uid.clone(),
                                             sop_instance_uid: sop_instance_uid.clone(),
                                         });
+                                    } else if command_field == 0x0021 {
+                                        // C-MOVE-RQ — workstation asking
+                                        // Bounce to forward a study to a
+                                        // named destination AE.
+                                        let move_msg_id = incoming_message_id;
+                                        let move_destination_ae =
+                                            Self::extract_string_tag_optional(
+                                                &obj,
+                                                Tag(0x0000, 0x0600),
+                                            )
+                                            .map(|s| s.trim_end_matches('\0').to_string())
+                                            .unwrap_or_default();
+
+                                        dimse::log_scp_request(
+                                            association.client_ae_title(),
+                                            request_name,
+                                            data_value.presentation_context_id,
+                                            move_msg_id,
+                                            &[
+                                                (
+                                                    "move_destination",
+                                                    move_destination_ae.clone(),
+                                                ),
+                                                (
+                                                    "priority",
+                                                    dimse::format_optional_u16(
+                                                        Self::extract_int_tag_optional(
+                                                            &obj,
+                                                            tags::PRIORITY,
+                                                        ),
+                                                    ),
+                                                ),
+                                                (
+                                                    "affected_sop_class_uid",
+                                                    dimse::format_optional_str(
+                                                        Self::extract_string_tag_optional(
+                                                            &obj,
+                                                            tags::AFFECTED_SOP_CLASS_UID,
+                                                        )
+                                                        .as_deref(),
+                                                    ),
+                                                ),
+                                            ],
+                                        );
+
+                                        pending_command = Some(PendingDimseCommand::CMove {
+                                            message_id: move_msg_id,
+                                            presentation_context_id: data_value
+                                                .presentation_context_id,
+                                            move_destination_ae,
+                                        });
                                     } else {
                                         pending_command = None;
                                         dimse::log_scp_request(
@@ -424,6 +486,39 @@ impl DICOMServer {
                                             .await
                                             {
                                                 log_error!("C-FIND SCP: handler error: {}", e);
+                                            }
+                                        }
+                                        PendingDimseCommand::CMove {
+                                            message_id,
+                                            presentation_context_id,
+                                            move_destination_ae,
+                                        } => {
+                                            let api_client = if let Some(ref app_handle) =
+                                                self.app_handle
+                                            {
+                                                let cfg = load_config(app_handle.clone());
+                                                QueryApiClient::new(
+                                                    cfg.get_api_endpoint(),
+                                                    cfg.api_key,
+                                                )
+                                            } else {
+                                                log_error!("C-MOVE SCP: no app handle — cannot build API client");
+                                                instance_buffer.clear();
+                                                pending_command = None;
+                                                continue;
+                                            };
+
+                                            if let Err(e) = cmove_handler::handle_cmove(
+                                                &mut association,
+                                                instance_buffer.as_slice(),
+                                                &move_destination_ae,
+                                                message_id,
+                                                presentation_context_id,
+                                                &api_client,
+                                            )
+                                            .await
+                                            {
+                                                log_error!("C-MOVE SCP: handler error: {}", e);
                                             }
                                         }
                                         PendingDimseCommand::CStore {

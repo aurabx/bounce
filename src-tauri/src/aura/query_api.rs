@@ -9,9 +9,10 @@
 
 use crate::log_info;
 use crate::query::models::{
-    CfindResult, FindStudiesResponse, FindStudyRequest, PendingJobsResponse,
-    PendingQueriesResponse, QueryFailedPayload, QueryResultsPayload, RetrieveFailedPayload,
-    SendFailedPayload, SendProgressPayload, ServicesResponse,
+    CfindResult, FindStudiesResponse, FindStudyRequest, MoveResolveRequest,
+    MoveResolveResponse, PendingJobsResponse, PendingQueriesResponse, QueryFailedPayload,
+    QueryResultsPayload, RetrieveFailedPayload, SendFailedPayload, SendProgressPayload,
+    ServicesResponse,
 };
 use reqwest::Client;
 use serde_json::Value;
@@ -25,6 +26,22 @@ pub struct QueryApiClient {
     client: Client,
     base_url: String,
     api_key: String,
+}
+
+/// Outcome of [`QueryApiClient::resolve_move`].
+///
+/// Aura's `move/resolve` endpoint distinguishes three success-shaped paths
+/// that the SCP handler responds to differently:
+///   - [`MoveResolveOutcome::Resolved`] — proceed with the retrieve.
+///   - [`MoveResolveOutcome::NotFound`] — surface as DIMSE status 0xA900
+///     (Identifier does not match SOP Class) or similar to the SCU.
+///   - [`MoveResolveOutcome::DestinationUnknown`] — surface as DIMSE status
+///     0xA801 (Move destination unknown) to the SCU.
+#[derive(Debug, Clone)]
+pub enum MoveResolveOutcome {
+    Resolved(MoveResolveResponse),
+    NotFound,
+    DestinationUnknown,
 }
 
 impl QueryApiClient {
@@ -313,6 +330,65 @@ impl QueryApiClient {
             .await?;
 
         Self::handle_response(response).await
+    }
+
+    // -------------------------------------------------------------------
+    // C-MOVE / C-GET SCP — workstation-initiated retrieves from Aurabox
+    // -------------------------------------------------------------------
+
+    /// Resolve a study UID to a WADO-RS source (and optionally a configured
+    /// move-destination service) so Bounce can serve a workstation's
+    /// C-MOVE-RQ or C-GET-RQ.
+    ///
+    /// Calls `POST {base_url}/api/bounce/move/resolve`. A 404 response is
+    /// surfaced as `MoveResolveOutcome::NotFound`, a 422 (move destination AE
+    /// unknown) as `MoveResolveOutcome::DestinationUnknown`. Anything else is
+    /// returned as a regular error.
+    pub async fn resolve_move(
+        &self,
+        request: &MoveResolveRequest,
+    ) -> anyhow::Result<MoveResolveOutcome> {
+        let url = format!("{}/api/bounce/move/resolve", self.base_url);
+
+        let response = self
+            .client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json")
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .json(request)
+            .send()
+            .await?;
+
+        let status = response.status();
+
+        if status.as_u16() == 404 {
+            return Ok(MoveResolveOutcome::NotFound);
+        }
+
+        if status.as_u16() == 422 {
+            return Ok(MoveResolveOutcome::DestinationUnknown);
+        }
+
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!(
+                "Failed to resolve move: HTTP {} - {}",
+                status,
+                body,
+            ));
+        }
+
+        let body = response.text().await?;
+        let parsed: MoveResolveResponse = serde_json::from_str(&body).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse move/resolve response: {}. Raw: {}",
+                e,
+                body,
+            )
+        })?;
+
+        Ok(MoveResolveOutcome::Resolved(parsed))
     }
 
     /// Query the authenticated organisation's studies in Aura.

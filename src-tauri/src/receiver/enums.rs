@@ -5,6 +5,10 @@ use dicom_dictionary_std::uids::*;
 #[allow(dead_code)]
 pub const STUDY_ROOT_FIND: &str = "1.2.840.10008.5.1.4.1.2.2.1";
 
+/// Study Root Query/Retrieve Information Model - MOVE
+#[allow(dead_code)]
+pub const STUDY_ROOT_MOVE: &str = "1.2.840.10008.5.1.4.1.2.2.2";
+
 /// A list of supported abstract syntaxes for storage services
 #[allow(deprecated)]
 pub static ABSTRACT_SYNTAXES: &[&str] = &[

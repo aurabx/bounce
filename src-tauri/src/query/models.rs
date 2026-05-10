@@ -328,9 +328,14 @@ impl From<SendDestination> for PacsService {
 ///
 /// `wado_base_url` + `study_path` form the absolute URL to GET. `jwt` is a
 /// short-lived, study-scoped bearer token minted by Aura at job creation time
-/// and accepted by Uhura's WADO-RS surface.
+/// and accepted by Uhura's WADO-RS surface. `study_id` is the Aura DB UUID of
+/// the study, present on responses from the synchronous resolve endpoint and
+/// useful for diagnostic logging — it's not required for the WADO fetch
+/// itself.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct WadoSource {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub study_id: Option<String>,
     pub wado_base_url: String,
     pub study_path: String,
     pub jwt: String,
@@ -386,4 +391,52 @@ pub struct SendProgressPayload {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SendFailedPayload {
     pub error: String,
+}
+
+// ---------------------------------------------------------------------------
+// C-MOVE / C-GET SCP — workstation-initiated retrieves from Aurabox
+// ---------------------------------------------------------------------------
+
+/// Request body for `POST /api/bounce/move/resolve`.
+///
+/// `study_instance_uid` is mandatory. `move_destination_ae` is set when an
+/// inbound C-MOVE-RQ was received (so Aura also resolves the destination
+/// service); for C-GET, leave it `None`.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MoveResolveRequest {
+    pub study_instance_uid: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub move_destination_ae: Option<String>,
+}
+
+/// Destination DICOM service resolved by `move/resolve` for a C-MOVE-RQ.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MoveDestination {
+    pub id: String,
+    pub ae_title: String,
+    pub host: String,
+    pub port: u16,
+}
+
+impl From<MoveDestination> for PacsService {
+    fn from(svc: MoveDestination) -> Self {
+        PacsService {
+            ae_title: svc.ae_title,
+            host: svc.host,
+            port: svc.port,
+        }
+    }
+}
+
+/// Response body returned by `POST /api/bounce/move/resolve`.
+///
+/// `source` is always present when the study is resolvable in the gateway's
+/// realm. `destination` is present only when the request included a
+/// `move_destination_ae` and Aura matched it to a configured DICOM service
+/// for the team with outbound sending enabled.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MoveResolveResponse {
+    pub source: WadoSource,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub destination: Option<MoveDestination>,
 }
