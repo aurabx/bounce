@@ -310,4 +310,174 @@ mod tests {
 
         scp_handle.await.unwrap();
     }
+
+    /// Mid-batch the SCP drops the connection right after acknowledging the
+    /// first instance. The SCU should classify this as a transient failure,
+    /// reopen the association, skip the already-acked instance, and finish
+    /// the second instance on the new association.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_execute_cstore_reopens_on_transient_drop_and_resumes() {
+        use dicom_ul::association::ServerAssociationOptions;
+        use dicom_ul::pdu::{PDataValue, PDataValueType, Pdu};
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        // Mock SCP: accept up to two associations sequentially. Each one
+        // processes a single C-STORE-RQ, sends a Success RSP, then closes
+        // the connection without waiting for a release. The SCU should see
+        // the close as a transient failure on its second send and reopen.
+        let scp_handle = tokio::task::spawn_blocking(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+
+            rt.block_on(async {
+                for _ in 0..2 {
+                    let (stream, _) = match listener.accept().await {
+                        Ok(s) => s,
+                        Err(_) => return,
+                    };
+                    let std_stream = match stream.into_std() {
+                        Ok(s) => s,
+                        Err(_) => return,
+                    };
+                    if std_stream.set_nonblocking(false).is_err() {
+                        return;
+                    }
+
+                    let mut options = ServerAssociationOptions::new()
+                        .accept_any()
+                        .ae_title("MOCK_PACS")
+                        .promiscuous(true);
+                    for ts in dicom::transfer_syntax::TransferSyntaxRegistry.iter() {
+                        if !ts.is_unsupported() {
+                            options = options.with_transfer_syntax(ts.uid());
+                        }
+                    }
+                    options = options.with_abstract_syntax(CT_IMAGE_STORAGE);
+
+                    let mut association = match options.establish(std_stream) {
+                        Ok(a) => a,
+                        Err(_) => continue,
+                    };
+
+                    let command_ts =
+                        dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN
+                            .erased();
+
+                    let mut got_command = false;
+                    let mut got_data = false;
+                    let mut request_pc_id: u8 = 1;
+                    let mut request_msg_id: u16 = 1;
+
+                    while !got_command || !got_data {
+                        let pdu = match association.receive() {
+                            Ok(p) => p,
+                            Err(_) => break,
+                        };
+                        if let Pdu::PData { data } = pdu {
+                            for dv in &data {
+                                if dv.value_type == PDataValueType::Command && dv.is_last {
+                                    request_pc_id = dv.presentation_context_id;
+                                    if let Ok(cmd) = InMemDicomObject::read_dataset_with_ts(
+                                        dv.data.as_slice(),
+                                        &command_ts,
+                                    ) {
+                                        if let Ok(elem) = cmd.element(tags::MESSAGE_ID) {
+                                            if let Ok(v) = elem.to_int::<u16>() {
+                                                request_msg_id = v;
+                                            }
+                                        }
+                                    }
+                                    got_command = true;
+                                } else if dv.value_type == PDataValueType::Data && dv.is_last {
+                                    got_data = true;
+                                }
+                            }
+                        }
+                    }
+
+                    if got_command && got_data {
+                        let rsp = InMemDicomObject::command_from_element_iter([
+                            DataElement::new(
+                                tags::AFFECTED_SOP_CLASS_UID,
+                                VR::UI,
+                                dicom_value!(Str, CT_IMAGE_STORAGE),
+                            ),
+                            DataElement::new(
+                                tags::COMMAND_FIELD,
+                                VR::US,
+                                dicom_value!(U16, [0x8001u16]),
+                            ),
+                            DataElement::new(
+                                tags::MESSAGE_ID_BEING_RESPONDED_TO,
+                                VR::US,
+                                dicom_value!(U16, [request_msg_id]),
+                            ),
+                            DataElement::new(
+                                tags::COMMAND_DATA_SET_TYPE,
+                                VR::US,
+                                dicom_value!(U16, [0x0101u16]),
+                            ),
+                            DataElement::new(
+                                tags::STATUS,
+                                VR::US,
+                                dicom_value!(U16, [0x0000u16]),
+                            ),
+                        ]);
+
+                        let mut bytes = Vec::new();
+                        rsp.write_dataset_with_ts(&mut bytes, &command_ts).unwrap();
+                        let _ = association.send(&Pdu::PData {
+                            data: vec![PDataValue {
+                                presentation_context_id: request_pc_id,
+                                value_type: PDataValueType::Command,
+                                is_last: true,
+                                data: bytes,
+                            }],
+                        });
+                    }
+
+                    // Drop the association without releasing — the SCU's
+                    // next operation on it will fail, triggering a reopen.
+                    drop(association);
+                }
+            });
+        });
+
+        let pacs = PacsService {
+            ae_title: "MOCK_PACS".to_string(),
+            host: addr.ip().to_string(),
+            port: addr.port(),
+        };
+
+        let instances = vec![
+            build_test_instance("1.2.3.4.5.6.7.8.9.RESUME-INST1"),
+            build_test_instance("1.2.3.4.5.6.7.8.9.RESUME-INST2"),
+        ];
+
+        let report = execute_cstore("BOUNCE", &pacs, &instances)
+            .await
+            .expect("C-STORE should succeed across an association reopen");
+
+        assert_eq!(
+            report.successes.len(),
+            2,
+            "both instances should be acked across the reopen"
+        );
+        assert_eq!(report.failures.len(), 0);
+
+        let acked: std::collections::HashSet<&str> = report
+            .successes
+            .iter()
+            .map(|r| r.sop_instance_uid.as_str())
+            .collect();
+        assert!(acked.contains("1.2.3.4.5.6.7.8.9.RESUME-INST1"));
+        assert!(acked.contains("1.2.3.4.5.6.7.8.9.RESUME-INST2"));
+
+        scp_handle.await.unwrap();
+    }
 }

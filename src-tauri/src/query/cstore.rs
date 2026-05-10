@@ -13,6 +13,16 @@
 //! for the rationale and the path to on-the-fly transcoding later. If the
 //! destination PACS does not accept any compatible transfer syntax, the send
 //! fails fast with a clear error message.
+//!
+//! ## Transient-failure recovery
+//!
+//! Mid-batch TCP drops are handled by retrying with a fresh association up to
+//! [`MAX_ASSOCIATION_REOPENS`] times. Successful instances from earlier
+//! attempts are remembered in an `acked` set and skipped on subsequent
+//! attempts so the destination is not double-stored. Reopens only kick in
+//! once at least one instance has been acknowledged — a connection that
+//! never worked is treated as a configuration error and surfaced
+//! immediately rather than burning the retry budget.
 
 use crate::dimse;
 use crate::query::cfind::{extract_status, extract_string_optional};
@@ -27,7 +37,7 @@ use dicom::object::{FileDicomObject, InMemDicomObject, StandardDataDictionary};
 use dicom_transfer_syntax_registry::TransferSyntaxRegistry;
 use dicom_ul::association::ClientAssociationOptions;
 use dicom_ul::pdu::{PDataValueType, Pdu, PresentationContextResultReason};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 /// Maximum time to wait for the entire C-STORE batch.
@@ -36,13 +46,20 @@ use std::time::Duration;
 /// timeout must be generous. Tunable later if real-world traffic warrants it.
 const CSTORE_TIMEOUT: Duration = Duration::from_secs(600);
 
+/// How many times to reopen the association after a transient failure.
+///
+/// Combined with the exponential backoff (2 s, 4 s, 8 s) the SCU spends at
+/// most ~14 s sleeping plus per-attempt work. With the 600 s overall timeout,
+/// even three full attempts comfortably fit.
+pub(crate) const MAX_ASSOCIATION_REOPENS: u8 = 3;
+
 /// Transfer syntaxes Bounce will offer for every abstract syntax negotiated.
 ///
 /// Order matters — preferred syntax first. Explicit VR Little Endian is the
 /// universal baseline that almost every PACS accepts.
 pub const PROPOSED_TRANSFER_SYNTAXES: &[&str] = &[
-    "1.2.840.10008.1.2.1", // Explicit VR Little Endian
-    "1.2.840.10008.1.2",   // Implicit VR Little Endian
+    "1.2.840.10008.1.2.1",    // Explicit VR Little Endian
+    "1.2.840.10008.1.2",      // Implicit VR Little Endian
     "1.2.840.10008.1.2.4.50", // JPEG Baseline (Process 1)
 ];
 
@@ -73,12 +90,32 @@ impl SendReport {
     }
 }
 
+/// Outcome of one association attempt. Distinguishes failures the SCU can
+/// reasonably recover from (TCP-level) from those it cannot (protocol-level).
+#[derive(Debug)]
+struct AttemptError {
+    message: String,
+    transient: bool,
+}
+
+impl AttemptError {
+    fn transient(msg: impl Into<String>) -> Self {
+        Self { message: msg.into(), transient: true }
+    }
+
+    fn fatal(msg: impl Into<String>) -> Self {
+        Self { message: msg.into(), transient: false }
+    }
+}
+
 /// Execute a batch of C-STORE-RQ operations against a remote PACS.
 ///
-/// The instances are sent in order on a single association. Each instance is
-/// matched against an accepted presentation context whose abstract syntax
-/// equals the SOP class of the instance. If no compatible context exists,
-/// the instance is recorded as a failure and the loop continues.
+/// The instances are sent on a single association where possible. If the
+/// connection drops mid-batch the SCU reopens it (up to
+/// [`MAX_ASSOCIATION_REOPENS`] times) and resumes from the next un-acked
+/// instance. Per-instance non-success statuses are recorded in the report
+/// and do not trigger a reopen — they reflect a deliberate rejection by the
+/// destination, not a network blip.
 pub async fn execute_cstore(
     calling_ae: &str,
     pacs: &PacsService,
@@ -111,10 +148,84 @@ async fn execute_cstore_inner(
         return Ok(SendReport::default());
     }
 
-    let addr = format!("{}:{}", pacs.host, pacs.port);
+    let sop_classes = collect_sop_classes(instances)?;
+    let mut report = SendReport::default();
+    let mut acked: HashSet<String> = HashSet::new();
+    let mut reopens: u8 = 0;
 
-    // Collect every distinct SOP class across the batch — we must negotiate
-    // one presentation context per abstract syntax.
+    loop {
+        let remaining: Vec<&FileDicomObject<InMemDicomObject>> = instances
+            .iter()
+            .filter(|obj| {
+                let uid = sop_instance_uid(obj).unwrap_or_default();
+                !acked.contains(&uid)
+                    && !report.failures.iter().any(|f| f.sop_instance_uid == uid)
+            })
+            .collect();
+
+        if remaining.is_empty() {
+            log_info!(
+                "C-STORE: batch complete; {} succeeded, {} failed (after {} reopen(s))",
+                report.successes.len(),
+                report.failures.len(),
+                reopens,
+            );
+            return Ok(report);
+        }
+
+        match attempt_batch(
+            calling_ae,
+            pacs,
+            &sop_classes,
+            &remaining,
+            &mut acked,
+            &mut report,
+        )
+        .await
+        {
+            Ok(()) => {
+                log_info!(
+                    "C-STORE: batch complete; {} succeeded, {} failed (after {} reopen(s))",
+                    report.successes.len(),
+                    report.failures.len(),
+                    reopens,
+                );
+                return Ok(report);
+            }
+            Err(e) if e.transient
+                && !acked.is_empty()
+                && reopens < MAX_ASSOCIATION_REOPENS =>
+            {
+                reopens += 1;
+                let delay_secs = 1u64 << reopens; // 2, 4, 8
+                log_info!(
+                    "C-STORE: association lost ({}); reopening attempt {}/{} after {}s ({}/{} instances acked so far)",
+                    e.message,
+                    reopens,
+                    MAX_ASSOCIATION_REOPENS,
+                    delay_secs,
+                    acked.len(),
+                    instances.len(),
+                );
+                tokio::time::sleep(Duration::from_secs(delay_secs)).await;
+            }
+            Err(e) => {
+                let prefix = if reopens > 0 {
+                    format!("after {} reopen(s): ", reopens)
+                } else {
+                    String::new()
+                };
+                return Err(format!("C-STORE: {}{}", prefix, e.message));
+            }
+        }
+    }
+}
+
+/// Collect every distinct SOP class across the input batch. We must
+/// negotiate one presentation context per abstract syntax.
+fn collect_sop_classes(
+    instances: &[FileDicomObject<InMemDicomObject>],
+) -> Result<Vec<String>, String> {
     let mut sop_classes: Vec<String> = instances
         .iter()
         .filter_map(|obj| sop_class_uid(obj))
@@ -129,8 +240,29 @@ async fn execute_cstore_inner(
         );
     }
 
+    Ok(sop_classes)
+}
+
+/// Run one association from establishment to release, sending the given
+/// instances. Updates `acked` after each successful C-STORE-RSP and pushes
+/// per-instance non-success results into `report.failures`.
+///
+/// On TCP-level failures (connect/send/receive errors) returns an
+/// [`AttemptError`] with `transient = true` so the caller can decide whether
+/// to reopen. Configuration-level problems (no PCs accepted, missing
+/// presentation context for a SOP class) return `transient = false`.
+async fn attempt_batch(
+    calling_ae: &str,
+    pacs: &PacsService,
+    sop_classes: &[String],
+    instances: &[&FileDicomObject<InMemDicomObject>],
+    acked: &mut HashSet<String>,
+    report: &mut SendReport,
+) -> Result<(), AttemptError> {
+    let addr = format!("{}:{}", pacs.host, pacs.port);
+
     log_info!(
-        "C-STORE: establishing association to {} (AE: {}) from {} for {} instances across {} SOP classes",
+        "C-STORE: establishing association to {} (AE: {}) from {} for {} instance(s) across {} SOP class(es)",
         addr,
         pacs.ae_title,
         calling_ae,
@@ -142,17 +274,21 @@ async fn execute_cstore_inner(
         .calling_ae_title(calling_ae)
         .called_ae_title(&pacs.ae_title);
 
-    let proposed_ts: Vec<String> = PROPOSED_TRANSFER_SYNTAXES.iter().map(|s| s.to_string()).collect();
-    for sop_class in &sop_classes {
+    let proposed_ts: Vec<String> = PROPOSED_TRANSFER_SYNTAXES
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    for sop_class in sop_classes {
         options = options.with_presentation_context(sop_class.clone(), proposed_ts.clone());
     }
 
-    let mut association = options.establish_async(&addr).await.map_err(|e| {
-        format!(
-            "C-STORE: failed to establish association with {}: {}",
+    let mut association = options
+        .establish_async(&addr)
+        .await
+        .map_err(|e| AttemptError::transient(format!(
+            "failed to establish association with {}: {}",
             addr, e,
-        )
-    })?;
+        )))?;
 
     log_info!(
         "C-STORE: association established with {} ({} accepted contexts)",
@@ -162,16 +298,15 @@ async fn execute_cstore_inner(
 
     // Build a lookup from abstract syntax UID → accepted presentation context.
     // The same PC can be used for every instance whose SOP class matches.
+    // PC ids are assigned in the order with_presentation_context() was called,
+    // starting at 1, so we map each accepted context back to its SOP class
+    // by index.
     let mut by_abstract_syntax: HashMap<String, AcceptedPc> = HashMap::new();
     for pc in association.presentation_contexts() {
         if pc.reason != PresentationContextResultReason::Acceptance {
             continue;
         }
-        // The UL crate doesn't expose the abstract syntax on the accepted PC
-        // directly; we track it by index against the proposed list.
-        // Instead, look up which SOP class this PC corresponds to by id —
-        // the order matches the with_abstract_syntax() call sequence above.
-        let idx = (pc.id as usize).saturating_sub(1) / 1; // pc ids start at 1
+        let idx = (pc.id as usize).saturating_sub(1);
         if let Some(sop) = sop_classes.get(idx) {
             by_abstract_syntax.insert(
                 sop.clone(),
@@ -185,15 +320,13 @@ async fn execute_cstore_inner(
 
     if by_abstract_syntax.is_empty() {
         let _ = association.release().await;
-        return Err(format!(
-            "C-STORE: PACS {} did not accept any presentation context",
+        return Err(AttemptError::fatal(format!(
+            "PACS {} did not accept any presentation context",
             pacs.ae_title,
-        ));
+        )));
     }
 
     let command_ts = dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased();
-
-    let mut report = SendReport::default();
     let mut message_id: u16 = 1;
 
     for (idx, obj) in instances.iter().enumerate() {
@@ -288,11 +421,11 @@ async fn execute_cstore_inner(
             }],
         };
         if let Err(e) = association.send(&command_pdu).await {
-            return finish_with_send_failure(association, format!(
-                "C-STORE: failed to send command for {}: {}",
+            let _ = association.abort().await;
+            return Err(AttemptError::transient(format!(
+                "failed to send C-STORE-RQ command for {}: {}",
                 sop_instance, e,
-            ))
-            .await;
+            )));
         }
 
         let data_pdu = Pdu::PData {
@@ -304,11 +437,11 @@ async fn execute_cstore_inner(
             }],
         };
         if let Err(e) = association.send(&data_pdu).await {
-            return finish_with_send_failure(association, format!(
-                "C-STORE: failed to send dataset for {}: {}",
+            let _ = association.abort().await;
+            return Err(AttemptError::transient(format!(
+                "failed to send C-STORE-RQ dataset for {}: {}",
                 sop_instance, e,
-            ))
-            .await;
+            )));
         }
 
         // Receive the C-STORE-RSP for this instance.
@@ -317,7 +450,7 @@ async fn execute_cstore_inner(
         {
             Ok(r) => r,
             Err(e) => {
-                let _ = association.release().await;
+                let _ = association.abort().await;
                 return Err(e);
             }
         };
@@ -338,8 +471,11 @@ async fn execute_cstore_inner(
         );
 
         if result.is_success() {
+            acked.insert(result.sop_instance_uid.clone());
             report.successes.push(result);
         } else {
+            // Non-success status is the destination deliberately rejecting
+            // this instance — record it and move on without retrying.
             report.failures.push(result);
         }
 
@@ -353,13 +489,7 @@ async fn execute_cstore_inner(
         log_error!("C-STORE: failed to release association cleanly: {}", e);
     }
 
-    log_info!(
-        "C-STORE: batch complete; {} succeeded, {} failed",
-        report.successes.len(),
-        report.failures.len(),
-    );
-
-    Ok(report)
+    Ok(())
 }
 
 #[derive(Debug, Clone)]
@@ -368,24 +498,18 @@ struct AcceptedPc {
     transfer_syntax: String,
 }
 
-async fn finish_with_send_failure<T>(
-    association: dicom_ul::association::ClientAssociation<tokio::net::TcpStream>,
-    err: String,
-) -> Result<T, String> {
-    let _ = association.abort().await;
-    Err(err)
-}
-
 async fn receive_cstore_response(
     association: &mut dicom_ul::association::ClientAssociation<tokio::net::TcpStream>,
     command_ts: &dicom::encoding::transfer_syntax::TransferSyntax,
     sop_instance: &str,
-) -> Result<InstanceResult, String> {
+) -> Result<InstanceResult, AttemptError> {
     loop {
-        let pdu = association
-            .receive()
-            .await
-            .map_err(|e| format!("C-STORE: failed to receive response: {}", e))?;
+        let pdu = association.receive().await.map_err(|e| {
+            AttemptError::transient(format!(
+                "failed to receive C-STORE-RSP for {}: {}",
+                sop_instance, e,
+            ))
+        })?;
 
         match pdu {
             Pdu::PData { ref data } => {
@@ -395,9 +519,15 @@ async fn receive_cstore_response(
                             data_value.data.as_slice(),
                             command_ts,
                         )
-                        .map_err(|e| format!("C-STORE: failed to parse RSP command: {}", e))?;
+                        .map_err(|e| {
+                            AttemptError::fatal(format!(
+                                "failed to parse C-STORE-RSP command for {}: {}",
+                                sop_instance, e,
+                            ))
+                        })?;
 
-                        let status = extract_status(&cmd_obj)?;
+                        let status = extract_status(&cmd_obj)
+                            .map_err(|e| AttemptError::fatal(e.to_string()))?;
                         let error_comment =
                             extract_string_optional(&cmd_obj, Tag(0x0000, 0x0902));
 
@@ -437,16 +567,16 @@ async fn receive_cstore_response(
             }
             Pdu::ReleaseRQ => {
                 let _ = association.send(&Pdu::ReleaseRP).await;
-                return Err(format!(
-                    "C-STORE: PACS released association before responding for {}",
+                return Err(AttemptError::transient(format!(
+                    "PACS released association before responding for {}",
                     sop_instance,
-                ));
+                )));
             }
             Pdu::AbortRQ { source } => {
-                return Err(format!(
-                    "C-STORE: PACS aborted association while sending {}: {:?}",
+                return Err(AttemptError::transient(format!(
+                    "PACS aborted association while sending {}: {:?}",
                     sop_instance, source,
-                ));
+                )));
             }
             _ => {
                 // Ignore non-data PDUs and continue waiting.
@@ -495,12 +625,20 @@ fn build_cstore_command(
 
 fn sop_class_uid(obj: &FileDicomObject<InMemDicomObject>) -> Option<String> {
     let meta = obj.meta();
-    Some(meta.media_storage_sop_class_uid().trim_end_matches('\0').to_string())
+    Some(
+        meta.media_storage_sop_class_uid()
+            .trim_end_matches('\0')
+            .to_string(),
+    )
 }
 
 fn sop_instance_uid(obj: &FileDicomObject<InMemDicomObject>) -> Option<String> {
     let meta = obj.meta();
-    Some(meta.media_storage_sop_instance_uid().trim_end_matches('\0').to_string())
+    Some(
+        meta.media_storage_sop_instance_uid()
+            .trim_end_matches('\0')
+            .to_string(),
+    )
 }
 
 /// 0x0000 = Success; 0xB000-0xBFFF range are warnings — both indicate the
