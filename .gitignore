@@ -40,4 +40,5 @@ src-tauri/logs/*
 keys/*
 /.automatic/
 /.agents/
+/.claude/
 .codex/

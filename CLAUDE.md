@@ -158,5 +158,11 @@ Location: `../skills`
 Location: `../../_experiments/ravana`
 **tus-server**
 Location: `../tus-server`
+**cloud-lib-gcp**
+Location: `../cloud-lib-gcp`
+**gcp-pub-sub**
+Location: `../gcp-pub-sub`
+**scanfinder**
+Location: `../scanfinder`
 
 <!-- automatic:groups:end -->
