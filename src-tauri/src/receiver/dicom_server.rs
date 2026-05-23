@@ -30,6 +30,7 @@ pub struct DICOMServer {
 }
 
 #[derive(Clone)]
+#[allow(clippy::enum_variant_names)]
 enum PendingDimseCommand {
     CStore {
         message_id: u16,

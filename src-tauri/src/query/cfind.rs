@@ -665,11 +665,6 @@ pub(crate) fn extract_string_optional(
     }
 }
 
-/// Extract a required string tag, returning `None` if missing or empty.
-// pub(crate) fn extract_string_required(obj: &InMemDicomObject<StandardDataDictionary>, tag: Tag) -> Option<String> {
-//     extract_string_optional(obj, tag)
-// }
-
 /// Extract an integer from an IS (Integer String) element, returning `None` on failure.
 pub(crate) fn extract_integer_optional(
     obj: &InMemDicomObject<StandardDataDictionary>,

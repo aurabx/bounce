@@ -228,7 +228,7 @@ fn collect_sop_classes(
 ) -> Result<Vec<String>, String> {
     let mut sop_classes: Vec<String> = instances
         .iter()
-        .filter_map(|obj| sop_class_uid(obj))
+        .filter_map(sop_class_uid)
         .collect();
     sop_classes.sort();
     sop_classes.dedup();

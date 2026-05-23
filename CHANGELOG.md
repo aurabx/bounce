@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0] - 2026-05-23
+
+### Added
+
+- Added C-MOVE SCP so workstations can initiate retrieves through Bounce.
+- Added an outbound C-STORE SCU and send pipeline for forwarding studies to remote PACS.
+- Added a PACS services tab with C-ECHO verification and a local cache of configured peers.
+- Added API key obfuscation in the settings UI and a connectivity verification action.
+
+### Changed
+
+- C-STORE send now retries transient failures by reopening the association rather than failing the whole pipeline.
+
+### Documentation
+
+- Documented the DICOM endpoint model and how Bounce communicates with Aurabox.
+- Documented throughput limits and the dominant bottlenecks in the send pipeline.
+
+### Build / CI
+
+- Upgraded `actions/checkout` and `actions/setup-node` to v6 in the publish workflow.
+
+### Internal
+
+- Cleared a Clippy `enum_variant_names` lint on `PendingDimseCommand`, removed an orphan doc comment in C-FIND extraction helpers, and dropped a redundant closure in C-STORE SOP collection.
+- Cleaned up agent configuration files and removed `.agents` / `.claude` / `.codex` directories from the git index.
+- Aligned `tauri-plugin-dialog` (2.7.1) and `tauri-plugin-fs` (2.5.1) in `Cargo.lock` so the Rust crates match the resolved JS plugin versions Tauri checks at build time.
+
 ## [1.3.0] - 2026-03-13
 
 ### Added
