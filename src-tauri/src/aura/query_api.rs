@@ -9,10 +9,10 @@
 
 use crate::log_info;
 use crate::query::models::{
-    CfindResult, FindStudiesResponse, FindStudyRequest, MoveResolveRequest,
-    MoveResolveResponse, PendingJobsResponse, PendingQueriesResponse, QueryFailedPayload,
-    QueryResultsPayload, RetrieveFailedPayload, SendFailedPayload, SendProgressPayload,
-    ServicesResponse,
+    CfindResult, EchoFailedPayload, FindStudiesResponse, FindStudyRequest, MoveResolveRequest,
+    MoveResolveResponse, PendingEchosResponse, PendingJobsResponse, PendingQueriesResponse,
+    QueryFailedPayload, QueryResultsPayload, RetrieveFailedPayload, SendFailedPayload,
+    SendProgressPayload, ServicesResponse,
 };
 use reqwest::Client;
 use serde_json::Value;
@@ -319,6 +319,90 @@ impl QueryApiClient {
         let url = format!("{}/api/bounce/sends/{}/failed", self.base_url, send_id);
 
         let payload = SendFailedPayload { error };
+
+        let response = self
+            .client
+            .post(&url)
+            .header("Accept", "application/json")
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .json(&payload)
+            .send()
+            .await?;
+
+        Self::handle_response(response).await
+    }
+
+    // -------------------------------------------------------------------
+    // C-ECHO verification lifecycle endpoints
+    //
+    // Aura's Connect-a-Modality wizard creates a pending echo when a new
+    // PACS is registered. Bounce polls for them, runs a C-ECHO against the
+    // target PACS, and reports back so the wizard can show a green tick
+    // (or surface the failure reason).
+    // -------------------------------------------------------------------
+
+    /// Fetch pending C-ECHO verifications for this gateway.
+    ///
+    /// Calls `GET {base_url}/api/bounce/echos/pending`.
+    pub async fn fetch_pending_echos(&self) -> anyhow::Result<PendingEchosResponse> {
+        let url = format!("{}/api/bounce/echos/pending", self.base_url);
+
+        let response = self
+            .client
+            .get(&url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json")
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!(
+                "Failed to fetch pending echos: HTTP {} - {}",
+                status,
+                body,
+            ));
+        }
+
+        let body = response.text().await?;
+        let parsed: PendingEchosResponse = serde_json::from_str(&body).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse pending echos response: {}. Raw: {}",
+                e,
+                body,
+            )
+        })?;
+
+        Ok(parsed)
+    }
+
+    /// Report a C-ECHO as completed to Aurabox.
+    ///
+    /// Calls `POST {base_url}/api/bounce/echos/{id}/completed`.
+    pub async fn post_echo_completed(&self, echo_id: &str) -> anyhow::Result<Value> {
+        let url = format!("{}/api/bounce/echos/{}/completed", self.base_url, echo_id);
+
+        let response = self
+            .client
+            .post(&url)
+            .header("Accept", "application/json")
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .json(&serde_json::json!({}))
+            .send()
+            .await?;
+
+        Self::handle_response(response).await
+    }
+
+    /// Report a C-ECHO failure to Aurabox.
+    ///
+    /// Calls `POST {base_url}/api/bounce/echos/{id}/failed`.
+    pub async fn post_echo_failed(&self, echo_id: &str, error: String) -> anyhow::Result<Value> {
+        let url = format!("{}/api/bounce/echos/{}/failed", self.base_url, echo_id);
+
+        let payload = EchoFailedPayload { error };
 
         let response = self
             .client

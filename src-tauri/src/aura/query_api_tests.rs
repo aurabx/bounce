@@ -1074,6 +1074,141 @@ mod tests {
     }
 
     // =======================================================================
+    // fetch_pending_echos / post_echo_completed / post_echo_failed
+    // =======================================================================
+
+    #[tokio::test]
+    async fn test_fetch_pending_echos_empty() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/api/bounce/echos/pending")
+            .match_header("Authorization", "Bearer test-api-key")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"echos":[]}"#)
+            .create_async()
+            .await;
+
+        let client = make_client(&server.url());
+        let resp = client.fetch_pending_echos().await.unwrap();
+
+        assert!(resp.echos.is_empty());
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_fetch_pending_echos_parses_payload() {
+        let mut server = mockito::Server::new_async().await;
+        let body = r#"{
+            "echos": [
+                {
+                    "id": "echo-1",
+                    "service": {"id": "svc-a", "ae_title": "PACS_A", "host": "10.0.0.1", "port": 104}
+                }
+            ]
+        }"#;
+
+        let mock = server
+            .mock("GET", "/api/bounce/echos/pending")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(body)
+            .create_async()
+            .await;
+
+        let client = make_client(&server.url());
+        let resp = client.fetch_pending_echos().await.unwrap();
+
+        assert_eq!(resp.echos.len(), 1);
+        assert_eq!(resp.echos[0].id, "echo-1");
+        assert_eq!(resp.echos[0].service.ae_title, "PACS_A");
+        assert_eq!(resp.echos[0].service.host, "10.0.0.1");
+        assert_eq!(resp.echos[0].service.port, 104);
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_fetch_pending_echos_server_error() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/api/bounce/echos/pending")
+            .with_status(500)
+            .with_body("Internal Server Error")
+            .create_async()
+            .await;
+
+        let client = make_client(&server.url());
+        let result = client.fetch_pending_echos().await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("500"), "Error should mention 500: {}", err);
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_post_echo_completed_success() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/api/bounce/echos/echo-123/completed")
+            .match_header("Authorization", "Bearer test-api-key")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"message":"ok"}"#)
+            .create_async()
+            .await;
+
+        let client = make_client(&server.url());
+        let resp = client.post_echo_completed("echo-123").await.unwrap();
+        assert_eq!(resp["message"], "ok");
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_post_echo_completed_conflict_when_already_finished() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/api/bounce/echos/echo-done/completed")
+            .with_status(409)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"message":"echo already finished"}"#)
+            .create_async()
+            .await;
+
+        let client = make_client(&server.url());
+        let result = client.post_echo_completed("echo-done").await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("409"), "Error should mention 409: {}", err);
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_post_echo_failed_sends_error_payload() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/api/bounce/echos/echo-99/failed")
+            .match_header("Authorization", "Bearer test-api-key")
+            .match_body(mockito::Matcher::JsonString(
+                r#"{"error":"PACS refused association"}"#.to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"message":"ok"}"#)
+            .create_async()
+            .await;
+
+        let client = make_client(&server.url());
+        let resp = client
+            .post_echo_failed("echo-99", "PACS refused association".to_string())
+            .await
+            .unwrap();
+        assert_eq!(resp["message"], "ok");
+        mock.assert_async().await;
+    }
+
+    // =======================================================================
     // Integration: DicomService -> PacsService -> execute_cfind
     // =======================================================================
 

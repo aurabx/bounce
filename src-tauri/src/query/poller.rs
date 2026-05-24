@@ -11,9 +11,10 @@
 //! shared C-STORE SCP receive pipeline anyway.
 
 use crate::aura::aura_api::AuraApi;
+use crate::query::cecho::execute_cecho;
 use crate::query::cfind::execute_cfind;
 use crate::query::cmove::execute_cmove;
-use crate::query::models::{Job, PacsQueryRequest, RetrieveJob, SendJob};
+use crate::query::models::{EchoJob, Job, PacsQueryRequest, RetrieveJob, SendJob};
 use crate::send::worker::execute_send_job;
 use crate::store::config::Config;
 use crate::{load_config, log_error, log_info};
@@ -109,27 +110,42 @@ async fn poll_and_execute(
         }
     };
 
-    if pending_jobs.is_empty() {
-        return;
-    }
+    if !pending_jobs.is_empty() {
+        let (retrieves, sends) = split_jobs(pending_jobs);
 
-    let (retrieves, sends) = split_jobs(pending_jobs);
+        if !retrieves.is_empty() {
+            log_info!("Query poller: {} pending retrieves", retrieves.len());
+            for retrieve in retrieves {
+                execute_single_retrieve(api, &config, retrieve).await;
+            }
+        }
 
-    if !retrieves.is_empty() {
-        log_info!("Query poller: {} pending retrieves", retrieves.len());
-        for retrieve in retrieves {
-            execute_single_retrieve(api, &config, retrieve).await;
+        if !sends.is_empty() {
+            log_info!(
+                "Query poller: {} pending sends (max concurrent {})",
+                sends.len(),
+                MAX_CONCURRENT_SENDS,
+            );
+            for send in sends {
+                spawn_send(api.clone(), config.ae_title.clone(), send_semaphore.clone(), send);
+            }
         }
     }
 
-    if !sends.is_empty() {
-        log_info!(
-            "Query poller: {} pending sends (max concurrent {})",
-            sends.len(),
-            MAX_CONCURRENT_SENDS,
-        );
-        for send in sends {
-            spawn_send(api.clone(), config.ae_title.clone(), send_semaphore.clone(), send);
+    // --- C-ECHO verifications (separate endpoint; tied to the Aura
+    //     Connect-a-Modality wizard, not the continuous DICOM workload). ---
+    let pending_echos = match api.fetch_pending_echos().await {
+        Ok(resp) => resp.echos,
+        Err(e) => {
+            log_error!("Query poller: failed to fetch pending echos: {}", e);
+            Vec::new()
+        }
+    };
+
+    if !pending_echos.is_empty() {
+        log_info!("Query poller: {} pending echos", pending_echos.len());
+        for echo in pending_echos {
+            execute_single_echo(api, &config, echo).await;
         }
     }
 }
@@ -313,6 +329,53 @@ async fn execute_single_retrieve(api: &AuraApi, config: &Config, retrieve: Retri
                 log_error!(
                     "Query poller: failed to post retrieve failure for {}: {}",
                     retrieve.id,
+                    e,
+                );
+            }
+        }
+    }
+}
+
+/// Execute a single C-ECHO verification and report completion or failure.
+///
+/// Echos are infrequent (driven by the Aura Connect-a-Modality wizard) and
+/// internally bounded by [`crate::query::cecho::execute_cecho`]'s own timeout,
+/// so they run sequentially in the poll loop without their own semaphore.
+async fn execute_single_echo(api: &AuraApi, config: &Config, echo: EchoJob) {
+    let calling_ae = &config.ae_title;
+    let pacs_service = echo.service.clone().into();
+
+    log_info!(
+        "Query poller: executing C-ECHO {} against {}@{}:{}",
+        echo.id,
+        echo.service.ae_title,
+        echo.service.host,
+        echo.service.port,
+    );
+
+    match execute_cecho(calling_ae, &pacs_service).await {
+        Ok(report) => {
+            log_info!(
+                "Query poller: C-ECHO {} succeeded ({}ms)",
+                echo.id,
+                report.latency_ms,
+            );
+
+            if let Err(e) = api.post_echo_completed(&echo.id).await {
+                log_error!(
+                    "Query poller: failed to post echo completed for {}: {}",
+                    echo.id,
+                    e,
+                );
+            }
+        }
+        Err(error) => {
+            log_error!("Query poller: C-ECHO {} failed: {}", echo.id, error);
+
+            if let Err(e) = api.post_echo_failed(&echo.id, error).await {
+                log_error!(
+                    "Query poller: failed to post echo failure for {}: {}",
+                    echo.id,
                     e,
                 );
             }

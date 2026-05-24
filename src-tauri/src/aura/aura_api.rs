@@ -1,7 +1,7 @@
 use crate::aura::query_api::{MoveResolveOutcome, QueryApiClient};
 use crate::query::models::{
     CfindResult, FindStudiesResponse, FindStudyRequest, MoveResolveRequest,
-    PendingJobsResponse, PendingQueriesResponse, ServicesResponse,
+    PendingEchosResponse, PendingJobsResponse, PendingQueriesResponse, ServicesResponse,
 };
 use crate::{load_config, log_info};
 use anyhow::Error;
@@ -288,6 +288,27 @@ impl AuraApi {
     pub async fn post_send_failed(&self, send_id: &str, error: String) -> anyhow::Result<Value> {
         log_info!("Posting C-STORE send failure for {}", send_id);
         self.query_client().post_send_failed(send_id, error).await
+    }
+
+    // -------------------------------------------------------------------
+    // C-ECHO verification lifecycle endpoints
+    // -------------------------------------------------------------------
+
+    /// Fetch pending C-ECHO verifications for this gateway.
+    pub async fn fetch_pending_echos(&self) -> anyhow::Result<PendingEchosResponse> {
+        self.query_client().fetch_pending_echos().await
+    }
+
+    /// Report a C-ECHO as completed to Aurabox.
+    pub async fn post_echo_completed(&self, echo_id: &str) -> anyhow::Result<Value> {
+        log_info!("Posting C-ECHO completed for {}", echo_id);
+        self.query_client().post_echo_completed(echo_id).await
+    }
+
+    /// Report a C-ECHO failure to Aurabox.
+    pub async fn post_echo_failed(&self, echo_id: &str, error: String) -> anyhow::Result<Value> {
+        log_info!("Posting C-ECHO failure for {}", echo_id);
+        self.query_client().post_echo_failed(echo_id, error).await
     }
 
     async fn handle_response(response: Response) -> Result<Value, Error> {

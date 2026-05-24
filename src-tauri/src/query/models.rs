@@ -394,6 +394,59 @@ pub struct SendFailedPayload {
 }
 
 // ---------------------------------------------------------------------------
+// C-ECHO verification models
+//
+// The Aura-side Connect-a-Modality wizard creates a pending echo when a new
+// PACS is registered. Bounce polls for these, runs a DICOM C-ECHO against
+// the target service, and reports back. Echos are intentionally separate
+// from the unified `jobs` endpoint because they have no payload, take a
+// few seconds at most, and are scoped to UI verification flows rather than
+// the continuous DICOM workload.
+// ---------------------------------------------------------------------------
+
+/// PACS service details included in an echo job. Structurally identical to
+/// [`RetrieveService`] but kept distinct so the verification flow can evolve
+/// independently of the retrieve flow.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct EchoService {
+    pub id: String,
+    pub ae_title: String,
+    pub host: String,
+    pub port: u16,
+}
+
+/// Convert an [`EchoService`] into the lighter [`PacsService`] used by the
+/// C-ECHO SCU, discarding the Aurabox-specific `id` field.
+impl From<EchoService> for PacsService {
+    fn from(svc: EchoService) -> Self {
+        PacsService {
+            ae_title: svc.ae_title,
+            host: svc.host,
+            port: svc.port,
+        }
+    }
+}
+
+/// A single pending C-ECHO verification fetched from Aurabox.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct EchoJob {
+    pub id: String,
+    pub service: EchoService,
+}
+
+/// Wrapper returned by `GET /api/bounce/echos/pending`.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PendingEchosResponse {
+    pub echos: Vec<EchoJob>,
+}
+
+/// Payload sent to `POST /api/bounce/echos/{id}/failed`.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct EchoFailedPayload {
+    pub error: String,
+}
+
+// ---------------------------------------------------------------------------
 // C-MOVE / C-GET SCP — workstation-initiated retrieves from Aurabox
 // ---------------------------------------------------------------------------
 
