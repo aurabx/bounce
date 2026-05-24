@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.1] - 2026-05-24
+
+### Changed
+
+- C-ECHO verification now polls the Aura backend for pending verifications so peer status reflects upstream results rather than only the most recent local attempt.
+
 ## [1.4.0] - 2026-05-23
 
 ### Added
