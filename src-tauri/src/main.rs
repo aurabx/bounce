@@ -11,7 +11,10 @@ mod transmitter;
 
 use crate::aura::aura_api::AuraApi;
 use crate::db::database::Database;
-use crate::logger::{set_remote_logging_enabled, setup_logger_with_config, LogtailConfig};
+use crate::logger::{
+    init_logtail_channel, logtail_dispatch, set_remote_logging_enabled, start_logtail_sender,
+    LogtailConfig,
+};
 use crate::query::cecho::execute_cecho;
 use crate::query::cfind::execute_cfind;
 use crate::query::models::{CfindResult, DicomService, PacsService, QueryFilters};
@@ -306,6 +309,12 @@ fn show_window(app: AppHandle) -> Result<(), String> {
 }
 
 fn main() {
+    // Construct the Logtail fan-out channel BEFORE the Tauri builder so the
+    // custom target registered on tauri-plugin-log has a live sender during
+    // plugin initialization. The background HTTP shipper is started later
+    // inside `.setup()` once the API key is loaded from the config store.
+    init_logtail_channel();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_opener::init())
@@ -338,7 +347,7 @@ fn main() {
                 hostname: gethostname::gethostname().to_string_lossy().to_string(),
             };
 
-            setup_logger_with_config(logtail_config);
+            start_logtail_sender(logtail_config);
 
             let transmission = Transmission::new(handle.clone());
 
@@ -416,6 +425,10 @@ fn main() {
                 }))
                 .target(Target::new(TargetKind::Stdout))
                 .target(Target::new(TargetKind::Webview))
+                // Fan-out target: forwards records into the Logtail mpsc
+                // channel. The background shipper started in `.setup()` drains
+                // it and POSTs batches to Better Stack.
+                .target(Target::new(TargetKind::Dispatch(logtail_dispatch())))
                 .level(log::LevelFilter::Info)
                 .build(),
         )
