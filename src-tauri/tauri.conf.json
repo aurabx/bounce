@@ -49,7 +49,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/aurabx/bounce-rust/releases/latest/download/latest.json"
+        "https://github.com/aurabx/bounce/releases/latest/download/latest.json"
       ],
       "pubkey": "REPLACE_WITH_MINISIGN_PUBLIC_KEY"
     }
