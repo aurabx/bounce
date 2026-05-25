@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.0] - 2026-05-26
+
+### Added
+
+- Added automatic update checking against GitHub releases with silent background downloads, an in-app banner that prompts to restart when an update is ready, and a Settings card to trigger manual checks.
+
+### Internal
+
+- Publish workflow now signs each platform's updater artifact and assembles a `latest.json` manifest from the per-platform signatures so the Tauri updater can resolve the latest release.
+
 ## [1.4.1] - 2026-05-24
 
 ### Changed
