@@ -11,6 +11,7 @@
     "category": "Utility",
     "copyright": "",
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "externalBin": [],
     "icon": [
       "icons/32x32.png",
@@ -45,7 +46,14 @@
   "mainBinaryName": "Aurabox Bounce",
   "version": "1.4.1",
   "identifier": "com.aurabox.bounce",
-  "plugins": {},
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/aurabx/bounce-rust/releases/latest/download/latest.json"
+      ],
+      "pubkey": "REPLACE_WITH_MINISIGN_PUBLIC_KEY"
+    }
+  },
   "app": {
     "windows": [
       {

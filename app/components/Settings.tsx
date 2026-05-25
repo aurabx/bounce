@@ -14,6 +14,7 @@ import {invoke} from "@tauri-apps/api/core";
 import { relaunch } from '@tauri-apps/plugin-process';
 import {useAppDispatch, useAppSelector} from "@/app/lib/hook";
 import {verifyConnectivity} from "@/app/lib/server";
+import {useUpdate} from "@/app/lib/UpdateContext";
 
 export default function Settings() {
 
@@ -27,6 +28,13 @@ export default function Settings() {
     const connectivity = useAppSelector((state) => state.main.connectivity);
     const verifying = connectivity.status === 'checking';
     const verifyError = connectivity.status === 'failed' ? connectivity.error : null;
+    const {
+        status: updateStatus,
+        updateInfo,
+        errorMessage: updateError,
+        checkAndDownload,
+        restartApp,
+    } = useUpdate();
 
     const deriveEnv = (apiKey: string | null | undefined): string | null => {
         if (!apiKey) return null;
@@ -255,6 +263,75 @@ export default function Settings() {
                             </div>
                         </form> : null)}
                     </Suspense>
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardContent className="pt-6 space-y-3">
+                    <div>
+                        <h3 className="text-base font-medium">Updates</h3>
+                        <p className="text-sm text-muted-foreground">
+                            Bounce checks GitHub for new releases automatically and
+                            downloads them in the background.
+                        </p>
+                    </div>
+
+                    {updateStatus === 'up-to-date' && (
+                        <p className="text-sm text-muted-foreground">
+                            You&apos;re on the latest version.
+                        </p>
+                    )}
+
+                    {updateStatus === 'downloading' && (
+                        <p className="text-sm">
+                            {updateInfo
+                                ? `Downloading ${updateInfo.version}…`
+                                : 'Downloading update…'}
+                        </p>
+                    )}
+
+                    {updateStatus === 'ready' && (
+                        <div className="space-y-2">
+                            <p className="text-sm">
+                                Update installed{updateInfo ? ` — v${updateInfo.version}` : ''}.
+                                Restart Bounce to apply.
+                            </p>
+                            {updateInfo?.notes && (
+                                <pre className="text-xs bg-muted/40 rounded p-2 whitespace-pre-wrap">
+                                    {updateInfo.notes}
+                                </pre>
+                            )}
+                        </div>
+                    )}
+
+                    {updateStatus === 'error' && updateError && (
+                        <Alert variant="destructive">
+                            <AlertTitle>Update failed</AlertTitle>
+                            <AlertDescription>{updateError}</AlertDescription>
+                        </Alert>
+                    )}
+
+                    <div className="flex gap-2">
+                        {updateStatus !== 'ready' && (
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={checkAndDownload}
+                                disabled={updateStatus === 'checking' || updateStatus === 'downloading'}
+                            >
+                                {updateStatus === 'checking'
+                                    ? 'Checking…'
+                                    : updateStatus === 'downloading'
+                                        ? 'Downloading…'
+                                        : 'Check for Updates'}
+                            </Button>
+                        )}
+                        {updateStatus === 'ready' && (
+                            <Button type="button" onClick={restartApp}>
+                                Restart Now
+                            </Button>
+                        )}
+                    </div>
                 </CardContent>
             </Card>
         </div>

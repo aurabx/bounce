@@ -140,6 +140,9 @@ jobs:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ env.CERT_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
         with:
           tagName: ${{ needs.check-or-create-release.outputs.tag_name }}
           releaseName: "Aurabox Bounce v__VERSION__"
@@ -147,4 +150,128 @@ jobs:
           releaseBody: "See the assets to download this version and install."
           releaseDraft: true
           prerelease: false
+          # tauri-action's built-in latest.json is unreliable for multi-platform
+          # universal builds; the publish-updater-manifest job assembles it.
+          includeUpdaterJson: false
           args: ${{ matrix.target != '' && format('--target {0}', matrix.target) || '' }}
+
+      # Per-platform updater signatures collected by the manifest job below.
+
+      - name: Stash macOS-arm64 signature
+        if: matrix.platform == 'macos-latest' && matrix.target == 'aarch64-apple-darwin'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sig-macos-arm64
+          path: src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
+          if-no-files-found: error
+
+      - name: Stash macOS-intel signature
+        if: matrix.platform == 'macos-latest' && matrix.target == 'x86_64-apple-darwin'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sig-macos-intel
+          path: src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
+          if-no-files-found: error
+
+      - name: Stash Linux signature
+        if: matrix.platform == 'ubuntu-22.04'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sig-linux
+          path: src-tauri/target/release/bundle/appimage/*.AppImage.sig
+          if-no-files-found: error
+
+      - name: Stash Windows signature
+        if: matrix.platform == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sig-windows
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe.sig
+          if-no-files-found: error
+
+  publish-updater-manifest:
+    needs: [check-or-create-release, publish-tauri]
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download macOS arm64 signature
+        uses: actions/download-artifact@v4
+        with:
+          name: sig-macos-arm64
+          path: sigs/macos-arm64
+
+      - name: Download macOS intel signature
+        uses: actions/download-artifact@v4
+        with:
+          name: sig-macos-intel
+          path: sigs/macos-intel
+
+      - name: Download Linux signature
+        uses: actions/download-artifact@v4
+        with:
+          name: sig-linux
+          path: sigs/linux
+
+      - name: Download Windows signature
+        uses: actions/download-artifact@v4
+        with:
+          name: sig-windows
+          path: sigs/windows
+
+      - name: Read version from tauri.conf.json
+        id: version
+        run: |
+          VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Generate and upload latest.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.check-or-create-release.outputs.tag_name }}
+          VERSION: ${{ steps.version.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
+
+          DARWIN_ARM_FILE=$(basename "$(ls sigs/macos-arm64/*.app.tar.gz.sig)" .sig)
+          DARWIN_X86_FILE=$(basename "$(ls sigs/macos-intel/*.app.tar.gz.sig)" .sig)
+          LINUX_FILE=$(basename "$(ls sigs/linux/*.AppImage.sig)" .sig)
+          WINDOWS_FILE=$(basename "$(ls sigs/windows/*-setup.exe.sig)" .sig)
+
+          DARWIN_ARM_SIG=$(cat sigs/macos-arm64/*.app.tar.gz.sig)
+          DARWIN_X86_SIG=$(cat sigs/macos-intel/*.app.tar.gz.sig)
+          LINUX_SIG=$(cat sigs/linux/*.AppImage.sig)
+          WINDOWS_SIG=$(cat sigs/windows/*-setup.exe.sig)
+
+          PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          jq -n \
+            --arg version "$VERSION" \
+            --arg pub_date "$PUB_DATE" \
+            --arg darwin_arm_sig "$DARWIN_ARM_SIG" \
+            --arg darwin_arm_url "${BASE_URL}/${DARWIN_ARM_FILE}" \
+            --arg darwin_x86_sig "$DARWIN_X86_SIG" \
+            --arg darwin_x86_url "${BASE_URL}/${DARWIN_X86_FILE}" \
+            --arg linux_sig "$LINUX_SIG" \
+            --arg linux_url "${BASE_URL}/${LINUX_FILE}" \
+            --arg windows_sig "$WINDOWS_SIG" \
+            --arg windows_url "${BASE_URL}/${WINDOWS_FILE}" \
+            '{
+              version: $version,
+              notes: "See the release page for details.",
+              pub_date: $pub_date,
+              platforms: {
+                "darwin-aarch64": { signature: $darwin_arm_sig, url: $darwin_arm_url },
+                "darwin-x86_64":  { signature: $darwin_x86_sig, url: $darwin_x86_url },
+                "linux-x86_64":   { signature: $linux_sig,      url: $linux_url },
+                "windows-x86_64": { signature: $windows_sig,    url: $windows_url }
+              }
+            }' > latest.json
+
+          cat latest.json
+          gh release upload "$TAG" latest.json#latest.json --clobber --repo "$REPO"
