@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.0] - 2026-05-28
+
+### Added
+
+- Added server-side study search across description, patient name, patient ID, accession number, and Study UID.
+- Added bulk Send and bulk Delete for selected studies, plus a Delete-all action, each guarded by a confirmation dialog.
+- Added a 25/50/100 page-size selector and a click-to-copy, resizable-column Studies table.
+
+### Changed
+
+- Replaced the Studies card list with a compact table and corrected the pagination totals to use the backend count rather than the current page length.
+- Enlarged the default window to 1280x820 and narrowed the sidebar.
+
+### Internal
+
+- Added a test covering the filtered pagination query.
+
 ## [1.5.0] - 2026-05-26
 
 ### Added
