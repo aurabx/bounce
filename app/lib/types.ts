@@ -1,15 +1,36 @@
 
 export interface Study {
     study_uid: string,
-    study_description: string
+    study_description: string,
     study_date: string,
     study_time: string,
     status: string,
-    exists: string,
+    exists: boolean,
+    patient_name?: string,
+    patient_id?: string,
+    accession_no?: string,
+    series_count?: number,
+    images?: number,
+    created_at?: string,
+    updated_at?: string,
+    sent_at?: string | null,
+}
+
+export interface Pagination {
+    current_page: number,
+    total_pages: number,
+    total_items: number,
+    limit: number,
+    offset: number,
+    has_next_page: boolean,
+    has_previous_page: boolean,
+    items_on_page: number,
+    search: string | null,
 }
 
 export type CurrentStudies = {
-    studies: Study[]
+    studies: Study[],
+    pagination: Pagination,
 }
 
 export interface DicomService {

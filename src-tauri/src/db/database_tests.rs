@@ -451,4 +451,86 @@ mod tests {
         let result = db.get_study_by_uid("1.2.3").await;
         assert!(result.is_err());
     }
+
+    #[tokio::test]
+    async fn test_get_studies_paginated_filtered() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let db = Database::new_for_test(pool).await;
+
+        let mut ankle = create_test_study("1.2.3.4.ankle");
+        ankle.study_description = Some("US Ankle Right".to_string());
+        ankle.patient_name = Some("SMITH^JOHN".to_string());
+        ankle.patient_id = Some("P-ANK-001".to_string());
+        ankle.accession_no = Some("ACC-ANK-1".to_string());
+        db.create_or_update_study(ankle).await.unwrap();
+
+        let mut chest = create_test_study("1.2.3.4.chest");
+        chest.study_description = Some("CT Chest".to_string());
+        chest.patient_name = Some("DOE^JANE".to_string());
+        chest.patient_id = Some("P-CH-002".to_string());
+        chest.accession_no = Some("ACC-CH-2".to_string());
+        db.create_or_update_study(chest).await.unwrap();
+
+        let mut spine = create_test_study("1.2.3.4.spine");
+        spine.study_description = Some("MRI Spine".to_string());
+        spine.patient_name = Some("ROE^RICHARD".to_string());
+        spine.patient_id = Some("P-SP-003".to_string());
+        spine.accession_no = Some("ACC-SP-3".to_string());
+        db.create_or_update_study(spine).await.unwrap();
+
+        // Match by description token
+        let (studies, count) = db
+            .get_studies_paginated_filtered(0, 10, Some("ankle"))
+            .await
+            .unwrap();
+        assert_eq!(count, 1);
+        assert_eq!(studies.len(), 1);
+        assert_eq!(studies[0].study_uid, "1.2.3.4.ankle");
+
+        // Match by patient surname
+        let (studies, count) = db
+            .get_studies_paginated_filtered(0, 10, Some("DOE"))
+            .await
+            .unwrap();
+        assert_eq!(count, 1);
+        assert_eq!(studies[0].study_uid, "1.2.3.4.chest");
+
+        // Match by accession substring
+        let (studies, count) = db
+            .get_studies_paginated_filtered(0, 10, Some("ACC-SP"))
+            .await
+            .unwrap();
+        assert_eq!(count, 1);
+        assert_eq!(studies[0].study_uid, "1.2.3.4.spine");
+
+        // Match by Study UID tail
+        let (studies, count) = db
+            .get_studies_paginated_filtered(0, 10, Some("chest"))
+            .await
+            .unwrap();
+        assert_eq!(count, 1);
+        assert_eq!(studies[0].study_uid, "1.2.3.4.chest");
+
+        // Whitespace-only search degrades to no filter
+        let (_studies, count) = db
+            .get_studies_paginated_filtered(0, 10, Some("   "))
+            .await
+            .unwrap();
+        assert_eq!(count, 3);
+
+        // None search returns all
+        let (_studies, count) = db
+            .get_studies_paginated_filtered(0, 10, None)
+            .await
+            .unwrap();
+        assert_eq!(count, 3);
+
+        // No matches
+        let (studies, count) = db
+            .get_studies_paginated_filtered(0, 10, Some("nonexistent-xyz"))
+            .await
+            .unwrap();
+        assert_eq!(count, 0);
+        assert!(studies.is_empty());
+    }
 }

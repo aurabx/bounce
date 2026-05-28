@@ -182,14 +182,78 @@ async fn current_studies(
     app: AppHandle,
     page: Option<u32>,
     limit: Option<u32>,
+    search: Option<String>,
 ) -> Result<(), String> {
     let page = page.unwrap_or(1);
     let limit = limit.unwrap_or(10);
     let database = app.state::<Database>();
 
-    let studies = database.current_studies(page, limit).await;
+    let studies = database.current_studies(page, limit, search).await;
 
     app.emit("current-studies", studies).unwrap();
+    Ok(())
+}
+
+/// Best-effort bulk send: iterate over the supplied Study UIDs and call
+/// `Transmission::send_study` on each. Per-item failures are logged but
+/// do not abort the batch — medical-imaging operators expect every
+/// selected item to be attempted.
+#[tauri::command]
+async fn bulk_send_studies(app: AppHandle, study_uids: Vec<String>) -> Result<(), String> {
+    let transmission = Transmission::new(app);
+    for uid in study_uids {
+        if let Err(e) = transmission.send_study(uid.clone()).await {
+            log_error!("bulk_send_studies: failed for {}: {}", uid, e);
+        }
+    }
+    Ok(())
+}
+
+/// Best-effort bulk delete: removes the on-disk study, the local meta,
+/// and the database row for each UID. Failures are logged per item and
+/// the batch continues so a single corrupt entry does not block
+/// removing the rest.
+#[tauri::command]
+async fn bulk_delete_studies(app: AppHandle, study_uids: Vec<String>) -> Result<(), String> {
+    let transmission = Transmission::new(app.clone());
+    let database = app.state::<Database>();
+    for uid in study_uids {
+        if let Err(e) = transmission.delete_study(uid.clone()).await {
+            log_error!("bulk_delete_studies: delete_study failed for {}: {}", uid, e);
+        }
+        if let Err(e) = transmission.delete_local_study_meta(uid.clone()).await {
+            log_error!(
+                "bulk_delete_studies: delete_local_study_meta failed for {}: {}",
+                uid,
+                e
+            );
+        }
+        if let Err(e) = database.delete_study(uid.clone()).await {
+            log_error!("bulk_delete_studies: db delete failed for {}: {}", uid, e);
+        }
+    }
+    Ok(())
+}
+
+/// Clear every study from the database and remove the on-disk storage
+/// directory. Distinct from `reset_app` so that future widening of
+/// reset behaviour (settings, credentials) does not silently widen
+/// what the Studies tab "Delete all" button does.
+#[tauri::command]
+async fn delete_all_studies(app: AppHandle) -> Result<(), String> {
+    let database = app.state::<Database>();
+    let count = database
+        .clear_studies()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let transmission = Transmission::new(app);
+    transmission
+        .clear_storage()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    log_info!("delete_all_studies: removed {} studies", count);
     Ok(())
 }
 
@@ -447,6 +511,9 @@ fn main() {
             send_log,
             send_study,
             delete_study,
+            bulk_send_studies,
+            bulk_delete_studies,
+            delete_all_studies,
             api_start_upload,
             current_studies,
             cfind_query,

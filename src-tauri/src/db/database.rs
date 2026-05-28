@@ -122,7 +122,7 @@ impl Database {
         Ok(study)
     }
 
-    pub async fn current_studies(&self, page: u32, limit: u32) -> Value {
+    pub async fn current_studies(&self, page: u32, limit: u32, search: Option<String>) -> Value {
         let config = if let Some(app_handle) = &self.app_handle {
             load_config(app_handle.clone())
         } else {
@@ -138,8 +138,18 @@ impl Database {
         // Calculate offset
         let offset = (page.saturating_sub(1)) * limit;
 
+        let trimmed_search = search
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+
         match self
-            .get_studies_paginated(offset as i64, limit as i64)
+            .get_studies_paginated_filtered(
+                offset as i64,
+                limit as i64,
+                trimmed_search.as_deref(),
+            )
             .await
         {
             Ok((studies, total_count)) => {
@@ -189,7 +199,8 @@ impl Database {
                         "offset": offset,
                         "has_next_page": has_next_page,
                         "has_previous_page": has_previous_page,
-                        "items_on_page": studies_json.len()
+                        "items_on_page": studies_json.len(),
+                        "search": trimmed_search,
                     }
                 });
 
@@ -208,7 +219,8 @@ impl Database {
                         "offset": offset,
                         "has_next_page": false,
                         "has_previous_page": false,
-                        "items_on_page": 0
+                        "items_on_page": 0,
+                        "search": trimmed_search,
                     },
                     "error": e.to_string()
                 });
@@ -218,28 +230,84 @@ impl Database {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn get_studies_paginated(
         &self,
         offset: i64,
         limit: i64,
     ) -> Result<(Vec<Study>, i64)> {
-        // First, get the total count
-        let total_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM studies")
-            .fetch_one(&self.pool)
-            .await
-            .context("Failed to get total studies count")?;
+        self.get_studies_paginated_filtered(offset, limit, None).await
+    }
 
-        // Then get the paginated studies
-        let studies = sqlx::query_as::<_, Study>(
-            "SELECT * FROM studies ORDER BY created_at DESC LIMIT ? OFFSET ?",
-        )
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(&self.pool)
-        .await
-        .context("Failed to fetch paginated studies")?;
+    /// Paginated study fetch with an optional free-text filter applied
+    /// across description, patient name, patient id, accession number,
+    /// and Study UID. `search` is treated as a substring match (`LIKE
+    /// %term%`). Whitespace-only or `None` is treated as no filter.
+    ///
+    /// Returns the page rows along with the total count matching the
+    /// filter so the caller can compute pagination correctly when the
+    /// search is active.
+    pub async fn get_studies_paginated_filtered(
+        &self,
+        offset: i64,
+        limit: i64,
+        search: Option<&str>,
+    ) -> Result<(Vec<Study>, i64)> {
+        let trimmed = search.map(str::trim).filter(|s| !s.is_empty());
 
-        Ok((studies, total_count))
+        match trimmed {
+            None => {
+                let total_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM studies")
+                    .fetch_one(&self.pool)
+                    .await
+                    .context("Failed to get total studies count")?;
+
+                let studies = sqlx::query_as::<_, Study>(
+                    "SELECT * FROM studies ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                )
+                .bind(limit)
+                .bind(offset)
+                .fetch_all(&self.pool)
+                .await
+                .context("Failed to fetch paginated studies")?;
+
+                Ok((studies, total_count))
+            }
+            Some(term) => {
+                let bound = format!("%{}%", term);
+
+                let total_count: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM studies \
+                     WHERE study_description LIKE ?1 \
+                        OR patient_name LIKE ?1 \
+                        OR patient_id LIKE ?1 \
+                        OR accession_no LIKE ?1 \
+                        OR study_uid LIKE ?1",
+                )
+                .bind(&bound)
+                .fetch_one(&self.pool)
+                .await
+                .context("Failed to get filtered studies count")?;
+
+                let studies = sqlx::query_as::<_, Study>(
+                    "SELECT * FROM studies \
+                     WHERE study_description LIKE ?1 \
+                        OR patient_name LIKE ?1 \
+                        OR patient_id LIKE ?1 \
+                        OR accession_no LIKE ?1 \
+                        OR study_uid LIKE ?1 \
+                     ORDER BY created_at DESC LIMIT ?2 OFFSET ?3",
+                )
+                .bind(&bound)
+                .bind(limit)
+                .bind(offset)
+                .fetch_all(&self.pool)
+                .await
+                .context("Failed to fetch filtered paginated studies")?;
+
+                Ok((studies, total_count))
+            }
+        }
     }
 
     pub async fn update_study_status(&self, study_uid: &str, status: &str) -> Result<()> {

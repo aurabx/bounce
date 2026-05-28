@@ -18,11 +18,11 @@ export default function Sidebar() {
         fetchVersion().then();
     }, []);
 
-    return <div className="fixed inset-y-0 flex w-64 flex-col bg-background border-r">
-        <div className="flex h-16 shrink-0 items-center px-6 font-bold text-lg tracking-tight border-b text-primary">
+    return <div className="fixed inset-y-0 flex w-52 flex-col bg-background border-r">
+        <div className="flex h-16 shrink-0 items-center px-4 font-bold text-base tracking-tight border-b text-primary">
             Aurabox Bounce
         </div>
-        <div className="flex grow flex-col gap-y-5 overflow-y-auto px-4 pb-4 pt-4">
+        <div className="flex grow flex-col gap-y-5 overflow-y-auto px-3 pb-4 pt-4">
             <nav className="flex flex-1 flex-col">
                 <ul role="list" className="flex flex-1 flex-col gap-y-2">
                     <li>

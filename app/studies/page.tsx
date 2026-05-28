@@ -1,269 +1,391 @@
 'use client';
 
-import {Suspense, useEffect, useState, useCallback} from 'react'
+import {Suspense, useEffect, useState, useCallback, useMemo} from 'react'
 import {useAppSelector} from "@/app/lib/hook";
 import {invoke} from "@tauri-apps/api/core";
-import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react'
-import { ChevronLeftIcon, ChevronRightIcon, EllipsisVerticalIcon, ArrowPathIcon } from '@heroicons/react/24/outline'
-import {classNames, formatDicomDateAndTime} from "@/app/lib/helpers";
+import {confirm} from "@tauri-apps/plugin-dialog";
+import {ArrowPathIcon} from '@heroicons/react/24/outline'
+import {classNames} from "@/app/lib/helpers";
 import {Study} from "@/app/lib/types";
-import { Button } from "@/app/components/ui/button";
-import { Card, CardContent } from "@/app/components/ui/card";
-import { Badge } from "@/app/components/ui/badge";
+import {Button} from "@/app/components/ui/button";
+import {Card, CardContent} from "@/app/components/ui/card";
+import {Input} from "@/app/components/ui/input";
+import StudiesTable from "@/app/components/StudiesTable";
 
-const statusMap: Record<string, { variant: "default" | "secondary" | "destructive" | "outline" | "success" | "warning", label: string }> = {
-    COMPLETE: { variant: 'success', label: 'Complete' },
-    SENT: { variant: 'success', label: 'Sent' },
-    "IN-PROGRESS": { variant: 'warning', label: 'In Progress' },
-    ARCHIVED: { variant: 'secondary', label: 'Archived' },
-    UNKNOWN: { variant: 'outline', label: 'Unknown' },
-}
-
-const ITEMS_PER_PAGE = 10;
+const DEFAULT_PAGE_SIZE = 25;
+const PAGE_SIZE_OPTIONS = [25, 50, 100];
+const SEARCH_DEBOUNCE_MS = 300;
 
 export default function Page() {
     const [loaded, setLoaded] = useState<boolean>(false);
-    const [currentPage, setCurrentPage] = useState<number>(1);
+    const [isFetching, setIsFetching] = useState<boolean>(false);
     const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+    const [currentPage, setCurrentPage] = useState<number>(1);
+    const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
+    const [searchInput, setSearchInput] = useState<string>('');
+    const [debouncedSearch, setDebouncedSearch] = useState<string>('');
+    const [selectedUids, setSelectedUids] = useState<Set<string>>(new Set());
 
-    const studies = useAppSelector((state) => state.main.studies)
+    const studies = useAppSelector((state) => state.main.studies);
+    const pagination = useAppSelector((state) => state.main.pagination);
 
-    // Calculate pagination - now these will need to come from backend response
-    // For now, keeping client-side calculations but these should ideally come from the API response
-    const totalItems = studies.length;
-    const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
-    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-    const endIndex = startIndex + ITEMS_PER_PAGE;
-    const currentStudies = studies; // Backend should return paginated results
+    const totalItems = pagination?.total_items ?? 0;
+    const totalPages = pagination?.total_pages ?? 0;
+    const offset = pagination?.offset ?? 0;
+    const itemsOnPage = pagination?.items_on_page ?? 0;
+    const startIndex = itemsOnPage > 0 ? offset + 1 : 0;
+    const endIndex = offset + itemsOnPage;
 
-    const loadStudies = useCallback(async (page: number = currentPage, limit: number = ITEMS_PER_PAGE) => {
-        setLoaded(false);
-        try {
-            await invoke('current_studies', { page, limit });
-        } catch (error) {
-            console.error('Error loading studies:', error);
-        } finally {
-            setLoaded(true);
-        }
-    }, [currentPage]);
+    const loadStudies = useCallback(
+        async (page: number, limit: number, search: string) => {
+            setIsFetching(true);
+            try {
+                await invoke('current_studies', {
+                    page,
+                    limit,
+                    search: search.trim() === '' ? null : search.trim(),
+                });
+            } catch (error) {
+                console.error('Error loading studies:', error);
+            } finally {
+                setIsFetching(false);
+                setLoaded(true);
+            }
+        },
+        [],
+    );
+
+    // Debounce search input. We do this with setTimeout rather than a
+    // library dependency: the search box is local to this page and we
+    // do not need the broader semantics of a debounce hook.
+    useEffect(() => {
+        const handle = window.setTimeout(() => {
+            setDebouncedSearch(searchInput);
+        }, SEARCH_DEBOUNCE_MS);
+
+        return () => window.clearTimeout(handle);
+    }, [searchInput]);
+
+    // When the filter changes, return to page 1 before fetching so the
+    // operator never sees "page 5 of 1" or an empty page during typing.
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [debouncedSearch, pageSize]);
+
+    // Selection is per-page (see Decision Log). Clear whenever the
+    // visible window changes so the action bar never claims rows the
+    // operator can no longer see.
+    useEffect(() => {
+        setSelectedUids(new Set());
+    }, [currentPage, pageSize, debouncedSearch]);
+
+    useEffect(() => {
+        loadStudies(currentPage, pageSize, debouncedSearch);
+    }, [loadStudies, currentPage, pageSize, debouncedSearch]);
 
     const refreshStudies = async () => {
         setIsRefreshing(true);
         try {
-            await loadStudies(currentPage, ITEMS_PER_PAGE);
+            await loadStudies(currentPage, pageSize, debouncedSearch);
         } finally {
             setIsRefreshing(false);
         }
     };
 
-    useEffect(() => {
-        loadStudies(1, ITEMS_PER_PAGE);
-    }, [loadStudies]);
-
-    // Reset to first page when studies change
-    useEffect(() => {
-        if (currentPage > totalPages && totalPages > 0) {
-            setCurrentPage(1);
-        }
-    }, [studies, currentPage, totalPages]);
-
     const sendStudy = async (study: Study) => {
-        await invoke('send_study', {
-            studyUid: study.study_uid,
-        });
+        await invoke('send_study', {studyUid: study.study_uid});
     };
 
     const deleteStudy = async (study: Study) => {
-        setLoaded(false)
+        const ok = await confirm(
+            `Delete study ${study.study_description || study.study_uid}? This removes it from disk and cannot be undone.`,
+            {title: 'Delete study', kind: 'warning'},
+        );
+        if (!ok) return;
 
-        await invoke('delete_study', {
-            studyUid: study.study_uid,
-        });
-
-        await loadStudies(currentPage, ITEMS_PER_PAGE);
+        await invoke('delete_study', {studyUid: study.study_uid});
+        await loadStudies(currentPage, pageSize, debouncedSearch);
     };
+
+    const onBulkSend = async () => {
+        const uids = Array.from(selectedUids);
+        if (uids.length === 0) return;
+
+        const ok = await confirm(
+            `Send ${uids.length} ${uids.length === 1 ? 'study' : 'studies'} to Aurabox?`,
+            {title: 'Send selected studies', kind: 'info'},
+        );
+        if (!ok) return;
+
+        await invoke('bulk_send_studies', {studyUids: uids});
+        setSelectedUids(new Set());
+        await loadStudies(currentPage, pageSize, debouncedSearch);
+    };
+
+    const onBulkDelete = async () => {
+        const uids = Array.from(selectedUids);
+        if (uids.length === 0) return;
+
+        const ok = await confirm(
+            `Delete ${uids.length} ${uids.length === 1 ? 'study' : 'studies'}? This removes them from disk and cannot be undone.`,
+            {title: 'Delete selected studies', kind: 'warning'},
+        );
+        if (!ok) return;
+
+        await invoke('bulk_delete_studies', {studyUids: uids});
+        setSelectedUids(new Set());
+        await loadStudies(currentPage, pageSize, debouncedSearch);
+    };
+
+    const onDeleteAll = async () => {
+        const ok = await confirm(
+            `Delete all ${totalItems} ${totalItems === 1 ? 'study' : 'studies'} and their files? This cannot be undone.`,
+            {title: 'Delete all studies', kind: 'warning'},
+        );
+        if (!ok) return;
+
+        await invoke('delete_all_studies');
+        setSelectedUids(new Set());
+        setCurrentPage(1);
+        await loadStudies(1, pageSize, debouncedSearch);
+    };
+
+    const toggleSelect = useCallback((uid: string) => {
+        setSelectedUids((prev) => {
+            const next = new Set(prev);
+            if (next.has(uid)) {
+                next.delete(uid);
+            } else {
+                next.add(uid);
+            }
+            return next;
+        });
+    }, []);
+
+    const visibleUids = useMemo(
+        () => studies.map((s) => s.study_uid),
+        [studies],
+    );
+
+    const selectedOnPageCount = useMemo(
+        () => visibleUids.filter((uid) => selectedUids.has(uid)).length,
+        [visibleUids, selectedUids],
+    );
+
+    const allOnPageSelected = visibleUids.length > 0
+        && selectedOnPageCount === visibleUids.length;
+    const someOnPageSelected = selectedOnPageCount > 0 && !allOnPageSelected;
+
+    const toggleSelectAll = useCallback(() => {
+        setSelectedUids((prev) => {
+            if (visibleUids.length > 0
+                && visibleUids.every((uid) => prev.has(uid))) {
+                const next = new Set(prev);
+                visibleUids.forEach((uid) => next.delete(uid));
+                return next;
+            }
+
+            const next = new Set(prev);
+            visibleUids.forEach((uid) => next.add(uid));
+            return next;
+        });
+    }, [visibleUids]);
 
     const goToPage = (page: number) => {
-        const newPage = Math.max(1, Math.min(page, totalPages));
-        setCurrentPage(newPage);
-        loadStudies(newPage, ITEMS_PER_PAGE);
+        const target = Math.max(1, Math.min(page, Math.max(totalPages, 1)));
+        setCurrentPage(target);
     };
 
-    const goToPrevious = () => {
-        goToPage(currentPage - 1);
-    };
+    const goToPrevious = () => goToPage(currentPage - 1);
+    const goToNext = () => goToPage(currentPage + 1);
 
-    const goToNext = () => {
-        goToPage(currentPage + 1);
-    };
-
-    // Generate page numbers for pagination
     const getPageNumbers = () => {
-        const pages = [];
+        const pages: (number | '...')[] = [];
         const maxPagesToShow = 5;
 
         if (totalPages <= maxPagesToShow) {
-            // Show all pages if total is small
-            for (let i = 1; i <= totalPages; i++) {
-                pages.push(i);
-            }
+            for (let i = 1; i <= totalPages; i++) pages.push(i);
+        } else if (currentPage <= 3) {
+            pages.push(1, 2, 3, 4, '...', totalPages);
+        } else if (currentPage >= totalPages - 2) {
+            pages.push(1, '...', totalPages - 3, totalPages - 2, totalPages - 1, totalPages);
         } else {
-            // Show smart pagination with ellipsis
-            if (currentPage <= 3) {
-                pages.push(1, 2, 3, 4, '...', totalPages);
-            } else if (currentPage >= totalPages - 2) {
-                pages.push(1, '...', totalPages - 3, totalPages - 2, totalPages - 1, totalPages);
-            } else {
-                pages.push(1, '...', currentPage - 1, currentPage, currentPage + 1, '...', totalPages);
-            }
+            pages.push(1, '...', currentPage - 1, currentPage, currentPage + 1, '...', totalPages);
         }
 
         return pages;
     };
 
+    const trimmedSearch = debouncedSearch.trim();
+    const hasActiveSearch = trimmedSearch.length > 0;
+    const showEmptySearchResult = loaded && studies.length === 0 && hasActiveSearch;
+    const showEmptyDatabase = loaded && studies.length === 0 && !hasActiveSearch;
+    const tableDim = isFetching && studies.length > 0;
+
     return (
-        <div className="h-full flex flex-col space-y-6">
-            {/* Header with refresh button */}
-            <div className="flex justify-between items-center">
-                <div className="text-sm text-muted-foreground">
+        <div className="h-full flex flex-col space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex-1 min-w-[16rem] max-w-md">
+                    <Input
+                        value={searchInput}
+                        onChange={(e) => setSearchInput(e.target.value)}
+                        placeholder="Search description, patient, accession, or UID…"
+                        aria-label="Search studies"
+                    />
+                </div>
+
+                <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <span>Page size</span>
+                        <select
+                            value={pageSize}
+                            onChange={(e) => setPageSize(Number(e.target.value))}
+                            className="h-9 min-w-[5rem] rounded-md border border-input bg-background pl-3 pr-8 text-sm text-foreground"
+                            aria-label="Studies per page"
+                        >
+                            {PAGE_SIZE_OPTIONS.map((opt) => (
+                                <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                        </select>
+                    </label>
+
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={refreshStudies}
+                        disabled={isRefreshing}
+                        className="gap-2"
+                    >
+                        <ArrowPathIcon
+                            className={classNames(
+                                "h-4 w-4",
+                                isRefreshing ? "animate-spin" : "",
+                            )}
+                        />
+                        {isRefreshing ? 'Refreshing…' : 'Refresh'}
+                    </Button>
+
                     {totalItems > 0 && (
-                        <span>
-                            Showing {startIndex + 1} to {Math.min(endIndex, totalItems)} of {totalItems} studies
-                        </span>
+                        <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={onDeleteAll}
+                        >
+                            Delete all
+                        </Button>
                     )}
                 </div>
-                <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={refreshStudies}
-                    disabled={isRefreshing}
-                    className="gap-2"
-                >
-                    <ArrowPathIcon
-                        className={classNames(
-                            "h-4 w-4",
-                            isRefreshing ? "animate-spin" : ""
-                        )}
-                    />
-                    {isRefreshing ? 'Refreshing...' : 'Refresh'}
-                </Button>
             </div>
+
+            <div className="text-sm text-muted-foreground">
+                {totalItems > 0 ? (
+                    <span>
+                        Showing {startIndex} to {Math.min(endIndex, totalItems)} of {totalItems} studies
+                    </span>
+                ) : null}
+            </div>
+
+            {selectedUids.size > 0 && (
+                <div className="flex items-center justify-between rounded-md border bg-muted/30 px-4 py-2">
+                    <span className="text-sm">{selectedUids.size} selected</span>
+                    <div className="flex gap-2">
+                        <Button size="sm" variant="outline" onClick={onBulkSend}>
+                            Send selected
+                        </Button>
+                        <Button size="sm" variant="destructive" onClick={onBulkDelete}>
+                            Delete selected
+                        </Button>
+                    </div>
+                </div>
+            )}
 
             <div className="flex-1">
                 <Suspense fallback={<Loading/>}>
-                    {loaded ? (
+                    {!loaded ? (
+                        <Loading/>
+                    ) : showEmptyDatabase ? (
+                        <Card>
+                            <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                                <div className="text-muted-foreground">
+                                    <h3 className="text-lg font-medium mb-2">No studies found</h3>
+                                    <p className="text-sm">Studies will appear here once they are received via DICOM.</p>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    ) : showEmptySearchResult ? (
+                        <div className="flex items-center justify-between rounded-md border bg-muted/20 px-4 py-3 text-sm">
+                            <span>
+                                No studies match &ldquo;{trimmedSearch}&rdquo;. Clear the search to see all studies.
+                            </span>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setSearchInput('')}
+                            >
+                                Clear
+                            </Button>
+                        </div>
+                    ) : (
                         <div className="space-y-4">
-                            {currentStudies.length === 0 ? (
-                                <Card>
-                                    <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                                        <div className="text-muted-foreground">
-                                            <h3 className="text-lg font-medium mb-2">No studies found</h3>
-                                            <p className="text-sm">Studies will appear here once they are received via DICOM.</p>
-                                        </div>
-                                    </CardContent>
-                                </Card>
-                            ) : (
-                                <>
-                                    <div className="space-y-4">
-                                        {currentStudies.map((study) => (
-                                            <Card key={study.study_uid}>
-                                                <CardContent className="p-6 flex items-center justify-between gap-x-6">
-                                                <div className="min-w-0">
-                                                    <div className="flex items-center gap-x-3 mb-1">
-                                                        <p className="text-sm font-semibold text-foreground">{study.study_description}</p>
-                                                        <Badge variant={statusMap[study.status]?.variant || 'outline'}>
-                                                            {study.status}
-                                                        </Badge>
-                                                    </div>
-                                                    <div className="flex flex-col items-start gap-x-2 text-xs text-muted-foreground">
-                                                        <p className="whitespace-nowrap truncate w-full">
-                                                            UID: {study.study_uid}
-                                                        </p>
-                                                        <p className="truncate w-full">Created: {formatDicomDateAndTime(study.study_date, study.study_time)}</p>
-                                                    </div>
-                                                </div>
-                                                <div className="flex flex-none items-center gap-x-4">
-                                                    {study.exists && (
-                                                        <Button
-                                                            variant="outline"
-                                                            size="sm"
-                                                            onClick={() => sendStudy(study)}
-                                                            className="hidden sm:flex"
-                                                        >
-                                                            Send study
-                                                        </Button>
-                                                    )}
+                            <div
+                                className={classNames(
+                                    "transition-opacity",
+                                    tableDim ? "opacity-60 pointer-events-none" : "",
+                                )}
+                            >
+                                <StudiesTable
+                                    studies={studies}
+                                    selectedUids={selectedUids}
+                                    onToggleSelect={toggleSelect}
+                                    onToggleSelectAll={toggleSelectAll}
+                                    allOnPageSelected={allOnPageSelected}
+                                    someOnPageSelected={someOnPageSelected}
+                                    onSend={sendStudy}
+                                    onDelete={deleteStudy}
+                                />
+                            </div>
 
-                                                    <Menu as="div" className="relative flex-none">
-                                                        <MenuButton className="-m-2.5 block p-2.5 text-gray-500 hover:text-gray-900">
-                                                            <span className="sr-only">Open options</span>
-                                                            <EllipsisVerticalIcon aria-hidden="true" className="size-5" />
-                                                        </MenuButton>
-                                                        <MenuItems
-                                                            transition
-                                                            className="absolute right-0 z-10 mt-2 w-32 origin-top-right rounded-md bg-white py-2 ring-1 shadow-lg ring-gray-900/5 transition focus:outline-hidden data-closed:scale-95 data-closed:transform data-closed:opacity-0 data-enter:duration-100 data-enter:ease-out data-leave:duration-75 data-leave:ease-in"
-                                                        >
-                                                            <MenuItem>
-                                                                <a
-                                                                    href="#"
-                                                                    onClick={() => deleteStudy(study)}
-                                                                    className="block px-3 py-1 text-sm/6 text-gray-900 data-focus:bg-gray-50 data-focus:outline-hidden"
-                                                                >
-                                                                    Delete<span className="sr-only">, {study.study_description}</span>
-                                                                </a>
-                                                            </MenuItem>
-                                                        </MenuItems>
-                                                    </Menu>
-                                                </div>
-                                                </CardContent>
-                                            </Card>
+                            {totalPages > 1 && (
+                                <div className="flex items-center justify-center space-x-2 py-2">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={goToPrevious}
+                                        disabled={currentPage === 1}
+                                    >
+                                        Previous
+                                    </Button>
+
+                                    <div className="flex items-center space-x-2">
+                                        {getPageNumbers().map((page, index) => (
+                                            <span key={`${page}-${index}`}>
+                                                {page === '...' ? (
+                                                    <span className="px-4 py-2 text-sm text-muted-foreground">…</span>
+                                                ) : (
+                                                    <Button
+                                                        variant={currentPage === page ? "default" : "outline"}
+                                                        size="sm"
+                                                        onClick={() => goToPage(page as number)}
+                                                    >
+                                                        {page}
+                                                    </Button>
+                                                )}
+                                            </span>
                                         ))}
                                     </div>
 
-                                    {/* Pagination */}
-                                    {totalPages > 1 && (
-                                        <div className="flex items-center justify-center space-x-2 py-4">
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                onClick={goToPrevious}
-                                                disabled={currentPage === 1}
-                                            >
-                                                Previous
-                                            </Button>
-
-                                            <div className="flex items-center space-x-2">
-                                                {getPageNumbers().map((page, index) => (
-                                                    <span key={index}>
-                                                        {page === '...' ? (
-                                                            <span className="px-4 py-2 text-sm text-muted-foreground">...</span>
-                                                        ) : (
-                                                            <Button
-                                                                variant={currentPage === page ? "default" : "outline"}
-                                                                size="sm"
-                                                                onClick={() => goToPage(page as number)}
-                                                            >
-                                                                {page}
-                                                            </Button>
-                                                        )}
-                                                    </span>
-                                                ))}
-                                            </div>
-
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                onClick={goToNext}
-                                                disabled={currentPage === totalPages}
-                                            >
-                                                Next
-                                            </Button>
-                                        </div>
-                                    )}
-                                </>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={goToNext}
+                                        disabled={currentPage === totalPages}
+                                    >
+                                        Next
+                                    </Button>
+                                </div>
                             )}
                         </div>
-                    ) : null}
+                    )}
                 </Suspense>
             </div>
         </div>

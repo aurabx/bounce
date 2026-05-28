@@ -1,6 +1,6 @@
 import { configureStore, createSlice } from '@reduxjs/toolkit'
 import type { PayloadAction } from '@reduxjs/toolkit'
-import {CurrentStudies, DicomService, Study} from "@/app/lib/types";
+import {CurrentStudies, DicomService, Pagination, Study} from "@/app/lib/types";
 
 export interface RunningDetail {
     label: string,
@@ -28,6 +28,7 @@ export interface ConnectivityState {
 export interface State {
     logs: LogEntry[]
     studies: Study[],
+    pagination: Pagination | null,
     running: boolean,
     runningDetail: RunningDetail[],
     errors: string[],
@@ -38,6 +39,7 @@ export interface State {
 const initialState: State = {
     logs: [],
     studies: [],
+    pagination: null,
     running: false,
     runningDetail: [],
     errors: [],
@@ -71,6 +73,7 @@ export const mainSlice = createSlice({
         },
         setCurrentStudies(state, action: PayloadAction<CurrentStudies>){
             state.studies = action.payload.studies
+            state.pagination = action.payload.pagination ?? null
         },
         setError(state, action: PayloadAction<string>){
             state.errors.push(action.payload)

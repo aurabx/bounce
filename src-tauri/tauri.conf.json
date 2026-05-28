@@ -58,10 +58,12 @@
     "windows": [
       {
         "fullscreen": false,
-        "height": 600,
+        "height": 820,
+        "minHeight": 600,
+        "minWidth": 960,
         "resizable": true,
         "title": "Aurabox Bounce",
-        "width": 800,
+        "width": 1280,
         "useHttpsScheme": true,
         "closable": true
       }

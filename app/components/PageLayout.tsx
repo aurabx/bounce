@@ -13,7 +13,7 @@ export default function PageLayout({children}: { children: React.ReactNode }) {
         {setupComplete ? (
             <>
                 <Sidebar/>
-                <div className="pl-64 h-full flex flex-col">
+                <div className="pl-52 h-full flex flex-col">
                     <PageTitle/>
                     <UpdateToast/>
                     <main className="flex-1 overflow-y-auto p-8">
