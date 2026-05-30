@@ -44,7 +44,7 @@
   },
   "productName": "Aurabox Bounce",
   "mainBinaryName": "Aurabox Bounce",
-  "version": "1.6.1",
+  "version": "1.7.0",
   "identifier": "com.aurabox.bounce",
   "plugins": {
     "updater": {

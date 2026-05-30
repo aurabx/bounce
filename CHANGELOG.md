@@ -2,13 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [1.7.0] - 2026-05-30
 
 ### Added
 
 - Added a "Start on login" setting (Settings → Startup) that registers Bounce with the operating system's login items on macOS and Windows, so the application launches automatically when the user signs in and the receiver returns after a reboot.
 - Added an optional automatic-update mode that restarts Bounce to apply a downloaded update without manual intervention, gated by a configurable restart time window so the service is not interrupted during busy hours. When an automatic restart occurs while the DICOM receiver is running, the receiver is started again on the next launch so the service returns to the same state.
 - Added a Transactions view: a new sidebar menu item listing the upload-attempt history across all studies, with server-side pagination and free-text search (Study UID, upload ID, status, error).
+- Added automatic upload retry with recovery on restart and a disk-space safety check that prevents new uploads when free space is low.
+
+### Changed
+
+- Replaced the dashboard study count with a status summary and a list of recent transactions.
+
+### Fixed
+
+- Hardened the backend against malformed input and runtime failures: DICOM UIDs are validated before building storage paths, unsupported transfer syntaxes are rejected instead of panicking, malformed config values fall back to defaults, and commands return errors rather than panicking or exiting the process.
+- Surfaced storage-directory and IPC event-emit failures through error reporting instead of unwrapping or terminating the process.
+- Redacted the upload token from logs.
+- Surfaced event-binding failures in the UI and used stable list keys.
+
+### Internal
+
+- Added typed wrappers for Tauri commands and removed `ts-ignore` usages, resolving TypeScript errors across Settings, plugin-store, and studies search.
+- Guarded `runningDetail` JSON parsing in the reducer and removed an empty `client-side-button.js`.
 
 ## [1.6.1] - 2026-05-30
 
