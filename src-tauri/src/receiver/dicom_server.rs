@@ -560,8 +560,10 @@ impl DICOMServer {
                                                 )?;
 
                                             let mut file_path = out_dir.to_path_buf();
-                                            file_path.push(study_uid.trim_end_matches('\0'));
-                                            file_path.push(series_uid.trim_end_matches('\0'));
+                                            file_path
+                                                .push(Self::sanitize_uid_component(&study_uid)?);
+                                            file_path
+                                                .push(Self::sanitize_uid_component(&series_uid)?);
                                             let series_dir = file_path.clone();
 
                                             if !series_dir.exists() {
@@ -574,7 +576,8 @@ impl DICOMServer {
                                             }
 
                                             file_path.push(
-                                                sop_instance_uid.trim_end_matches('\0').to_string()
+                                                Self::sanitize_uid_component(&sop_instance_uid)?
+                                                    .to_string()
                                                     + ".dcm",
                                             );
 
@@ -733,6 +736,23 @@ impl DICOMServer {
         Ok(())
     }
 
+    /// Validate a DICOM UID before using it as a filesystem path component.
+    /// PACS implementations cannot be trusted to follow the standard, so reject
+    /// any value that could escape the storage directory (path separators,
+    /// `..`, or empty) rather than writing the instance to an attacker-chosen
+    /// location. A legal DICOM UID is digits and dots only.
+    fn sanitize_uid_component(uid: &str) -> Result<&str, Whatever> {
+        let trimmed = uid.trim_end_matches('\0');
+        (!trimmed.is_empty()
+            && trimmed != "."
+            && trimmed != ".."
+            && !trimmed.contains("..")
+            && !trimmed.contains('/')
+            && !trimmed.contains('\\'))
+        .then_some(trimmed)
+        .whatever_context(format!("unsafe DICOM UID path component: {:?}", trimmed))
+    }
+
     pub(crate) fn extract_string_tag(obj: &InMemDicomObject, tag: Tag) -> Result<String, Whatever> {
         Ok(obj
             .element(tag)
@@ -821,5 +841,33 @@ impl DICOMServer {
             ),
             DataElement::new(tags::STATUS, VR::US, dicom_value!(U16, [0x0000])),
         ])
+    }
+}
+
+#[cfg(test)]
+mod sanitize_uid_tests {
+    use super::DICOMServer;
+
+    #[test]
+    fn accepts_valid_uid_and_trims_null() {
+        assert_eq!(
+            DICOMServer::sanitize_uid_component("1.2.840.113619.2").unwrap(),
+            "1.2.840.113619.2"
+        );
+        assert_eq!(
+            DICOMServer::sanitize_uid_component("1.2.3\0\0").unwrap(),
+            "1.2.3"
+        );
+    }
+
+    #[test]
+    fn rejects_traversal_and_separators() {
+        for bad in ["..", ".", "../etc", "a/../b", "a/b", "a\\b", "", "\0"] {
+            assert!(
+                DICOMServer::sanitize_uid_component(bad).is_err(),
+                "expected {:?} to be rejected",
+                bad
+            );
+        }
     }
 }
