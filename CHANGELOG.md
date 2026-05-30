@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.1] - 2026-05-30
+
+### Fixed
+
+- Fixed automatic updates failing with a 404 during download. The updater manifest (`latest.json`) referenced artifact filenames that GitHub rewrites on upload (spaces become dots, and the two macOS bundles gain an architecture suffix), so the download URLs did not exist. The release workflow now resolves filenames from the assets actually uploaded to the release.
+
 ## [1.6.0] - 2026-05-28
 
 ### Added
