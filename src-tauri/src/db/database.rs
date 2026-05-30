@@ -257,6 +257,62 @@ impl Database {
         }
     }
 
+    /// Aggregate study counts by lifecycle status for the dashboard summary.
+    ///
+    /// Runs a single conditional-aggregate query rather than loading rows so
+    /// the cost is independent of how many studies exist. `COUNT(CASE …)`
+    /// yields 0 (not NULL) for absent statuses, so an empty table returns all
+    /// zeros without special-casing.
+    pub async fn dashboard_stats(&self) -> Result<DashboardStats> {
+        #[derive(sqlx::FromRow)]
+        struct StatsRow {
+            total: i64,
+            in_progress: i64,
+            queued: i64,
+            uploading: i64,
+            retrying: i64,
+            sent: i64,
+            failed: i64,
+            last_received_at: Option<DateTime<Utc>>,
+        }
+
+        let row = sqlx::query_as::<_, StatsRow>(
+            "SELECT \
+                COUNT(*) AS total, \
+                COUNT(CASE WHEN status = ? THEN 1 END) AS in_progress, \
+                COUNT(CASE WHEN status = ? THEN 1 END) AS queued, \
+                COUNT(CASE WHEN status = ? THEN 1 END) AS uploading, \
+                COUNT(CASE WHEN status = ? THEN 1 END) AS retrying, \
+                COUNT(CASE WHEN status = ? THEN 1 END) AS sent, \
+                COUNT(CASE WHEN status = ? THEN 1 END) AS failed, \
+                MAX(created_at) AS last_received_at \
+             FROM studies",
+        )
+        .bind(study_status::IN_PROGRESS)
+        .bind(study_status::QUEUED)
+        .bind(study_status::UPLOADING)
+        .bind(study_status::RETRYING)
+        .bind(study_status::SENT)
+        .bind(study_status::FAILED)
+        .fetch_one(&self.pool)
+        .await
+        .context("Failed to compute dashboard stats")?;
+
+        let pending = row.in_progress + row.queued + row.uploading + row.retrying;
+
+        Ok(DashboardStats {
+            total: row.total,
+            in_progress: row.in_progress,
+            queued: row.queued,
+            uploading: row.uploading,
+            retrying: row.retrying,
+            sent: row.sent,
+            failed: row.failed,
+            pending,
+            last_received_at: row.last_received_at,
+        })
+    }
+
     #[allow(dead_code)]
     pub async fn get_studies_paginated(
         &self,
