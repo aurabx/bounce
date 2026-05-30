@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { invoke } from '@tauri-apps/api/core'
+import { invokeCommand } from '@/app/lib/commands'
 import { useAppDispatch, useAppSelector } from '@/app/lib/hook'
 import { setDicomServices } from '@/app/lib/store'
 import { DicomService, EchoResult } from '@/app/lib/types'
@@ -30,7 +30,7 @@ export default function PacsServices() {
 
     const loadFromCache = async () => {
         try {
-            const cached = await invoke<DicomService[]>('list_pacs_services')
+            const cached = await invokeCommand('list_pacs_services')
             dispatch(setDicomServices(cached))
         } catch (err) {
             console.error('Failed to load cached PACS services:', err)
@@ -41,7 +41,7 @@ export default function PacsServices() {
         setRefreshing(true)
         setError(null)
         try {
-            const fresh = await invoke<DicomService[]>('refresh_pacs_services')
+            const fresh = await invokeCommand('refresh_pacs_services')
             dispatch(setDicomServices(fresh))
         } catch (err) {
             setError(String(err))
@@ -57,7 +57,7 @@ export default function PacsServices() {
         }))
 
         try {
-            const result = await invoke<EchoResult>('echo_pacs_service', {
+            const result = await invokeCommand('echo_pacs_service', {
                 serviceId: service.id,
             })
             setEchoes((prev) => ({

@@ -1,5 +1,4 @@
-import {load} from "@tauri-apps/plugin-store";
-import {invoke} from "@tauri-apps/api/core";
+import {invokeCommand} from "@/app/lib/commands";
 import type {AppDispatch} from "@/app/lib/store";
 import {
     setConnectivityChecking,
@@ -17,7 +16,7 @@ import {
 export const verifyConnectivity = async (dispatch: AppDispatch): Promise<boolean> => {
     dispatch(setConnectivityChecking());
     try {
-        await invoke('verify_connectivity');
+        await invokeCommand('verify_connectivity');
         dispatch(setConnectivityOk());
         return true;
     } catch (err) {
@@ -31,7 +30,7 @@ export const verifyConnectivity = async (dispatch: AppDispatch): Promise<boolean
 
 export const receiverStart = async () => {
     try {
-        await invoke('receiver_start'); // Pass the port to Tauri
+        await invokeCommand('receiver_start'); // Pass the port to Tauri
     } catch (error) {
         console.error('Error starting server:', error);
         alert(`Failed to start server: ${error}`);
@@ -40,7 +39,7 @@ export const receiverStart = async () => {
 
 export const receiverStop = async () => {
     try {
-        await invoke('receiver_stop'); // Pass the port to Tauri
+        await invokeCommand('receiver_stop'); // Pass the port to Tauri
         console.info(`Dicom server stopped`);
     } catch (error) {
         console.error('Error stopping server:', error);

@@ -1,6 +1,6 @@
 'use client';
 
-import { invoke } from '@tauri-apps/api/core';
+import { invokeCommand } from '@/app/lib/commands';
 import {receiverStart, receiverStop} from "@/app/lib/server";
 import {useAppSelector} from "@/app/lib/hook";
 import { cn } from "@/app/lib/utils";
@@ -21,7 +21,7 @@ export default function Page() {
 
     const sendLog = async () => {
         try {
-            await invoke('send_log', { log: "Log and things" }); // Pass the port to Tauri
+            await invokeCommand('send_log', { log: "Log and things" }); // Pass the port to Tauri
         } catch (error) {
             console.error('Error starting server:', error);
             alert(`Failed to start server: ${error}`);
@@ -29,7 +29,7 @@ export default function Page() {
     };
 
     const loadStudies = async () => {
-        await invoke('current_studies');
+        await invokeCommand('current_studies');
     }
 
     return (setupComplete ?

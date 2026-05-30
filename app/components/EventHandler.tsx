@@ -6,7 +6,7 @@ import {logMessage, setRunning, setCurrentStudies, setRunningDetail, setErrors, 
 import {useAppDispatch} from "@/app/lib/hook";
 import {listen} from "@tauri-apps/api/event";
 import {CurrentStudies} from "@/app/lib/types";
-import {invoke} from "@tauri-apps/api/core";
+import {invokeCommand} from "@/app/lib/commands";
 import {load} from "@tauri-apps/plugin-store";
 
 
@@ -97,12 +97,12 @@ export default function EventHandler({ children, }: { children: React.ReactNode 
         // cannot cause a restart loop.
         const resumeRunningIfNeeded = async () => {
             try {
-                const store = await load('store.json', { autoSave: false } as any)
+                const store = await load('store.json', { autoSave: false })
                 const resume = await store.get('_resume_running')
                 if (resume === true) {
                     await store.set('_resume_running', false)
                     await store.save()
-                    await invoke('receiver_start')
+                    await invokeCommand('receiver_start')
                 }
             } catch (e) {
                 console.error('Failed to resume running state', e)
@@ -113,7 +113,7 @@ export default function EventHandler({ children, }: { children: React.ReactNode 
             .then(async (dispose) => {
                 cleanup = dispose
                 await resumeRunningIfNeeded()
-                await invoke('current_studies').catch(console.error)
+                await invokeCommand('current_studies').catch(console.error)
             })
             .catch(console.error);
 

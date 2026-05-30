@@ -1,7 +1,7 @@
 'use client';
 
 import {FormEvent, Suspense, useEffect, useState} from 'react'
-import {invoke} from "@tauri-apps/api/core";
+import {invokeCommand} from "@/app/lib/commands";
 import TextInput from "@/app/components/Fields/TextInput";
 import SelectInput from "@/app/components/Fields/SelectInput";
 import {useAppSelector} from "@/app/lib/hook";
@@ -31,7 +31,7 @@ export default function Page() {
     };
 
     useEffect(() => {
-        invoke('current_studies').then(() => {
+        invokeCommand('current_studies').then(() => {
             setLoaded(true)
         });
     }, []);
@@ -41,14 +41,14 @@ export default function Page() {
 
         try {
             if (command === 'api_start_upload')
-                await invoke('api_start_upload', {
+                await invokeCommand('api_start_upload', {
                     studyUid: study_uid,
                     signature: signature,
                     uploadId: upload_id,
                     assemblyId: assembly_id,
                 });
             else if (command === 'send_study'){
-                await invoke('send_study', {
+                await invokeCommand('send_study', {
                     studyUid: study_uid,
                 });
             }

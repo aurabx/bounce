@@ -11,7 +11,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { useRouter } from 'next/navigation'
 import {useSetupComplete} from "@/app/lib/customHooks";
 import {cn} from "@/app/lib/utils";
-import {invoke} from "@tauri-apps/api/core";
+import {invokeCommand} from "@/app/lib/commands";
 import { relaunch } from '@tauri-apps/plugin-process';
 import { enable as enableAutostart, disable as disableAutostart, isEnabled as isAutostartEnabled } from '@tauri-apps/plugin-autostart';
 import {useAppDispatch, useAppSelector} from "@/app/lib/hook";
@@ -60,7 +60,7 @@ export default function Settings() {
     const save = async (e: any) => {
         e.preventDefault();
 
-        let store =  await load('store.json', { autoSave: false } as any);
+        let store =  await load('store.json', { autoSave: false });
 
         for (const fieldKey of fieldKeys) {
             // Internal-only flags (prefixed with _) are not persisted.
@@ -84,7 +84,7 @@ export default function Settings() {
         await store.save();
 
         // Update remote logging flag in the backend without requiring a restart
-        await invoke('update_send_logs', { enabled: settings?.['send_logs'] === 'yes' });
+        await invokeCommand('update_send_logs', { enabled: settings?.['send_logs'] === 'yes' });
 
         // Update env warning from whatever key is now stored (may be the new
         // one or the existing one, depending on whether the user changed it).
@@ -133,7 +133,7 @@ export default function Settings() {
 
 
     const loadStore = async () => {
-        let store =  await load('store.json', { autoSave: false } as any);
+        let store =  await load('store.json', { autoSave: false });
 
         let data: { [key: string]: any } = {}
         for (const fieldKey of fieldKeys) {
@@ -171,7 +171,7 @@ export default function Settings() {
         auto_update_window_start?: string,
         auto_update_window_end?: string,
     }) => {
-        const store = await load('store.json', { autoSave: false } as any);
+        const store = await load('store.json', { autoSave: false });
         for (const [key, value] of Object.entries(updates)) {
             await store.set(key, value)
         }
@@ -181,12 +181,12 @@ export default function Settings() {
     const resetApp = async (e: any) => {
         e.preventDefault();
 
-        let store =  await load('store.json', { autoSave: false } as any);
+        let store =  await load('store.json', { autoSave: false });
         await store.clear()
         await store.reset()
 
         try {
-            await invoke('reset_app'); // Pass the port to Tauri
+            await invokeCommand('reset_app'); // Pass the port to Tauri
         } catch (error) {
             console.error('Error resetting app:', error);
             alert(`Error resetting app: ${error}`);
@@ -243,7 +243,7 @@ export default function Settings() {
             // Auto-verify connectivity on mount whenever a key is already
             // configured. With no key there is nothing meaningful to check
             // — leave the status as whatever it was (likely 'idle').
-            const store = await load('store.json', { autoSave: false } as any);
+            const store = await load('store.json', { autoSave: false });
             const existingKey = (await store.get('api_key')) as string | null;
             if (existingKey && existingKey.length > 0) {
                 await verifyConnectivity(dispatch);

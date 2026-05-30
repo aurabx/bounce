@@ -2,7 +2,7 @@
 
 import {Suspense, useEffect, useState, useCallback, useMemo} from 'react'
 import {useAppSelector} from "@/app/lib/hook";
-import {invoke} from "@tauri-apps/api/core";
+import {invokeCommand} from "@/app/lib/commands";
 import {listen} from "@tauri-apps/api/event";
 import {confirm} from "@tauri-apps/plugin-dialog";
 import {ArrowPathIcon} from '@heroicons/react/24/outline'
@@ -42,7 +42,7 @@ export default function Page() {
         async (page: number, limit: number, search: string) => {
             setIsFetching(true);
             try {
-                await invoke('current_studies', {
+                await invokeCommand('current_studies', {
                     page,
                     limit,
                     search: search.trim() === '' ? null : search.trim(),
@@ -112,11 +112,11 @@ export default function Page() {
     }, []);
 
     const sendStudy = async (study: Study) => {
-        await invoke('send_study', {studyUid: study.study_uid});
+        await invokeCommand('send_study', {studyUid: study.study_uid});
     };
 
     const retryStudy = async (study: Study) => {
-        await invoke('retry_study', {studyUid: study.study_uid});
+        await invokeCommand('retry_study', {studyUid: study.study_uid});
         await loadStudies(currentPage, pageSize, debouncedSearch);
     };
 
@@ -127,7 +127,7 @@ export default function Page() {
         );
         if (!ok) return;
 
-        await invoke('delete_study', {studyUid: study.study_uid});
+        await invokeCommand('delete_study', {studyUid: study.study_uid});
         await loadStudies(currentPage, pageSize, debouncedSearch);
     };
 
@@ -141,7 +141,7 @@ export default function Page() {
         );
         if (!ok) return;
 
-        await invoke('bulk_send_studies', {studyUids: uids});
+        await invokeCommand('bulk_send_studies', {studyUids: uids});
         setSelectedUids(new Set());
         await loadStudies(currentPage, pageSize, debouncedSearch);
     };
@@ -156,7 +156,7 @@ export default function Page() {
         );
         if (!ok) return;
 
-        await invoke('bulk_delete_studies', {studyUids: uids});
+        await invokeCommand('bulk_delete_studies', {studyUids: uids});
         setSelectedUids(new Set());
         await loadStudies(currentPage, pageSize, debouncedSearch);
     };
@@ -168,7 +168,7 @@ export default function Page() {
         );
         if (!ok) return;
 
-        await invoke('delete_all_studies');
+        await invokeCommand('delete_all_studies');
         setSelectedUids(new Set());
         setCurrentPage(1);
         await loadStudies(1, pageSize, debouncedSearch);

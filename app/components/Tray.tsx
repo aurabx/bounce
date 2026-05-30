@@ -7,7 +7,7 @@ import {useEffect} from "react";
 import {resolveResource} from "@tauri-apps/api/path";
 import {useAppSelector} from "@/app/lib/hook";
 import {receiverStart, receiverStop} from "@/app/lib/server";
-import {invoke} from "@tauri-apps/api/core";
+import {invokeCommand} from "@/app/lib/commands";
 
 const TRAY_ID = 'bounce';
 
@@ -67,7 +67,7 @@ const Tray = () => {
 
 
     const show = async () => {
-        await invoke('show_window');
+        await invokeCommand('show_window');
     }
 
     const getTrayMenu = async () => {
