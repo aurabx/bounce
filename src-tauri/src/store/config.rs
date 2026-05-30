@@ -26,6 +26,16 @@ where
     }
 }
 
+/// Parse a string setting from the store, falling back to `default` when the
+/// value is absent or is not a JSON string. Avoids panicking on a malformed
+/// `store.json` (e.g. a value persisted as a number or object).
+fn parse_string(value: &Option<serde_json::Value>, default: &str) -> String {
+    match value {
+        Some(v) => v.as_str().unwrap_or(default).to_string(),
+        None => default.to_string(),
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
     pub base_dir: String,
@@ -99,20 +109,11 @@ impl Config {
                 },
             },
 
-            base_dir: match store.get("base_dir") {
-                None => "./tmp/dicom_storage".to_string(),
-                Some(value) => value.as_str().unwrap().parse().unwrap(),
-            },
+            base_dir: parse_string(&store.get("base_dir"), "./tmp/dicom_storage"),
 
-            delete_after_success: match store.get("delete_after_success") {
-                None => "yes".to_string(),
-                Some(value) => value.as_str().unwrap().parse().unwrap(),
-            },
+            delete_after_success: parse_string(&store.get("delete_after_success"), "yes"),
 
-            send_logs: match store.get("send_logs") {
-                None => "yes".to_string(),
-                Some(value) => value.as_str().unwrap().parse().unwrap(),
-            },
+            send_logs: parse_string(&store.get("send_logs"), "yes"),
 
             max_upload_attempts: parse_numeric(&store.get("max_upload_attempts"), 10),
             retry_base_seconds: parse_numeric(&store.get("retry_base_seconds"), 30),
