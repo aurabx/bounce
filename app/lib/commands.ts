@@ -1,5 +1,5 @@
 import { invoke, InvokeArgs } from '@tauri-apps/api/core'
-import { CurrentUploadAttempts, DicomService, EchoResult } from './types'
+import { CurrentUploadAttempts, DashboardStats, DicomService, EchoResult } from './types'
 
 /**
  * Typed contract for the Rust Tauri commands exposed by the backend.
@@ -34,6 +34,8 @@ export interface CommandSignatures {
         args?: { page?: number; limit?: number; search?: string }
         result: CurrentUploadAttempts
     }
+    // dashboard_stats resolves with aggregate study counts directly (no event).
+    dashboard_stats: { args?: undefined; result: DashboardStats }
     bulk_send_studies: { args: { studyUids: string[] }; result: void }
     bulk_delete_studies: { args: { studyUids: string[] }; result: void }
     delete_all_studies: { args?: undefined; result: void }

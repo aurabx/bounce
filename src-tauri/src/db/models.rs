@@ -32,6 +32,25 @@ pub struct Study {
     pub sent_at: Option<DateTime<Utc>>,
 }
 
+/// Aggregate counts of studies grouped by lifecycle status, plus the most
+/// recent reception time. Computed in a single pass over the `studies` table
+/// for the dashboard summary cards so the UI never has to load every row to
+/// report totals. `pending` is the sum of the not-yet-terminal working states
+/// (`IN-PROGRESS`, `QUEUED`, `UPLOADING`, `RETRYING`) and is derived rather
+/// than stored.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DashboardStats {
+    pub total: i64,
+    pub in_progress: i64,
+    pub queued: i64,
+    pub uploading: i64,
+    pub retrying: i64,
+    pub sent: i64,
+    pub failed: i64,
+    pub pending: i64,
+    pub last_received_at: Option<DateTime<Utc>>,
+}
+
 /// A single upload attempt for a study. One row is written when an attempt is
 /// claimed (`STARTED`) and updated to `SUCCESS`/`FAILED` when it resolves,
 /// forming a per-study audit trail of every upload try.

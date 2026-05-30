@@ -880,4 +880,36 @@ mod tests {
             "attempt history must be deleted with the study"
         );
     }
+
+    #[tokio::test]
+    async fn test_dashboard_stats_counts_by_status() {
+        let (db, _pool) = setup_db_with_pool().await;
+
+        // Empty table reports all zeros and no reception time.
+        let empty = db.dashboard_stats().await.unwrap();
+        assert_eq!(empty.total, 0);
+        assert_eq!(empty.pending, 0);
+        assert_eq!(empty.failed, 0);
+        assert!(empty.last_received_at.is_none());
+
+        // Seed a mix of statuses: two pending (QUEUED + RETRYING), one SENT,
+        // one FAILED.
+        insert_study_with_status(&db, "stats.queued", study_status::QUEUED).await;
+        insert_study_with_status(&db, "stats.retrying", study_status::RETRYING).await;
+        insert_study_with_status(&db, "stats.sent", study_status::SENT).await;
+        insert_study_with_status(&db, "stats.failed", study_status::FAILED).await;
+
+        let stats = db.dashboard_stats().await.unwrap();
+        assert_eq!(stats.total, 4);
+        assert_eq!(stats.queued, 1);
+        assert_eq!(stats.retrying, 1);
+        assert_eq!(stats.sent, 1);
+        assert_eq!(stats.failed, 1);
+        // pending = in_progress + queued + uploading + retrying
+        assert_eq!(stats.pending, 2);
+        assert!(
+            stats.last_received_at.is_some(),
+            "with rows present a reception time should be reported"
+        );
+    }
 }

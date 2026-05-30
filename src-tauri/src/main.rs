@@ -11,6 +11,7 @@ mod transmitter;
 
 use crate::aura::aura_api::AuraApi;
 use crate::db::database::Database;
+use crate::db::models::DashboardStats;
 use crate::logger::{
     init_logtail_channel, logtail_dispatch, set_remote_logging_enabled, start_logtail_sender,
     LogtailConfig,
@@ -244,6 +245,15 @@ async fn current_upload_attempts(
     let database = app.state::<Database>();
 
     Ok(database.current_upload_attempts(page, limit, search).await)
+}
+
+/// Return aggregate study counts by lifecycle status for the dashboard
+/// summary cards. Resolves with the payload directly (no event) because the
+/// dashboard polls it on demand, mirroring `current_upload_attempts`.
+#[tauri::command]
+async fn dashboard_stats(app: AppHandle) -> Result<DashboardStats, String> {
+    let database = app.state::<Database>();
+    database.dashboard_stats().await.map_err(|e| e.to_string())
 }
 
 /// Best-effort bulk send: iterate over the supplied Study UIDs and call
@@ -576,6 +586,7 @@ fn main() {
             api_start_upload,
             current_studies,
             current_upload_attempts,
+            dashboard_stats,
             cfind_query,
             list_pacs_services,
             refresh_pacs_services,

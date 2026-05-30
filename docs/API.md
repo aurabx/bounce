@@ -296,6 +296,36 @@ const { attempts, pagination } = await invokeCommand('current_upload_attempts', 
 
 ---
 
+### `dashboard_stats`
+
+Returns aggregate study counts grouped by lifecycle status for the dashboard
+summary cards.
+
+**Signature**:
+```rust
+async fn dashboard_stats(app: AppHandle) -> Result<DashboardStats, String>
+```
+
+**Parameters**: none
+
+**Frontend Usage**:
+```typescript
+import { invokeCommand } from '@/app/lib/commands';
+
+const stats = await invokeCommand('dashboard_stats');
+// stats.total, stats.pending, stats.failed, stats.last_received_at, ...
+```
+
+**Behavior**:
+- Runs a single conditional-aggregate query over the `studies` table; cost is
+  independent of the number of studies
+- Returns the payload directly (does **not** emit an event, unlike
+  `current_studies`)
+
+**Response Format**: `DashboardStats` — `{ total, in_progress, queued, uploading, retrying, sent, failed, pending, last_received_at }`. All counts are integers; `pending` is the sum of the not-yet-terminal working states (`in_progress` + `queued` + `uploading` + `retrying`); `last_received_at` is an ISO-8601 string or `null` when no studies exist.
+
+---
+
 ### `api_start_upload`
 
 Initialize an upload session with Aurabox (advanced usage).

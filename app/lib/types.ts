@@ -57,6 +57,22 @@ export type CurrentUploadAttempts = {
     pagination: Pagination,
 }
 
+// Aggregate study counts for the dashboard summary cards. Mirrors the
+// backend `DashboardStats` struct (src-tauri/src/db/models.rs); `pending`
+// is the sum of the not-yet-terminal working states and `last_received_at`
+// is an ISO-8601 string (or null when no studies exist).
+export interface DashboardStats {
+    total: number,
+    in_progress: number,
+    queued: number,
+    uploading: number,
+    retrying: number,
+    sent: number,
+    failed: number,
+    pending: number,
+    last_received_at: string | null,
+}
+
 export interface DicomService {
     id: string,
     label: string,
