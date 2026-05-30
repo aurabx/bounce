@@ -1,7 +1,7 @@
 'use client';
 
 import {load} from '@tauri-apps/plugin-store';
-import {Suspense, useEffect, useState} from 'react'
+import {Suspense, useEffect, useState, ChangeEvent, FormEvent, MouseEvent} from 'react'
 import {fields, fieldKeys} from "@/app/lib/fields";
 import SelectInput from "@/app/components/Fields/SelectInput";
 import { Alert, AlertTitle, AlertDescription } from "@/app/components/ui/alert";
@@ -57,7 +57,7 @@ export default function Settings() {
         return ['local', 'dev', 'staging'].includes(last) ? last : null;
     };
 
-    const save = async (e: any) => {
+    const save = async (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault();
 
         let store =  await load('store.json', { autoSave: false });
@@ -113,21 +113,23 @@ export default function Settings() {
         }
     };
 
-    const setField = async (key: string, value: any) => {
+    const setField = async (key: string, value: string) => {
         setSettings({
             ...settings,
             ...{[key]: value}
         })
     }
 
-    const suffixClick = async (e: any, key: string) => {
+    const suffixClick = async (e: MouseEvent, key: string) => {
         e.preventDefault()
         if (key === 'base_dir') {
             const file = await open({
                 multiple: false,
                 directory: true,
             });
-            await setField(key, file)
+            if (typeof file === 'string') {
+                await setField(key, file)
+            }
         }
     }
 
@@ -178,7 +180,7 @@ export default function Settings() {
         await store.save()
     }
 
-    const resetApp = async (e: any) => {
+    const resetApp = async (e: MouseEvent<HTMLButtonElement>) => {
         e.preventDefault();
 
         let store =  await load('store.json', { autoSave: false });
@@ -285,8 +287,7 @@ export default function Settings() {
                             <div className="space-y-8">
                                 <div className="grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-2">
                                     {fields.map((field) => {
-                                        const FieldComponent: any = field.component;
-                                        // @ts-ignore
+                                        const FieldComponent = field.component;
                                         const isFullWidth = field.config.fullWidth;
                                         return (
                                             <div key={field.config.key} className={isFullWidth ? "md:col-span-2" : ""}>
@@ -295,7 +296,7 @@ export default function Settings() {
                                                     settings={settings}
                                                     onSuffixClick={field.config.suffix_button ? (e: MouseEvent) => suffixClick(e, field.config.key) : () => null}
                                                     value={settings && settings[field.config.key] ? settings[field.config.key] : ''}
-                                                    onChange={(e: any) => setField(field.config.key, e.target.value)}
+                                                    onChange={(e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setField(field.config.key, e.target.value)}
                                                 />
                                             </div>
                                         )

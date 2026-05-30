@@ -1,7 +1,22 @@
+import { ComponentType } from "react";
 import TextInput from "@/app/components/Fields/TextInput";
 import SelectInput from "@/app/components/Fields/SelectInput";
 import ApiKeyInput from "@/app/components/Fields/ApiKeyInput";
 
+export interface FieldConfig {
+    label: string;
+    key: string;
+    help: string;
+    fullWidth?: boolean;
+    suffix_button?: string;
+    readOnly?: boolean;
+    options?: Record<string, string>;
+}
+
+export interface Field {
+    config: FieldConfig;
+    component: ComponentType<any>;
+}
 
 export const fieldKeys = [
     'api_key',
@@ -19,7 +34,7 @@ export const fieldKeys = [
     'setup_complete',
 ]
 
-export const fields = [{
+export const fields: Field[] = [{
     config: {
         label: 'Api Key',
         key: 'api_key',
