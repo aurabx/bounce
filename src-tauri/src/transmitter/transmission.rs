@@ -328,12 +328,10 @@ impl Transmission {
         };
 
         let endpoint = require_str("endpoint")?;
-        let token = require_str("token")?;
         let bucket = require_str("bucket")?;
         let assembly_id = require_str("assembly_id")?;
 
         log_info!("endpoint: {}", endpoint.clone());
-        log_info!("token: {}", token.to_string());
         log_info!("bucket: {}", bucket.to_string());
 
         // === Upload init
