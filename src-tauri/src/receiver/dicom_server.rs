@@ -74,10 +74,10 @@ impl DICOMServer {
         let out_dir = server.config.get_base_dir().clone();
         let path = PathBuf::from(&out_dir);
 
-        fs::create_dir_all(&out_dir).unwrap_or_else(|e| {
-            log_error!("Could not create output directory: {}", e);
-            std::process::exit(-2);
-        });
+        if let Err(e) = fs::create_dir_all(&out_dir) {
+            log_error!("Could not create output directory {}: {}", out_dir, e);
+            return Err(format!("Could not create output directory {}: {}", out_dir, e).into());
+        }
 
         // Bind the listener
         let ip_address: Result<Ipv4Addr, _> = server.config.ip_address.clone().parse();
