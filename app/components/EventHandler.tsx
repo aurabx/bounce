@@ -97,7 +97,7 @@ export default function EventHandler({ children, }: { children: React.ReactNode 
         // cannot cause a restart loop.
         const resumeRunningIfNeeded = async () => {
             try {
-                const store = await load('store.json', { autoSave: false })
+                const store = await load('store.json', { autoSave: false, defaults: {} })
                 const resume = await store.get('_resume_running')
                 if (resume === true) {
                     await store.set('_resume_running', false)

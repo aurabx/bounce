@@ -50,7 +50,7 @@ interface AutoUpdatePrefs {
  */
 async function loadAutoUpdatePrefs(): Promise<AutoUpdatePrefs> {
     try {
-        const store = await load('store.json', { autoSave: false });
+        const store = await load('store.json', { autoSave: false, defaults: {} });
         const enabled = (await store.get('auto_update')) === 'yes';
 
         const parseHour = (value: unknown, fallback: number): number => {
@@ -110,7 +110,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
     // service comes back in the same state it was in before the restart.
     const persistRunningStateAndRelaunch = useCallback(async () => {
         try {
-            const store = await load('store.json', { autoSave: false });
+            const store = await load('store.json', { autoSave: false, defaults: {} });
             await store.set('_resume_running', runningRef.current);
             await store.save();
         } catch (e) {

@@ -45,7 +45,7 @@ export default function Page() {
                 await invokeCommand('current_studies', {
                     page,
                     limit,
-                    search: search.trim() === '' ? null : search.trim(),
+                    search: search.trim() === '' ? undefined : search.trim(),
                 });
             } catch (error) {
                 console.error('Error loading studies:', error);

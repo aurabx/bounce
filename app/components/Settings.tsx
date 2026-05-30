@@ -60,7 +60,7 @@ export default function Settings() {
     const save = async (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault();
 
-        let store =  await load('store.json', { autoSave: false });
+        let store =  await load('store.json', { autoSave: false, defaults: {} });
 
         for (const fieldKey of fieldKeys) {
             // Internal-only flags (prefixed with _) are not persisted.
@@ -135,7 +135,7 @@ export default function Settings() {
 
 
     const loadStore = async () => {
-        let store =  await load('store.json', { autoSave: false });
+        let store =  await load('store.json', { autoSave: false, defaults: {} });
 
         let data: { [key: string]: any } = {}
         for (const fieldKey of fieldKeys) {
@@ -173,7 +173,7 @@ export default function Settings() {
         auto_update_window_start?: string,
         auto_update_window_end?: string,
     }) => {
-        const store = await load('store.json', { autoSave: false });
+        const store = await load('store.json', { autoSave: false, defaults: {} });
         for (const [key, value] of Object.entries(updates)) {
             await store.set(key, value)
         }
@@ -183,7 +183,7 @@ export default function Settings() {
     const resetApp = async (e: MouseEvent<HTMLButtonElement>) => {
         e.preventDefault();
 
-        let store =  await load('store.json', { autoSave: false });
+        let store =  await load('store.json', { autoSave: false, defaults: {} });
         await store.clear()
         await store.reset()
 
@@ -245,7 +245,7 @@ export default function Settings() {
             // Auto-verify connectivity on mount whenever a key is already
             // configured. With no key there is nothing meaningful to check
             // — leave the status as whatever it was (likely 'idle').
-            const store = await load('store.json', { autoSave: false });
+            const store = await load('store.json', { autoSave: false, defaults: {} });
             const existingKey = (await store.get('api_key')) as string | null;
             if (existingKey && existingKey.length > 0) {
                 await verifyConnectivity(dispatch);
