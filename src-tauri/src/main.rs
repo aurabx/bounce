@@ -39,7 +39,9 @@ fn load_config(app: AppHandle) -> Config {
 #[tauri::command]
 fn send_log(app: AppHandle, log: String) -> Result<(), String> {
     println!("log: {}", log);
-    app.emit("log", log).unwrap();
+    if let Err(e) = app.emit("log", log) {
+        log_error!("Failed to emit 'log' event: {}", e);
+    }
 
     Ok(())
 }
@@ -182,7 +184,9 @@ async fn delete_study(app: AppHandle, study_uid: String) -> Result<(), String> {
 async fn receiver_start(app: AppHandle) -> Result<(), String> {
     println!("receiver_start: now");
 
-    app.emit("log", "Starting server").unwrap();
+    if let Err(e) = app.emit("log", "Starting server") {
+        log_error!("Failed to emit 'log' event: {}", e);
+    }
     log_info!("Starting server");
 
     receiver::server::start(app)
@@ -194,7 +198,9 @@ async fn receiver_start(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 async fn receiver_stop(app: AppHandle) -> Result<(), String> {
-    app.emit("log", "Stopping server").unwrap();
+    if let Err(e) = app.emit("log", "Stopping server") {
+        log_error!("Failed to emit 'log' event: {}", e);
+    }
 
     receiver::server::stop(app)
         .await
@@ -216,7 +222,9 @@ async fn current_studies(
 
     let studies = database.current_studies(page, limit, search).await;
 
-    app.emit("current-studies", studies).unwrap();
+    if let Err(e) = app.emit("current-studies", studies) {
+        log_error!("Failed to emit 'current-studies' event: {}", e);
+    }
     Ok(())
 }
 

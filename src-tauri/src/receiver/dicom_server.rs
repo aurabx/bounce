@@ -603,14 +603,17 @@ impl DICOMServer {
                                             )?;
 
                                             if let Some(app_handle) = &self.app_handle {
-                                                app_handle
-                                                    .emit(
-                                                        "queue-study",
-                                                        QueueUpload {
-                                                            study_uid: &study_uid,
-                                                        },
-                                                    )
-                                                    .unwrap();
+                                                if let Err(e) = app_handle.emit(
+                                                    "queue-study",
+                                                    QueueUpload {
+                                                        study_uid: &study_uid,
+                                                    },
+                                                ) {
+                                                    log_error!(
+                                                        "Failed to emit 'queue-study' event: {}",
+                                                        e
+                                                    );
+                                                }
 
                                                 // Surface a disk warning if the
                                                 // storage volume is running low

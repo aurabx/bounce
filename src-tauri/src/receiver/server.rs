@@ -10,6 +10,14 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio;
 use tokio::sync::{oneshot, Mutex};
 
+/// Emit a Tauri event to the frontend, logging any failure instead of
+/// panicking. A broken IPC channel must not take down the receiver.
+fn emit_or_log<S: serde::Serialize + Clone>(app: &AppHandle, event: &str, payload: S) {
+    if let Err(e) = app.emit(event, payload) {
+        log_error!("Failed to emit '{}' event: {}", event, e);
+    }
+}
+
 // Define a struct to manage server state
 pub struct ServerState {
     shutdown_sender: Option<oneshot::Sender<()>>,
@@ -71,8 +79,8 @@ pub async fn start(app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
     // Spawn server in a background task
     tokio::spawn(async move {
-        app.emit("log", "Starting server").unwrap();
-        app.emit("running", true).unwrap();
+        emit_or_log(&app, "log", "Starting server");
+        emit_or_log(&app, "running", true);
 
         let details = json!([{
            "label": "Local endpoint",
@@ -91,29 +99,31 @@ pub async fn start(app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
            "value": config.mode_from_api_key()
         }]);
 
-        let details_string = serde_json::to_string(&details);
-
-        app.emit("running-details", details_string.unwrap())
-            .unwrap();
+        match serde_json::to_string(&details) {
+            Ok(details_string) => emit_or_log(&app, "running-details", details_string),
+            Err(e) => {
+                log_error!("Failed to serialize running details: {}", e);
+            }
+        }
 
         // Wrap the server task in a select to handle shutdown
         tokio::select! {
             result = dicom_server.start() => {
                 if let Err(err) = result {
                     log_error!("Dicom server error: {:?}", err);
-                    app.emit("log", format!("Server error: {}", err)).unwrap();
-                    app.emit("error", format!("Server error: {}", err)).unwrap();
+                    emit_or_log(&app, "log", format!("Server error: {}", err));
+                    emit_or_log(&app, "error", format!("Server error: {}", err));
                 }
             }
             _ = shutdown_rx => {
                 log_info!("Shutdown signal received");
-                app.emit("log", "Server shutdown requested").unwrap();
+                emit_or_log(&app, "log", "Server shutdown requested");
             }
         }
 
         // Signal that the server has stopped
-        app.emit("running", false).unwrap();
-        app.emit("log", "Server stopped").unwrap();
+        emit_or_log(&app, "running", false);
+        emit_or_log(&app, "log", "Server stopped");
     });
 
     Ok(())
@@ -149,15 +159,15 @@ pub async fn stop(app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(sender) = shutdown_sender {
         // Send the shutdown signal
         if sender.send(()).is_err() {
-            app.emit("log", "Server already stopped").unwrap();
-            app.emit("running", false).unwrap();
+            emit_or_log(&app, "log", "Server already stopped");
+            emit_or_log(&app, "running", false);
             log_info!("Dicom server message: {:?}", "Stopped");
             return Ok(());
         }
 
-        app.emit("log", "Server stopping...").unwrap();
+        emit_or_log(&app, "log", "Server stopping...");
     } else {
-        app.emit("log", "No running server to stop").unwrap();
+        emit_or_log(&app, "log", "No running server to stop");
     }
 
     Ok(())

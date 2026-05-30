@@ -114,7 +114,9 @@ impl Transmission {
                     // 5 seconds have passed with no new call for this UID
                     log_info!("Time's up -> pushing study {}", study_uid_clone);
 
-                    self_clone.app_handle.emit("log", format!("Sending study {}", study_uid_clone)).unwrap();
+                    if let Err(e) = self_clone.app_handle.emit("log", format!("Sending study {}", study_uid_clone)) {
+                        log_error!("Failed to emit 'log' event: {}", e);
+                    }
 
                     let study_uid = study_uid.clone();
 
@@ -346,12 +348,12 @@ impl Transmission {
 
         log_info!("Sent upload init to aura");
 
-        self.app_handle
-            .emit(
-                "log",
-                format!("Study data send to aurabox {}", study_uid.clone()),
-            )
-            .unwrap();
+        if let Err(e) = self.app_handle.emit(
+            "log",
+            format!("Study data send to aurabox {}", study_uid.clone()),
+        ) {
+            log_error!("Failed to emit 'log' event: {}", e);
+        }
 
         // === Upload start
         // This would normally run just after the upload starts in uppy
@@ -372,12 +374,12 @@ impl Transmission {
             .await?;
         log_info!("Study sent successfully via TUS to {}", endpoint);
 
-        self.app_handle
-            .emit(
-                "log",
-                format!("Dicom send to aurabox storage {}", study_uid.clone()),
-            )
-            .unwrap();
+        if let Err(e) = self.app_handle.emit(
+            "log",
+            format!("Dicom send to aurabox storage {}", study_uid.clone()),
+        ) {
+            log_error!("Failed to emit 'log' event: {}", e);
+        }
 
         // === Upload complete
         self.aura_api
@@ -391,12 +393,12 @@ impl Transmission {
 
         log_info!("Sent upload complete to aura");
 
-        self.app_handle
-            .emit(
-                "log",
-                format!("Complete request sent to aura {}", study_uid.clone()),
-            )
-            .unwrap();
+        if let Err(e) = self.app_handle.emit(
+            "log",
+            format!("Complete request sent to aura {}", study_uid.clone()),
+        ) {
+            log_error!("Failed to emit 'log' event: {}", e);
+        }
 
         // Clean up retrieve marker file if it exists (created by the
         // poller when a study is retrieved via C-MOVE).
