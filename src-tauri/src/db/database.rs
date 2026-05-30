@@ -623,6 +623,151 @@ impl Database {
         Ok(attempts)
     }
 
+    /// Paginated upload-attempt fetch across all studies, with an optional
+    /// free-text filter applied across Study UID, upload id, status, and the
+    /// recorded error. `search` is a substring match (`LIKE %term%`);
+    /// whitespace-only or `None` means no filter.
+    ///
+    /// Rows are returned newest first (`started_at DESC`, then `id DESC` as a
+    /// stable tie-breaker for attempts sharing a timestamp). The total count
+    /// matching the filter is returned alongside the page so the caller can
+    /// compute pagination correctly when the search is active.
+    pub async fn get_upload_attempts_paginated_filtered(
+        &self,
+        offset: i64,
+        limit: i64,
+        search: Option<&str>,
+    ) -> Result<(Vec<UploadAttempt>, i64)> {
+        let trimmed = search.map(str::trim).filter(|s| !s.is_empty());
+
+        match trimmed {
+            None => {
+                let total_count: i64 =
+                    sqlx::query_scalar("SELECT COUNT(*) FROM upload_attempts")
+                        .fetch_one(&self.pool)
+                        .await
+                        .context("Failed to get total upload attempts count")?;
+
+                let attempts = sqlx::query_as::<_, UploadAttempt>(
+                    "SELECT * FROM upload_attempts \
+                     ORDER BY started_at DESC, id DESC LIMIT ? OFFSET ?",
+                )
+                .bind(limit)
+                .bind(offset)
+                .fetch_all(&self.pool)
+                .await
+                .context("Failed to fetch paginated upload attempts")?;
+
+                Ok((attempts, total_count))
+            }
+            Some(term) => {
+                let bound = format!("%{}%", term);
+
+                let total_count: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM upload_attempts \
+                     WHERE study_uid LIKE ?1 \
+                        OR upload_id LIKE ?1 \
+                        OR status LIKE ?1 \
+                        OR error LIKE ?1",
+                )
+                .bind(&bound)
+                .fetch_one(&self.pool)
+                .await
+                .context("Failed to get filtered upload attempts count")?;
+
+                let attempts = sqlx::query_as::<_, UploadAttempt>(
+                    "SELECT * FROM upload_attempts \
+                     WHERE study_uid LIKE ?1 \
+                        OR upload_id LIKE ?1 \
+                        OR status LIKE ?1 \
+                        OR error LIKE ?1 \
+                     ORDER BY started_at DESC, id DESC LIMIT ?2 OFFSET ?3",
+                )
+                .bind(&bound)
+                .bind(limit)
+                .bind(offset)
+                .fetch_all(&self.pool)
+                .await
+                .context("Failed to fetch filtered paginated upload attempts")?;
+
+                Ok((attempts, total_count))
+            }
+        }
+    }
+
+    /// Build the JSON page payload for the Transactions view: the
+    /// upload-attempt rows for the requested page plus pagination metadata,
+    /// mirroring the shape returned by [`Database::current_studies`]. Unlike
+    /// `current_studies`, no study path resolution is needed, so this does not
+    /// depend on the app handle or loaded config.
+    pub async fn current_upload_attempts(
+        &self,
+        page: u32,
+        limit: u32,
+        search: Option<String>,
+    ) -> Value {
+        let offset = (page.saturating_sub(1)) * limit;
+
+        let trimmed_search = search
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+
+        match self
+            .get_upload_attempts_paginated_filtered(
+                offset as i64,
+                limit as i64,
+                trimmed_search.as_deref(),
+            )
+            .await
+        {
+            Ok((attempts, total_count)) => {
+                let total_pages = (total_count + limit as i64 - 1) / limit as i64;
+                let has_next_page = page < total_pages as u32;
+                let has_previous_page = page > 1;
+                // Bind the count before the json! macro: calling `.len()` on a
+                // value also interpolated by the macro confuses its type
+                // inference (it infers `Option<Vec<_>>`).
+                let items_on_page = attempts.len();
+
+                serde_json::json!({
+                    "attempts": attempts,
+                    "pagination": {
+                        "current_page": page,
+                        "total_pages": total_pages,
+                        "total_items": total_count,
+                        "limit": limit,
+                        "offset": offset,
+                        "has_next_page": has_next_page,
+                        "has_previous_page": has_previous_page,
+                        "items_on_page": items_on_page,
+                        "search": trimmed_search,
+                    }
+                })
+            }
+            Err(e) => {
+                log_error!("Error fetching paginated upload attempts from database: {}", e);
+
+                serde_json::json!({
+                    "attempts": [],
+                    "pagination": {
+                        "current_page": page,
+                        "total_pages": 0,
+                        "total_items": 0,
+                        "limit": limit,
+                        "offset": offset,
+                        "has_next_page": false,
+                        "has_previous_page": false,
+                        "items_on_page": 0,
+                        "search": trimmed_search,
+                    },
+                    "error": e.to_string()
+                })
+            }
+        }
+    }
+
     pub async fn delete_study(&self, study_uid: String) -> Result<()> {
         let mut tx = self.pool.begin().await?;
 

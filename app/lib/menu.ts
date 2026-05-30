@@ -1,6 +1,7 @@
 import {
     HomeIcon,
     InboxStackIcon,
+    ArrowsRightLeftIcon,
     CommandLineIcon,
     Cog6ToothIcon,
     WrenchScrewdriverIcon,
@@ -24,6 +25,11 @@ export const items: NavigationItem[] = [{
     href: "/studies",
     title: "Studies",
     icon: InboxStackIcon
+},{
+    label: "Transactions",
+    href: "/transactions",
+    title: "Transactions",
+    icon: ArrowsRightLeftIcon
 },{
     label: "PACS",
     href: "/pacs",

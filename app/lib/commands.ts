@@ -1,5 +1,5 @@
 import { invoke, InvokeArgs } from '@tauri-apps/api/core'
-import { DicomService, EchoResult } from './types'
+import { CurrentUploadAttempts, DicomService, EchoResult } from './types'
 
 /**
  * Typed contract for the Rust Tauri commands exposed by the backend.
@@ -29,6 +29,11 @@ export interface CommandSignatures {
     receiver_stop: { args?: undefined; result: void }
     // current_studies emits a "current-studies" event; it returns nothing.
     current_studies: { args?: { page?: number; limit?: number; search?: string }; result: void }
+    // current_upload_attempts resolves with the page payload directly (no event).
+    current_upload_attempts: {
+        args?: { page?: number; limit?: number; search?: string }
+        result: CurrentUploadAttempts
+    }
     bulk_send_studies: { args: { studyUids: string[] }; result: void }
     bulk_delete_studies: { args: { studyUids: string[] }; result: void }
     delete_all_studies: { args?: undefined; result: void }

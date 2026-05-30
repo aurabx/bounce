@@ -228,6 +228,24 @@ async fn current_studies(
     Ok(())
 }
 
+/// Return one page of the upload-attempt audit trail across all studies for
+/// the Transactions view. Mirrors `current_studies` (page/limit/search, same
+/// pagination shape) but resolves to the page payload directly rather than
+/// emitting an event, because the view is read-only and fetched on demand.
+#[tauri::command]
+async fn current_upload_attempts(
+    app: AppHandle,
+    page: Option<u32>,
+    limit: Option<u32>,
+    search: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let page = page.unwrap_or(1);
+    let limit = limit.unwrap_or(25);
+    let database = app.state::<Database>();
+
+    Ok(database.current_upload_attempts(page, limit, search).await)
+}
+
 /// Best-effort bulk send: iterate over the supplied Study UIDs and call
 /// `Transmission::send_study` on each. Per-item failures are logged but
 /// do not abort the batch — medical-imaging operators expect every
@@ -557,6 +575,7 @@ fn main() {
             delete_all_studies,
             api_start_upload,
             current_studies,
+            current_upload_attempts,
             cfind_query,
             list_pacs_services,
             refresh_pacs_services,

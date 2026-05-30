@@ -538,6 +538,86 @@ mod tests {
         assert!(studies.is_empty());
     }
 
+    /// Insert a single upload-attempt row directly, bypassing the upload state
+    /// machine, so pagination/filtering can be exercised against a known set.
+    async fn insert_attempt(pool: &SqlitePool, study_uid: &str, attempt_no: i64, status: &str) {
+        sqlx::query(
+            "INSERT INTO upload_attempts (study_uid, attempt_no, status, started_at) \
+             VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+        )
+        .bind(study_uid)
+        .bind(attempt_no)
+        .bind(status)
+        .execute(pool)
+        .await
+        .expect("insert attempt");
+    }
+
+    #[tokio::test]
+    async fn test_get_upload_attempts_paginated_filtered() {
+        let (db, pool) = setup_db_with_pool().await;
+
+        // Two studies (parents for the FK), each with attempts, to exercise the
+        // global cross-study listing and the Study-UID filter.
+        db.create_or_update_study(create_test_study("1.2.3.4.alpha"))
+            .await
+            .unwrap();
+        db.create_or_update_study(create_test_study("1.2.3.4.beta"))
+            .await
+            .unwrap();
+
+        insert_attempt(&pool, "1.2.3.4.alpha", 1, "STARTED").await;
+        insert_attempt(&pool, "1.2.3.4.alpha", 2, "SUCCESS").await;
+        insert_attempt(&pool, "1.2.3.4.beta", 1, "FAILED").await;
+
+        // No filter: every attempt across both studies, with the full total.
+        let (rows, total) = db
+            .get_upload_attempts_paginated_filtered(0, 10, None)
+            .await
+            .unwrap();
+        assert_eq!(total, 3);
+        assert_eq!(rows.len(), 3);
+
+        // A page smaller than the total bounds the rows but not the count.
+        let (page, total) = db
+            .get_upload_attempts_paginated_filtered(0, 2, None)
+            .await
+            .unwrap();
+        assert_eq!(total, 3);
+        assert_eq!(page.len(), 2);
+
+        // Filter by status.
+        let (rows, total) = db
+            .get_upload_attempts_paginated_filtered(0, 10, Some("FAILED"))
+            .await
+            .unwrap();
+        assert_eq!(total, 1);
+        assert_eq!(rows[0].study_uid, "1.2.3.4.beta");
+
+        // Filter by Study UID substring.
+        let (rows, total) = db
+            .get_upload_attempts_paginated_filtered(0, 10, Some("alpha"))
+            .await
+            .unwrap();
+        assert_eq!(total, 2);
+        assert!(rows.iter().all(|a| a.study_uid == "1.2.3.4.alpha"));
+
+        // Whitespace-only search degrades to no filter.
+        let (_rows, total) = db
+            .get_upload_attempts_paginated_filtered(0, 10, Some("   "))
+            .await
+            .unwrap();
+        assert_eq!(total, 3);
+
+        // No matches.
+        let (rows, total) = db
+            .get_upload_attempts_paginated_filtered(0, 10, Some("nonexistent-xyz"))
+            .await
+            .unwrap();
+        assert_eq!(total, 0);
+        assert!(rows.is_empty());
+    }
+
     // ---- Upload retry / recovery state machine -------------------------------
 
     use super::super::database::{attempt_status, study_status};

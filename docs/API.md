@@ -258,6 +258,44 @@ unlisten();
 
 ---
 
+### `current_upload_attempts`
+
+Retrieves a paginated, optionally filtered page of upload attempts across all
+studies (surfaced in the UI as "Transactions").
+
+**Signature**:
+```rust
+async fn current_upload_attempts(
+    app: AppHandle,
+    page: Option<u32>,
+    limit: Option<u32>,
+    search: Option<String>,
+) -> Result<serde_json::Value, String>
+```
+
+**Parameters**:
+- `page` (number, optional): Page number (1-indexed), default: 1
+- `limit` (number, optional): Items per page, default: 25
+- `search` (string, optional): Free-text filter across Study UID, upload ID, status, and error
+
+**Frontend Usage**:
+```typescript
+import { invokeCommand } from '@/app/lib/commands';
+
+const { attempts, pagination } = await invokeCommand('current_upload_attempts', {
+  page: 1,
+  limit: 25,
+});
+```
+
+**Behavior**:
+- Queries the `upload_attempts` table across all studies, newest first
+- Returns paginated results directly (does **not** emit an event, unlike `current_studies`)
+
+**Response Format**: `{ attempts, pagination }` — `attempts` is an array of upload-attempt records; `pagination` matches the shape used by `current_studies`.
+
+---
+
 ### `api_start_upload`
 
 Initialize an upload session with Aurabox (advanced usage).

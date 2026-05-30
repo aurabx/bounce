@@ -37,6 +37,26 @@ export type CurrentStudies = {
     pagination: Pagination,
 }
 
+// A single upload attempt for a study, surfaced in the UI as a
+// "transaction". Mirrors the backend `UploadAttempt` struct
+// (src-tauri/src/db/models.rs); timestamps arrive as ISO-8601 strings.
+export interface UploadAttempt {
+    id: number | null,
+    study_uid: string,
+    attempt_no: number,
+    upload_id?: string | null,
+    status: string,
+    error?: string | null,
+    started_at: string,
+    finished_at?: string | null,
+    duration_ms?: number | null,
+}
+
+export type CurrentUploadAttempts = {
+    attempts: UploadAttempt[],
+    pagination: Pagination,
+}
+
 export interface DicomService {
     id: string,
     label: string,
