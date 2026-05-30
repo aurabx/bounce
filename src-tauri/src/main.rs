@@ -82,14 +82,17 @@ async fn verify_connectivity(app: AppHandle) -> Result<String, String> {
 async fn reset_app(app: AppHandle) -> Result<(), String> {
     let database = app.state::<Database>();
 
-    database.clear_studies().await.expect("clear studies panic");
+    database
+        .clear_studies()
+        .await
+        .map_err(|e| format!("Failed to clear studies: {}", e))?;
 
     let transmission = Transmission::new(app);
 
     transmission
         .clear_storage()
         .await
-        .expect("clear study panic");
+        .map_err(|e| format!("Failed to clear storage: {}", e))?;
 
     Ok(())
 }
@@ -107,12 +110,12 @@ async fn api_start_upload(
     aura_api
         .upload_init(study_uid, signature, upload_id.clone())
         .await
-        .expect("api start upload panic");
+        .map_err(|e| format!("Failed to start upload: {}", e))?;
 
     aura_api
         .upload_save(upload_id.clone(), assembly_id.clone(), "update")
         .await
-        .expect("Error sending upload update api message");
+        .map_err(|e| format!("Failed to send upload update: {}", e))?;
 
     Ok(())
 }
@@ -160,17 +163,17 @@ async fn delete_study(app: AppHandle, study_uid: String) -> Result<(), String> {
     transmission
         .delete_study(study_uid.clone())
         .await
-        .expect("delete study panic");
+        .map_err(|e| format!("Failed to delete study: {}", e))?;
 
     transmission
         .delete_local_study_meta(study_uid.clone())
         .await
-        .expect("delete study meta panic");
+        .map_err(|e| format!("Failed to delete study metadata: {}", e))?;
 
     database
         .delete_study(study_uid.clone())
         .await
-        .expect("delete study meta panic");
+        .map_err(|e| format!("Failed to delete study from database: {}", e))?;
 
     Ok(())
 }
@@ -463,10 +466,11 @@ fn main() {
                         let transmission =
                             app_handle_clone.state::<AppState>().transmission.clone();
 
-                        transmission
-                            .schedule_study_push(study_uid.to_string())
-                            .await
-                            .expect("Enable to schedule study push");
+                        if let Err(e) =
+                            transmission.schedule_study_push(study_uid.to_string()).await
+                        {
+                            log_error!("Failed to schedule study push: {}", e);
+                        }
                     }
                 });
             });
