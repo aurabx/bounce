@@ -69,7 +69,11 @@ export const mainSlice = createSlice({
             state.running = action.payload;
         },
         setRunningDetail(state, action: PayloadAction<string>){
-            state.runningDetail = JSON.parse(action.payload);
+            try {
+                state.runningDetail = JSON.parse(action.payload) as RunningDetail[];
+            } catch (e) {
+                console.error('Failed to parse running detail payload', e);
+            }
         },
         setCurrentStudies(state, action: PayloadAction<CurrentStudies>){
             state.studies = action.payload.studies
