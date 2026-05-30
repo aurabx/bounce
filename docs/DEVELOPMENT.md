@@ -250,6 +250,11 @@ Output locations:
 - **Windows**: `src-tauri/target/release/bundle/msi/`
 - **Linux**: `src-tauri/target/release/bundle/deb/` or `appimage/`
 
+Signed and notarized release builds are produced by CI, not locally.
+See [`RELEASE-SIGNING.md`](RELEASE-SIGNING.md) for the codesigning,
+notarization, and Tauri updater key setup, including how to rotate
+each secret and renew the Apple Developer ID certificate.
+
 ### Build for Specific Platform
 
 ```bash

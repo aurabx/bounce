@@ -18,6 +18,10 @@
         "AUTOMATIC_PROJECT": "bounce"
       },
       "type": "local"
+    },
+    "nightowl": {
+      "type": "remote",
+      "url": "http://127.0.0.1:7300/mcp"
     }
   }
 }

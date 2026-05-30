@@ -164,5 +164,9 @@ Location: `../cloud-lib-gcp`
 Location: `../gcp-pub-sub`
 **scanfinder**
 Location: `../scanfinder`
+**nightowl**
+Location: `../../_experiments/nightowl`
+**meridian**
+Location: `../../_experiments/meridian`
 
 <!-- automatic:groups:end -->
