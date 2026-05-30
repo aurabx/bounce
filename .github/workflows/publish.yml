@@ -237,10 +237,28 @@ jobs:
 
           BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
 
-          DARWIN_ARM_FILE=$(basename "$(ls sigs/macos-arm64/*.app.tar.gz.sig)" .sig)
-          DARWIN_X86_FILE=$(basename "$(ls sigs/macos-intel/*.app.tar.gz.sig)" .sig)
-          LINUX_FILE=$(basename "$(ls sigs/linux/*.AppImage.sig)" .sig)
-          WINDOWS_FILE=$(basename "$(ls sigs/windows/*-setup.exe.sig)" .sig)
+          # Resolve filenames from the assets actually uploaded to the release,
+          # not from local build output. tauri-action rewrites names on upload
+          # (spaces become dots, colliding macOS .app.tar.gz files gain an arch
+          # suffix), so deriving names locally produces 404 download URLs.
+          ASSETS=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name')
+
+          pick_asset() {
+            # $1: grep -E pattern, $2: human label for error messages
+            local match
+            match=$(printf '%s\n' "$ASSETS" | grep -E "$1" || true)
+            if [ "$(printf '%s\n' "$match" | grep -c .)" -ne 1 ]; then
+              echo "Expected exactly one release asset matching '$1' ($2), got:" >&2
+              printf '%s\n' "$match" >&2
+              exit 1
+            fi
+            printf '%s' "$match"
+          }
+
+          DARWIN_ARM_FILE=$(pick_asset 'aarch64\.app\.tar\.gz$' 'macOS arm64 updater bundle')
+          DARWIN_X86_FILE=$(pick_asset 'x64\.app\.tar\.gz$' 'macOS intel updater bundle')
+          LINUX_FILE=$(pick_asset '\.AppImage$' 'Linux AppImage')
+          WINDOWS_FILE=$(pick_asset '\-setup\.exe$' 'Windows NSIS installer')
 
           DARWIN_ARM_SIG=$(cat sigs/macos-arm64/*.app.tar.gz.sig)
           DARWIN_X86_SIG=$(cat sigs/macos-intel/*.app.tar.gz.sig)
