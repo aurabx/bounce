@@ -15,6 +15,11 @@ export interface LogEntry {
     timestamp: string,
 }
 
+export interface AppError {
+    id: string,
+    message: string,
+}
+
 const MAX_LOG_ENTRIES = 2000
 
 export type ConnectivityStatus = 'idle' | 'checking' | 'ok' | 'failed';
@@ -31,7 +36,7 @@ export interface State {
     pagination: Pagination | null,
     running: boolean,
     runningDetail: RunningDetail[],
-    errors: string[],
+    errors: AppError[],
     dicomServices: DicomService[],
     connectivity: ConnectivityState,
 }
@@ -79,10 +84,15 @@ export const mainSlice = createSlice({
             state.studies = action.payload.studies
             state.pagination = action.payload.pagination ?? null
         },
-        setError(state, action: PayloadAction<string>){
-            state.errors.push(action.payload)
+        setError: {
+            reducer(state, action: PayloadAction<AppError>){
+                state.errors.push(action.payload)
+            },
+            prepare(message: string){
+                return { payload: { id: crypto.randomUUID(), message } }
+            },
         },
-        setErrors(state, action: PayloadAction<string[]>){
+        setErrors(state, action: PayloadAction<AppError[]>){
             state.errors = action.payload
         },
         setDicomServices(state, action: PayloadAction<DicomService[]>){

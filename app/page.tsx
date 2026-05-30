@@ -53,8 +53,8 @@ export default function Page() {
                 <Alert variant="destructive">
                     <AlertDescription>
                         <ul className="list-disc pl-4 space-y-1">
-                            {errors.map((error, index) => (
-                                <li key={`error-${index}`}>{error}</li>
+                            {errors.map((error) => (
+                                <li key={error.id}>{error.message}</li>
                             ))}
                         </ul>
                     </AlertDescription>
@@ -105,8 +105,8 @@ export default function Page() {
                     </CardHeader>
                     <CardContent>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {runningDetail.map((detail, key) => (
-                                <div key={key} className="space-y-1">
+                            {runningDetail.map((detail) => (
+                                <div key={detail.label} className="space-y-1">
                                     <p className="text-sm font-medium text-muted-foreground">{detail.label}</p>
                                     <p className="text-sm font-mono bg-muted p-2 rounded break-all">{detail.value}</p>
                                 </div>

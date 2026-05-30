@@ -113,14 +113,20 @@ export default function EventHandler({ children, }: { children: React.ReactNode 
             .then(async (dispose) => {
                 cleanup = dispose
                 await resumeRunningIfNeeded()
-                await invokeCommand('current_studies').catch(console.error)
+                try {
+                    await invokeCommand('current_studies')
+                } catch (e) {
+                    dispatch(setError(`Failed to load studies: ${e}`))
+                }
             })
-            .catch(console.error);
+            .catch((e) => {
+                dispatch(setError(`Failed to initialise event listeners: ${e}`))
+            });
 
         return () => {
             cleanup?.()
         }
-    }, [])
+    }, [dispatch])
 
     return <>{children}</>
 }
