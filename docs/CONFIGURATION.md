@@ -301,6 +301,51 @@ Whether to send application logs to Better Stack (Logtail) for remote monitoring
 
 ---
 
+### `auto_update`
+
+**Type**: String (`"yes"` or `"no"`)
+**Default**: `"no"`
+
+Whether Bounce automatically restarts to apply an update once it has been
+downloaded and installed in the background. When disabled, downloaded updates
+wait for a manual restart (the existing "Restart Now" button).
+
+When an automatic restart occurs, Bounce records whether the DICOM receiver was
+running and restores that state on the next launch — a receiver that was running
+is started again automatically.
+
+**Example**:
+```json
+"auto_update": "yes"
+```
+
+---
+
+### `auto_update_window_start` / `auto_update_window_end`
+
+**Type**: String (hour `"0"`–`"23"`, local time)
+**Default**: `"0"` for both
+
+The time window during which an automatic restart is permitted. Only relevant
+when `auto_update` is `"yes"`. Updates still download at any time; only the
+restart waits for this window, so the service is not interrupted during busy
+hours.
+
+- If start and end are equal (e.g. both `"0"`), restarts are allowed at any
+  time.
+- If start is less than end (e.g. `1` to `5`), the window is `01:00`–`05:00`.
+- If start is greater than end (e.g. `22` to `6`), the window wraps past
+  midnight: `22:00`–`06:00`.
+
+**Example** (restart only between 02:00 and 04:00 local time):
+```json
+"auto_update": "yes",
+"auto_update_window_start": "2",
+"auto_update_window_end": "4"
+```
+
+---
+
 ## API Key Format
 
 The API key encodes several pieces of information in its structure:

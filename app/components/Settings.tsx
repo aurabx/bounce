@@ -3,6 +3,7 @@
 import {load} from '@tauri-apps/plugin-store';
 import {Suspense, useEffect, useState} from 'react'
 import {fields, fieldKeys} from "@/app/lib/fields";
+import SelectInput from "@/app/components/Fields/SelectInput";
 import { Alert, AlertTitle, AlertDescription } from "@/app/components/ui/alert";
 import { Button } from "@/app/components/ui/button";
 import { Card, CardContent } from "@/app/components/ui/card";
@@ -16,12 +17,22 @@ import {useAppDispatch, useAppSelector} from "@/app/lib/hook";
 import {verifyConnectivity} from "@/app/lib/server";
 import {useUpdate} from "@/app/lib/UpdateContext";
 
+const hourOptions: { [hour: string]: string } = Object.fromEntries(
+    Array.from({ length: 24 }, (_, hour) => [
+        String(hour),
+        `${String(hour).padStart(2, '0')}:00`,
+    ])
+);
+
 export default function Settings() {
 
     const [settings, setSettings] = useState<{ [key: string]: any }>({});
     const [loaded, setLoaded] = useState<boolean>(false);
     const [saved, setSaved] = useState<boolean>(false);
     const [env, setEnv] = useState<string|null>(null);
+    const [autoUpdate, setAutoUpdate] = useState<string>('no');
+    const [autoUpdateStart, setAutoUpdateStart] = useState<string>('0');
+    const [autoUpdateEnd, setAutoUpdateEnd] = useState<string>('0');
     const router = useRouter();
     const { setupComplete } = useSetupComplete();
     const dispatch = useAppDispatch();
@@ -145,6 +156,22 @@ export default function Settings() {
             data[fieldKey] = val
         }
         setSettings(data)
+
+        setAutoUpdate(((await store.get('auto_update')) as string) ?? 'no')
+        setAutoUpdateStart(String((await store.get('auto_update_window_start')) ?? '0'))
+        setAutoUpdateEnd(String((await store.get('auto_update_window_end')) ?? '0'))
+    }
+
+    const persistAutoUpdate = async (updates: {
+        auto_update?: string,
+        auto_update_window_start?: string,
+        auto_update_window_end?: string,
+    }) => {
+        const store = await load('store.json', { autoSave: false } as any);
+        for (const [key, value] of Object.entries(updates)) {
+            await store.set(key, value)
+        }
+        await store.save()
     }
 
     const resetApp = async (e: any) => {
@@ -274,6 +301,56 @@ export default function Settings() {
                             Bounce checks GitHub for new releases automatically and
                             downloads them in the background.
                         </p>
+                    </div>
+
+                    <div className="space-y-4 border-t pt-4">
+                        <SelectInput
+                            config={{
+                                label: 'Automatic updates',
+                                key: 'auto_update',
+                                help: 'Automatically restart Bounce to apply downloaded updates. If the receiver is running, it is restarted running.',
+                                options: { no: 'No', yes: 'Yes' },
+                            }}
+                            value={autoUpdate}
+                            onChange={async (e: any) => {
+                                const value = e.target.value;
+                                setAutoUpdate(value);
+                                await persistAutoUpdate({ auto_update: value });
+                            }}
+                        />
+
+                        {autoUpdate === 'yes' && (
+                            <div className="grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-2">
+                                <SelectInput
+                                    config={{
+                                        label: 'Restart window start',
+                                        key: 'auto_update_window_start',
+                                        help: 'Earliest local time Bounce may restart to apply an update.',
+                                        options: hourOptions,
+                                    }}
+                                    value={autoUpdateStart}
+                                    onChange={async (e: any) => {
+                                        const value = e.target.value;
+                                        setAutoUpdateStart(value);
+                                        await persistAutoUpdate({ auto_update_window_start: value });
+                                    }}
+                                />
+                                <SelectInput
+                                    config={{
+                                        label: 'Restart window end',
+                                        key: 'auto_update_window_end',
+                                        help: 'Latest local time Bounce may restart. Set start and end to the same time to allow restarts at any time.',
+                                        options: hourOptions,
+                                    }}
+                                    value={autoUpdateEnd}
+                                    onChange={async (e: any) => {
+                                        const value = e.target.value;
+                                        setAutoUpdateEnd(value);
+                                        await persistAutoUpdate({ auto_update_window_end: value });
+                                    }}
+                                />
+                            </div>
+                        )}
                     </div>
 
                     {updateStatus === 'up-to-date' && (

@@ -7,6 +7,7 @@ import {useAppDispatch} from "@/app/lib/hook";
 import {listen} from "@tauri-apps/api/event";
 import {CurrentStudies} from "@/app/lib/types";
 import {invoke} from "@tauri-apps/api/core";
+import {load} from "@tauri-apps/plugin-store";
 
 
 export default function EventHandler({ children, }: { children: React.ReactNode }) {
@@ -90,9 +91,28 @@ export default function EventHandler({ children, }: { children: React.ReactNode 
             }
         }
 
+        // If the previous session was restarted (e.g. by an automatic update)
+        // while the receiver was running, restore that state by starting the
+        // service again. The flag is cleared before starting so a failed start
+        // cannot cause a restart loop.
+        const resumeRunningIfNeeded = async () => {
+            try {
+                const store = await load('store.json', { autoSave: false } as any)
+                const resume = await store.get('_resume_running')
+                if (resume === true) {
+                    await store.set('_resume_running', false)
+                    await store.save()
+                    await invoke('receiver_start')
+                }
+            } catch (e) {
+                console.error('Failed to resume running state', e)
+            }
+        }
+
         bindEvents()
             .then(async (dispose) => {
                 cleanup = dispose
+                await resumeRunningIfNeeded()
                 await invoke('current_studies').catch(console.error)
             })
             .catch(console.error);

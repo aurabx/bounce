@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- Added an optional automatic-update mode that restarts Bounce to apply a downloaded update without manual intervention, gated by a configurable restart time window so the service is not interrupted during busy hours. When an automatic restart occurs while the DICOM receiver is running, the receiver is started again on the next launch so the service returns to the same state.
+
 ## [1.6.1] - 2026-05-30
 
 ### Fixed
