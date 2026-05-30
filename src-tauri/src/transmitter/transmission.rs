@@ -1,19 +1,22 @@
 use crate::aura::aura_api::AuraApi;
-use crate::db::database::Database;
+use crate::db::database::{study_status, Database};
 use crate::receiver::metadata::Metadata;
+use crate::transmitter::backoff::{next_retry_delay, RetryPolicy};
 use crate::{load_config, log_error, log_info};
 use anyhow::{anyhow, Context, Result};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
+use chrono::Utc;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::io::{Cursor, Seek, Write};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::{collections::HashMap, sync::Arc};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::AsyncReadExt;
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{oneshot, Mutex, Semaphore};
 use tokio::time::{sleep, Duration};
 use tokio::{fs, fs::File};
 use uuid::Uuid;
@@ -22,6 +25,23 @@ use zip::result::ZipError;
 use zip::{write::SimpleFileOptions, write::ZipWriter, CompressionMethod};
 // use tokio_util::io::ReaderStream;
 // use tokio_util::io::ReaderStream;
+
+/// Maximum number of study uploads that may run concurrently across the whole
+/// process. Both the debounce path and the retry scheduler acquire a permit
+/// from the same global semaphore, so a burst of arriving studies (or a large
+/// recovered backlog) cannot spawn an unbounded number of concurrent uploads.
+const MAX_CONCURRENT_UPLOADS: usize = 2;
+
+/// Process-global upload concurrency limiter. A `OnceLock` is used (rather than
+/// a field on `Transmission`) so every `Transmission` instance — however it was
+/// constructed — shares the same limiter.
+static UPLOAD_SEMAPHORE: OnceLock<Arc<Semaphore>> = OnceLock::new();
+
+fn upload_semaphore() -> Arc<Semaphore> {
+    UPLOAD_SEMAPHORE
+        .get_or_init(|| Arc::new(Semaphore::new(MAX_CONCURRENT_UPLOADS)))
+        .clone()
+}
 
 #[derive(Debug)]
 pub struct ScheduledStudy {
@@ -96,17 +116,12 @@ impl Transmission {
 
                     self_clone.app_handle.emit("log", format!("Sending study {}", study_uid_clone)).unwrap();
 
-                    // do the actual push logic here, e.g. `self_clone.send_study(...).await`
                     let study_uid = study_uid.clone();
 
-                    // tauri::async_runtime::spawn(async move {
-                    //     sleep(Duration::from_secs(30)).await;
-                    //     log_info!("moved run {}", study_uid_clone);
-                    // });
-
-                    let _ = self_clone.send_study(study_uid).await;
-                    // sleep(Duration::from_secs(30)).await;
-                    // log_info!("pretended this might take 30 secs to complete {}", study_uid_clone);
+                    // Route through attempt_upload so a failed send is recorded
+                    // (status + attempt history) and becomes eligible for the
+                    // retry scheduler, instead of being silently discarded.
+                    self_clone.attempt_upload(study_uid).await;
                 },
                 // OR we get a cancellation signal because schedule_study_push was called again
                 _ = rx => {
@@ -134,9 +149,151 @@ impl Transmission {
         Ok(())
     }
 
-    pub async fn send_study(&self, study_uid: String) -> Result<()> {
-        let upload_id = Uuid::new_v4();
+    /// Shared database handle, used by the retry scheduler to query studies
+    /// that are due for an upload attempt.
+    pub fn database(&self) -> &Database {
+        &self.database
+    }
 
+    /// Build the retry policy from the current user configuration.
+    fn retry_policy(&self) -> RetryPolicy {
+        let config = load_config(self.app_handle.clone());
+        RetryPolicy::from_config(
+            config.retry_base_seconds,
+            config.retry_cap_seconds,
+            config.max_upload_attempts,
+        )
+    }
+
+    /// Attempt a single upload of a study, recording the outcome.
+    ///
+    /// This is the only entry point that should drive an upload: it atomically
+    /// claims the study (preventing concurrent double-uploads), bounds total
+    /// concurrency via the global upload semaphore, runs [`Self::send_study`],
+    /// and on failure records the attempt and schedules the next retry (or
+    /// marks the study terminally `FAILED` once the retry budget is spent).
+    ///
+    /// Both the debounce path and the retry scheduler call this. Errors are
+    /// handled and logged here rather than propagated, because callers are
+    /// fire-and-forget background tasks.
+    /// User-initiated send/retry of a study (the Send and Retry buttons, and
+    /// bulk send). Re-queues the study so an already-`SENT` or `FAILED` study
+    /// becomes eligible again, then runs a bounded upload attempt. Re-queuing
+    /// skips studies currently `UPLOADING` so a manual click cannot start a
+    /// duplicate concurrent upload.
+    pub async fn manual_send(&self, study_uid: String) {
+        if let Err(e) = self.database.reset_for_manual_retry(&study_uid).await {
+            log_error!(
+                "Failed to re-queue study {} for manual send: {}",
+                study_uid,
+                e
+            );
+            return;
+        }
+        self.attempt_upload(study_uid).await;
+    }
+
+    pub async fn attempt_upload(&self, study_uid: String) {
+        // Bound total concurrent uploads process-wide. The permit is held for
+        // the whole attempt and released on return regardless of outcome.
+        let _permit = match upload_semaphore().acquire_owned().await {
+            Ok(p) => p,
+            Err(_) => {
+                log_error!("Upload semaphore closed; dropping upload for {}", study_uid);
+                return;
+            }
+        };
+
+        // Refuse to start a new upload (which would create a large temporary
+        // archive) when disk space is critically low. The study is left
+        // QUEUED so the scheduler picks it up again once space is freed, and a
+        // warning is surfaced to the UI.
+        let config = load_config(self.app_handle.clone());
+        if crate::store::disk::warn_if_low(&self.app_handle, &config) {
+            let _ = self.database.reset_for_manual_retry(&study_uid).await;
+            log_error!(
+                "Skipping upload of {} due to critically low disk space",
+                study_uid
+            );
+            return;
+        }
+
+        let upload_id = Uuid::new_v4();
+        // A study may be picked up for upload from any of these states: freshly
+        // received (debounce), queued/awaiting retry (scheduler), or a manual
+        // retry which re-queues it.
+        let eligible = [
+            study_status::IN_PROGRESS,
+            study_status::QUEUED,
+            study_status::RETRYING,
+        ];
+
+        let (attempt_id, attempt_no) = match self
+            .database
+            .claim_study_for_upload(&study_uid, &eligible, &upload_id.to_string())
+            .await
+        {
+            Ok(Some(claim)) => claim,
+            Ok(None) => {
+                log_info!(
+                    "Study {} not claimable (already uploading or terminal); skipping",
+                    study_uid
+                );
+                return;
+            }
+            Err(e) => {
+                log_error!("Failed to claim study {} for upload: {}", study_uid, e);
+                return;
+            }
+        };
+
+        match self.send_study(study_uid.clone(), upload_id).await {
+            Ok(()) => {
+                if let Err(e) = self.database.mark_attempt_success(attempt_id).await {
+                    log_error!("Failed to record upload success for {}: {}", study_uid, e);
+                }
+            }
+            Err(err) => {
+                let err_str = format!("{:#}", err);
+                let policy = self.retry_policy();
+                let next_retry_at = if policy.should_retry(attempt_no as u32) {
+                    let delay = next_retry_delay(attempt_no as u32, &policy);
+                    let delay = chrono::Duration::from_std(delay)
+                        .unwrap_or_else(|_| chrono::Duration::seconds(60));
+                    Some(Utc::now() + delay)
+                } else {
+                    None
+                };
+
+                if let Err(e) = self
+                    .database
+                    .mark_upload_failed(attempt_id, &study_uid, &err_str, next_retry_at)
+                    .await
+                {
+                    log_error!("Failed to record upload failure for {}: {}", study_uid, e);
+                }
+
+                let outcome = if next_retry_at.is_some() {
+                    "will retry"
+                } else {
+                    "giving up (FAILED)"
+                };
+                log_error!(
+                    "Upload attempt {} for study {} failed ({}): {}",
+                    attempt_no,
+                    study_uid,
+                    outcome,
+                    err_str
+                );
+                let _ = self.app_handle.emit(
+                    "log",
+                    format!("Upload failed for {} ({}): {}", study_uid, outcome, err_str),
+                );
+            }
+        }
+    }
+
+    pub async fn send_study(&self, study_uid: String, upload_id: Uuid) -> Result<()> {
         let config = load_config(self.app_handle.clone());
         let delete_after_send = config.delete_after_success == "yes";
 
@@ -162,30 +319,18 @@ impl Transmission {
         log_info!("study_uid: {}", study_uid.clone());
         log_info!("upload_id: {}", upload_id.to_string());
 
-        let endpoint = upload_config
-            .get("endpoint")
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .to_string();
-        let token = upload_config
-            .get("token")
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .to_string();
-        let bucket = upload_config
-            .get("bucket")
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .to_string();
-        let assembly_id = upload_config
-            .get("assembly_id")
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .to_string();
+        let require_str = |key: &str| -> Result<String> {
+            upload_config
+                .get(key)
+                .and_then(Value::as_str)
+                .map(str::to_string)
+                .ok_or_else(|| anyhow!("uploader config missing required string field '{}'", key))
+        };
+
+        let endpoint = require_str("endpoint")?;
+        let token = require_str("token")?;
+        let bucket = require_str("bucket")?;
+        let assembly_id = require_str("assembly_id")?;
 
         log_info!("endpoint: {}", endpoint.clone());
         log_info!("token: {}", token.to_string());
@@ -199,7 +344,7 @@ impl Transmission {
                 upload_id.to_string(),
             )
             .await
-            .expect("Error sending upload init api message");
+            .context("Failed to send upload init to Aurabox")?;
 
         log_info!("Sent upload init to aura");
 
@@ -220,7 +365,7 @@ impl Transmission {
                 "start",
             )
             .await
-            .expect("Error sending upload start api message");
+            .context("Failed to send upload start to Aurabox")?;
 
         log_info!("Sent upload start to aura");
 
@@ -244,7 +389,7 @@ impl Transmission {
                 "complete",
             )
             .await
-            .expect("Error sending complete api message");
+            .context("Failed to send upload complete to Aurabox")?;
 
         log_info!("Sent upload complete to aura");
 
@@ -270,7 +415,8 @@ impl Transmission {
         }
 
         if let Err(err) =
-            Metadata::update_study_metadata_status(&self.database, study_uid, "SENT").await
+            Metadata::update_study_metadata_status(&self.database, study_uid, study_status::SENT)
+                .await
         {
             log_error!("Failed to update study metadata status: {}", err);
         }
@@ -495,10 +641,23 @@ impl Transmission {
     async fn fetch_uploader_config(&self) -> Result<Value> {
         let upload_config = self.aura_api.upload_config().await?;
 
-        let lift_config = upload_config.get("lift").unwrap();
+        let lift_config = upload_config
+            .get("lift")
+            .ok_or_else(|| anyhow!("uploader config missing 'lift' object"))?;
 
-        let bucket = lift_config.get("bucket").unwrap().as_str();
-        let endpoint = lift_config.get("endpoint").unwrap().as_str();
+        let require_str = |obj: &Value, key: &str| -> Result<String> {
+            obj.get(key)
+                .and_then(Value::as_str)
+                .map(str::to_string)
+                .ok_or_else(|| anyhow!("uploader config missing required string field '{}'", key))
+        };
+
+        let bucket = require_str(lift_config, "bucket")?;
+        let endpoint = require_str(lift_config, "endpoint")?;
+        let token = require_str(lift_config, "token")?;
+        let assembly_id = require_str(lift_config, "assembly_id")?;
+        let upload_type = require_str(&upload_config, "type")?;
+        let mode = require_str(&upload_config, "mode")?;
 
         log_info!("Uploader config bucket: {:#?}", bucket);
         log_info!("Uploader config endpoint: {:#?}", endpoint);
@@ -506,10 +665,10 @@ impl Transmission {
         let resp_json = json!({
             "bucket": bucket,
             "endpoint": endpoint,
-            "token": lift_config.get("token").unwrap().as_str(),
-            "assembly_id": lift_config.get("assembly_id").unwrap().as_str(),
-            "type": upload_config.get("type").unwrap().as_str(),
-            "mode": upload_config.get("mode").unwrap().as_str(),
+            "token": token,
+            "assembly_id": assembly_id,
+            "type": upload_type,
+            "mode": mode,
         });
 
         Ok(resp_json)
@@ -532,10 +691,17 @@ impl Transmission {
             .and_then(|s| s.to_str())
             .unwrap_or("file.dcm.zip");
 
-        let endpoint = upload_config.get("endpoint").unwrap().as_str().unwrap();
-        let token = upload_config.get("token").unwrap().as_str().unwrap();
-        let mode = upload_config.get("mode").unwrap().as_str().unwrap();
-        let bucket = upload_config.get("bucket").unwrap().as_str().unwrap();
+        let require_str = |key: &str| -> Result<&str> {
+            upload_config
+                .get(key)
+                .and_then(Value::as_str)
+                .ok_or_else(|| anyhow!("uploader config missing required string field '{}'", key))
+        };
+
+        let endpoint = require_str("endpoint")?;
+        let token = require_str("token")?;
+        let mode = require_str("mode")?;
+        let bucket = require_str("bucket")?;
         let upload_id = upload_id.to_string();
 
         let metadata_fields = vec![

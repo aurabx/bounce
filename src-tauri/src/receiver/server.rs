@@ -1,4 +1,6 @@
+use crate::db::database::Database;
 use crate::query::poller::{self, QueryPollerState};
+use crate::transmitter::retry_scheduler::{self, RetrySchedulerState};
 use crate::{load_config, log_error, log_info, receiver};
 use local_ip_address::local_ip;
 use receiver::dicom_server::DICOMServer;
@@ -12,6 +14,7 @@ use tokio::sync::{oneshot, Mutex};
 pub struct ServerState {
     shutdown_sender: Option<oneshot::Sender<()>>,
     poller_state: QueryPollerState,
+    retry_scheduler_state: RetrySchedulerState,
 }
 
 // Initialize the server state in main.rs
@@ -19,6 +22,7 @@ pub fn init_server_state() -> ServerState {
     ServerState {
         shutdown_sender: None,
         poller_state: poller::init_poller_state(),
+        retry_scheduler_state: retry_scheduler::init_retry_scheduler_state(),
     }
 }
 
@@ -41,6 +45,25 @@ pub async fn start(app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         let (poller_shutdown_tx, poller_shutdown_rx) = oneshot::channel::<()>();
         state.poller_state.shutdown_sender = Some(poller_shutdown_tx);
         poller::start_poller(app.clone(), poller_shutdown_rx);
+
+        // Recover any uploads orphaned by a previous crash/restart (studies
+        // left UPLOADING, or stale IN-PROGRESS) by re-queuing them, then start
+        // the retry scheduler that drains QUEUED/RETRYING studies.
+        let database = app.state::<Database>().inner().clone();
+        match database.recover_pending_on_startup().await {
+            Ok(count) => {
+                if count > 0 {
+                    log_info!("Startup recovery: re-queued {} pending studies", count);
+                }
+            }
+            Err(e) => {
+                log_error!("Startup recovery failed: {}", e);
+            }
+        }
+
+        let (retry_shutdown_tx, retry_shutdown_rx) = oneshot::channel::<()>();
+        state.retry_scheduler_state.shutdown_sender = Some(retry_shutdown_tx);
+        retry_scheduler::start_retry_scheduler(app.clone(), retry_shutdown_rx);
     }
 
     let local_ip = local_ip().unwrap();
@@ -103,16 +126,24 @@ pub async fn stop(app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     // Take the shutdown senders from the state
     let mut shutdown_sender = None;
     let mut poller_shutdown_sender = None;
+    let mut retry_shutdown_sender = None;
     {
         let mut state = app_state.lock().await;
         shutdown_sender = state.shutdown_sender.take();
         poller_shutdown_sender = state.poller_state.shutdown_sender.take();
+        retry_shutdown_sender = state.retry_scheduler_state.shutdown_sender.take();
     }
 
     // Stop the query poller
     if let Some(sender) = poller_shutdown_sender {
         let _ = sender.send(());
         log_info!("Query poller shutdown signal sent");
+    }
+
+    // Stop the retry scheduler
+    if let Some(sender) = retry_shutdown_sender {
+        let _ = sender.send(());
+        log_info!("Retry scheduler shutdown signal sent");
     }
 
     if let Some(sender) = shutdown_sender {

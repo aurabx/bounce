@@ -14,6 +14,10 @@ const statusMap: Record<string, {
     COMPLETE: {variant: 'success', label: 'Complete'},
     SENT: {variant: 'success', label: 'Sent'},
     "IN-PROGRESS": {variant: 'warning', label: 'In Progress'},
+    QUEUED: {variant: 'outline', label: 'Queued'},
+    UPLOADING: {variant: 'warning', label: 'Uploading'},
+    RETRYING: {variant: 'warning', label: 'Retrying'},
+    FAILED: {variant: 'destructive', label: 'Failed'},
     ARCHIVED: {variant: 'secondary', label: 'Archived'},
     UNKNOWN: {variant: 'outline', label: 'Unknown'},
 }
@@ -26,6 +30,7 @@ export interface StudiesTableProps {
     allOnPageSelected: boolean,
     someOnPageSelected: boolean,
     onSend: (study: Study) => void,
+    onRetry: (study: Study) => void,
     onDelete: (study: Study) => void,
 }
 
@@ -108,6 +113,25 @@ function formatRelative(iso?: string): { rel: string, abs: string } {
     return {rel: date.toLocaleDateString(), abs}
 }
 
+// Hover text for the status badge surfacing retry diagnostics: how many
+// attempts have been made, the last error, and when the next retry is due.
+function statusTitle(study: Study): string | undefined {
+    const parts: string[] = []
+    if (typeof study.attempts === 'number' && study.attempts > 0) {
+        parts.push(`Attempts: ${study.attempts}`)
+    }
+    if (study.status === 'RETRYING' && study.next_retry_at) {
+        const next = new Date(study.next_retry_at)
+        if (!Number.isNaN(next.getTime())) {
+            parts.push(`Next retry: ${next.toLocaleString()}`)
+        }
+    }
+    if (study.last_error) {
+        parts.push(`Last error: ${study.last_error}`)
+    }
+    return parts.length > 0 ? parts.join('\n') : undefined
+}
+
 /**
  * A draggable handle rendered on the right edge of a resizable
  * column header. Drag tracking is wired to document-level listeners
@@ -138,6 +162,7 @@ export default function StudiesTable(props: StudiesTableProps) {
         allOnPageSelected,
         someOnPageSelected,
         onSend,
+        onRetry,
         onDelete,
     } = props
 
@@ -308,7 +333,10 @@ export default function StudiesTable(props: StudiesTableProps) {
                                     )}
                                 </td>
                                 <td className="px-3 py-2 align-top">
-                                    <Badge variant={status?.variant ?? 'outline'}>
+                                    <Badge
+                                        variant={status?.variant ?? 'outline'}
+                                        title={statusTitle(study)}
+                                    >
                                         {status?.label ?? study.status}
                                     </Badge>
                                 </td>
@@ -323,6 +351,15 @@ export default function StudiesTable(props: StudiesTableProps) {
                                 </td>
                                 <td className="px-3 py-2 align-top text-right">
                                     <div className="inline-flex items-center gap-1">
+                                        {study.status === 'FAILED' && study.exists && (
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => onRetry(study)}
+                                            >
+                                                Retry
+                                            </Button>
+                                        )}
                                         {study.exists && (
                                             <Button
                                                 variant="ghost"

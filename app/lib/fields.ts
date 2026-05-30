@@ -11,6 +11,11 @@ export const fieldKeys = [
     'ip_address',
     'delete_after_success',
     'send_logs',
+    'max_upload_attempts',
+    'retry_base_seconds',
+    'retry_cap_seconds',
+    'disk_warn_mb',
+    'disk_critical_mb',
     'setup_complete',
 ]
 

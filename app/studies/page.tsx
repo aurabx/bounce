@@ -3,6 +3,7 @@
 import {Suspense, useEffect, useState, useCallback, useMemo} from 'react'
 import {useAppSelector} from "@/app/lib/hook";
 import {invoke} from "@tauri-apps/api/core";
+import {listen} from "@tauri-apps/api/event";
 import {confirm} from "@tauri-apps/plugin-dialog";
 import {ArrowPathIcon} from '@heroicons/react/24/outline'
 import {classNames} from "@/app/lib/helpers";
@@ -25,6 +26,7 @@ export default function Page() {
     const [searchInput, setSearchInput] = useState<string>('');
     const [debouncedSearch, setDebouncedSearch] = useState<string>('');
     const [selectedUids, setSelectedUids] = useState<Set<string>>(new Set());
+    const [diskWarning, setDiskWarning] = useState<{availableBytes: number, critical: boolean} | null>(null);
 
     const studies = useAppSelector((state) => state.main.studies);
     const pagination = useAppSelector((state) => state.main.pagination);
@@ -92,8 +94,30 @@ export default function Page() {
         }
     };
 
+    // Surface low-disk warnings emitted by the backend (receiver write path
+    // and the upload scheduler) as a dismissible banner.
+    useEffect(() => {
+        const unlisten = listen<{available_bytes: number, critical: boolean}>(
+            'disk-warning',
+            (event) => {
+                setDiskWarning({
+                    availableBytes: event.payload.available_bytes,
+                    critical: event.payload.critical,
+                });
+            },
+        );
+        return () => {
+            unlisten.then((fn) => fn());
+        };
+    }, []);
+
     const sendStudy = async (study: Study) => {
         await invoke('send_study', {studyUid: study.study_uid});
+    };
+
+    const retryStudy = async (study: Study) => {
+        await invoke('retry_study', {studyUid: study.study_uid});
+        await loadStudies(currentPage, pageSize, debouncedSearch);
     };
 
     const deleteStudy = async (study: Study) => {
@@ -222,8 +246,36 @@ export default function Page() {
     const showEmptyDatabase = loaded && studies.length === 0 && !hasActiveSearch;
     const tableDim = isFetching && studies.length > 0;
 
+    const diskWarningMb = diskWarning
+        ? Math.round(diskWarning.availableBytes / (1024 * 1024))
+        : 0;
+
     return (
         <div className="h-full flex flex-col space-y-4">
+            {diskWarning && (
+                <div
+                    className={classNames(
+                        "flex items-center justify-between rounded-md border px-4 py-2 text-sm",
+                        diskWarning.critical
+                            ? "border-destructive/50 bg-destructive/10 text-destructive"
+                            : "border-amber-500/50 bg-amber-50 text-amber-700",
+                    )}
+                >
+                    <span>
+                        {diskWarning.critical
+                            ? `Critically low disk space: ${diskWarningMb} MB free. New uploads are paused until space is freed.`
+                            : `Low disk space: ${diskWarningMb} MB free.`}
+                    </span>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setDiskWarning(null)}
+                    >
+                        Dismiss
+                    </Button>
+                </div>
+            )}
+
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex-1 min-w-[16rem] max-w-md">
                     <Input
@@ -341,6 +393,7 @@ export default function Page() {
                                     allOnPageSelected={allOnPageSelected}
                                     someOnPageSelected={someOnPageSelected}
                                     onSend={sendStudy}
+                                    onRetry={retryStudy}
                                     onDelete={deleteStudy}
                                 />
                             </div>

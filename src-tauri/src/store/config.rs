@@ -1,8 +1,30 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::str::FromStr;
 use tauri::AppHandle;
 use tauri_plugin_store::StoreExt;
+
+/// Parse a numeric setting from the store, accepting either a JSON string
+/// (how the Settings UI persists values) or a JSON number, and falling back to
+/// `default` when absent or malformed.
+fn parse_numeric<T>(value: &Option<serde_json::Value>, default: T) -> T
+where
+    T: FromStr + Copy,
+{
+    match value {
+        None => default,
+        Some(v) => {
+            if let Some(s) = v.as_str() {
+                s.trim().parse().unwrap_or(default)
+            } else if let Some(n) = v.as_u64() {
+                n.to_string().parse().unwrap_or(default)
+            } else {
+                default
+            }
+        }
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
@@ -13,6 +35,16 @@ pub struct Config {
     pub ae_title: String,
     pub delete_after_success: String,
     pub send_logs: String,
+    /// Maximum upload attempts before a study is marked terminally FAILED.
+    pub max_upload_attempts: u32,
+    /// Base delay (seconds) before the first retry; grows exponentially.
+    pub retry_base_seconds: u64,
+    /// Cap (seconds) the exponential retry backoff is clamped to.
+    pub retry_cap_seconds: u64,
+    /// Free-space threshold (MB) below which a disk warning is surfaced.
+    pub disk_warn_mb: u64,
+    /// Free-space threshold (MB) below which new uploads are paused.
+    pub disk_critical_mb: u64,
 }
 
 impl Config {
@@ -73,7 +105,7 @@ impl Config {
             },
 
             delete_after_success: match store.get("delete_after_success") {
-                None => "no".to_string(),
+                None => "yes".to_string(),
                 Some(value) => value.as_str().unwrap().parse().unwrap(),
             },
 
@@ -81,6 +113,12 @@ impl Config {
                 None => "yes".to_string(),
                 Some(value) => value.as_str().unwrap().parse().unwrap(),
             },
+
+            max_upload_attempts: parse_numeric(&store.get("max_upload_attempts"), 10),
+            retry_base_seconds: parse_numeric(&store.get("retry_base_seconds"), 30),
+            retry_cap_seconds: parse_numeric(&store.get("retry_cap_seconds"), 3600),
+            disk_warn_mb: parse_numeric(&store.get("disk_warn_mb"), 2048),
+            disk_critical_mb: parse_numeric(&store.get("disk_critical_mb"), 512),
         }
     }
 

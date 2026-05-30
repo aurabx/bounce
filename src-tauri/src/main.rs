@@ -121,12 +121,35 @@ async fn api_start_upload(
 async fn send_study(app: AppHandle, study_uid: String) -> Result<(), String> {
     let transmission = Transmission::new(app);
 
-    transmission
-        .send_study(study_uid)
-        .await
-        .expect("send study panic");
+    // manual_send re-queues then runs a bounded, failure-recording attempt;
+    // a failed send is now retried automatically rather than panicking.
+    transmission.manual_send(study_uid).await;
 
     Ok(())
+}
+
+#[tauri::command]
+async fn retry_study(app: AppHandle, study_uid: String) -> Result<(), String> {
+    let transmission = Transmission::new(app);
+
+    // Same path as a manual send: re-queue the (typically FAILED) study and
+    // attempt the upload immediately.
+    transmission.manual_send(study_uid).await;
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn study_upload_attempts(
+    app: AppHandle,
+    study_uid: String,
+) -> Result<serde_json::Value, String> {
+    let database = app.state::<Database>();
+    let attempts = database
+        .upload_attempts_for_study(&study_uid)
+        .await
+        .map_err(|e| e.to_string())?;
+    serde_json::to_value(attempts).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -202,9 +225,9 @@ async fn current_studies(
 async fn bulk_send_studies(app: AppHandle, study_uids: Vec<String>) -> Result<(), String> {
     let transmission = Transmission::new(app);
     for uid in study_uids {
-        if let Err(e) = transmission.send_study(uid.clone()).await {
-            log_error!("bulk_send_studies: failed for {}: {}", uid, e);
-        }
+        // Each manual send re-queues and attempts the upload; failures are
+        // recorded and retried automatically rather than aborting the batch.
+        transmission.manual_send(uid).await;
     }
     Ok(())
 }
@@ -510,6 +533,8 @@ fn main() {
             reset_app,
             send_log,
             send_study,
+            retry_study,
+            study_upload_attempts,
             delete_study,
             bulk_send_studies,
             bulk_delete_studies,

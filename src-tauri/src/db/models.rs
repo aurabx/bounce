@@ -23,7 +23,27 @@ pub struct Study {
     pub images: i64,
     pub series_count: i64,
     pub status: String,
+    pub attempts: i64,
+    pub last_attempt_at: Option<DateTime<Utc>>,
+    pub next_retry_at: Option<DateTime<Utc>>,
+    pub last_error: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub sent_at: Option<DateTime<Utc>>,
+}
+
+/// A single upload attempt for a study. One row is written when an attempt is
+/// claimed (`STARTED`) and updated to `SUCCESS`/`FAILED` when it resolves,
+/// forming a per-study audit trail of every upload try.
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct UploadAttempt {
+    pub id: Option<i64>,
+    pub study_uid: String,
+    pub attempt_no: i64,
+    pub upload_id: Option<String>,
+    pub status: String,
+    pub error: Option<String>,
+    pub started_at: DateTime<Utc>,
+    pub finished_at: Option<DateTime<Utc>>,
+    pub duration_ms: Option<i64>,
 }

@@ -139,6 +139,7 @@ export default function Settings() {
                 if (fieldKey === 'ae_title') val = 'BOUNCE';
                 if (fieldKey === 'ip_address') val = '0.0.0.0';
                 if (fieldKey === 'send_logs') val = 'yes';
+                if (fieldKey === 'delete_after_success') val = 'yes';
             }
 
             // The API key is never copied into form state. We expose only

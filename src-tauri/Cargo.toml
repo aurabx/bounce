@@ -40,6 +40,7 @@ chrono = { version = "0.4", features = ["serde"] }
 anyhow = "1.0.79"
 zip = "5.1.1"
 walkdir = "2.5.0"
+fs2 = "0.4.3"
 snafu = "0.8"
 tauri-plugin-store = "2"
 tauri-plugin-process = "2"

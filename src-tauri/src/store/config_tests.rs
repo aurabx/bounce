@@ -12,6 +12,11 @@ mod tests {
             base_dir: "./tmp/dicom_storage".to_string(),
             delete_after_success: "no".to_string(),
             send_logs: "no".to_string(),
+            max_upload_attempts: 10,
+            retry_base_seconds: 30,
+            retry_cap_seconds: 3600,
+            disk_warn_mb: 2048,
+            disk_critical_mb: 512,
         };
 
         let region = config.region_from_api_key();
@@ -28,6 +33,11 @@ mod tests {
             base_dir: "./tmp/dicom_storage".to_string(),
             delete_after_success: "no".to_string(),
             send_logs: "no".to_string(),
+            max_upload_attempts: 10,
+            retry_base_seconds: 30,
+            retry_cap_seconds: 3600,
+            disk_warn_mb: 2048,
+            disk_critical_mb: 512,
         };
 
         let region = config.region_from_api_key();
@@ -44,6 +54,11 @@ mod tests {
             base_dir: "./tmp/dicom_storage".to_string(),
             delete_after_success: "no".to_string(),
             send_logs: "no".to_string(),
+            max_upload_attempts: 10,
+            retry_base_seconds: 30,
+            retry_cap_seconds: 3600,
+            disk_warn_mb: 2048,
+            disk_critical_mb: 512,
         };
 
         let region = config.region_from_api_key();
@@ -60,6 +75,11 @@ mod tests {
             base_dir: "./tmp/dicom_storage".to_string(),
             delete_after_success: "no".to_string(),
             send_logs: "no".to_string(),
+            max_upload_attempts: 10,
+            retry_base_seconds: 30,
+            retry_cap_seconds: 3600,
+            disk_warn_mb: 2048,
+            disk_critical_mb: 512,
         };
 
         let region = config.region_from_api_key();
@@ -76,6 +96,11 @@ mod tests {
             base_dir: "./tmp/dicom_storage".to_string(),
             delete_after_success: "no".to_string(),
             send_logs: "no".to_string(),
+            max_upload_attempts: 10,
+            retry_base_seconds: 30,
+            retry_cap_seconds: 3600,
+            disk_warn_mb: 2048,
+            disk_critical_mb: 512,
         };
 
         let mode = config.mode_from_api_key();
@@ -92,6 +117,11 @@ mod tests {
             base_dir: "./tmp/dicom_storage".to_string(),
             delete_after_success: "no".to_string(),
             send_logs: "no".to_string(),
+            max_upload_attempts: 10,
+            retry_base_seconds: 30,
+            retry_cap_seconds: 3600,
+            disk_warn_mb: 2048,
+            disk_critical_mb: 512,
         };
 
         let mode = config.mode_from_api_key();
@@ -108,6 +138,11 @@ mod tests {
             base_dir: "./tmp/dicom_storage".to_string(),
             delete_after_success: "no".to_string(),
             send_logs: "no".to_string(),
+            max_upload_attempts: 10,
+            retry_base_seconds: 30,
+            retry_cap_seconds: 3600,
+            disk_warn_mb: 2048,
+            disk_critical_mb: 512,
         };
 
         let mode = config.mode_from_api_key();
@@ -124,6 +159,11 @@ mod tests {
             base_dir: "./tmp/dicom_storage".to_string(),
             delete_after_success: "no".to_string(),
             send_logs: "no".to_string(),
+            max_upload_attempts: 10,
+            retry_base_seconds: 30,
+            retry_cap_seconds: 3600,
+            disk_warn_mb: 2048,
+            disk_critical_mb: 512,
         };
 
         let mode = config.mode_from_api_key();
@@ -140,6 +180,11 @@ mod tests {
             base_dir: "./tmp/dicom_storage".to_string(),
             delete_after_success: "no".to_string(),
             send_logs: "no".to_string(),
+            max_upload_attempts: 10,
+            retry_base_seconds: 30,
+            retry_cap_seconds: 3600,
+            disk_warn_mb: 2048,
+            disk_critical_mb: 512,
         };
 
         let mode = config.mode_from_api_key();
@@ -156,6 +201,11 @@ mod tests {
             base_dir: "./tmp/dicom_storage".to_string(),
             delete_after_success: "no".to_string(),
             send_logs: "no".to_string(),
+            max_upload_attempts: 10,
+            retry_base_seconds: 30,
+            retry_cap_seconds: 3600,
+            disk_warn_mb: 2048,
+            disk_critical_mb: 512,
         };
 
         let endpoint = config.get_api_endpoint();
@@ -172,6 +222,11 @@ mod tests {
             base_dir: "./tmp/dicom_storage".to_string(),
             delete_after_success: "no".to_string(),
             send_logs: "no".to_string(),
+            max_upload_attempts: 10,
+            retry_base_seconds: 30,
+            retry_cap_seconds: 3600,
+            disk_warn_mb: 2048,
+            disk_critical_mb: 512,
         };
 
         let endpoint = config.get_api_endpoint();
@@ -188,6 +243,11 @@ mod tests {
             base_dir: "./tmp/dicom_storage".to_string(),
             delete_after_success: "no".to_string(),
             send_logs: "no".to_string(),
+            max_upload_attempts: 10,
+            retry_base_seconds: 30,
+            retry_cap_seconds: 3600,
+            disk_warn_mb: 2048,
+            disk_critical_mb: 512,
         };
 
         let endpoint = config.get_api_endpoint();
@@ -207,6 +267,11 @@ mod tests {
             base_dir: "./tmp/dicom_storage".to_string(),
             delete_after_success: "no".to_string(),
             send_logs: "no".to_string(),
+            max_upload_attempts: 10,
+            retry_base_seconds: 30,
+            retry_cap_seconds: 3600,
+            disk_warn_mb: 2048,
+            disk_critical_mb: 512,
         };
 
         let endpoint = config.get_api_endpoint();
@@ -226,6 +291,11 @@ mod tests {
             base_dir: "./tmp/dicom_storage".to_string(),
             delete_after_success: "no".to_string(),
             send_logs: "no".to_string(),
+            max_upload_attempts: 10,
+            retry_base_seconds: 30,
+            retry_cap_seconds: 3600,
+            disk_warn_mb: 2048,
+            disk_critical_mb: 512,
         };
 
         let endpoint = config.get_api_endpoint();
@@ -242,6 +312,11 @@ mod tests {
             base_dir: "/tmp/dicom_storage".to_string(),
             delete_after_success: "no".to_string(),
             send_logs: "no".to_string(),
+            max_upload_attempts: 10,
+            retry_base_seconds: 30,
+            retry_cap_seconds: 3600,
+            disk_warn_mb: 2048,
+            disk_critical_mb: 512,
         };
 
         let study_uid = "1.2.3.4.5".to_string();
@@ -260,6 +335,11 @@ mod tests {
             base_dir: "/tmp/dicom_storage".to_string(),
             delete_after_success: "no".to_string(),
             send_logs: "no".to_string(),
+            max_upload_attempts: 10,
+            retry_base_seconds: 30,
+            retry_cap_seconds: 3600,
+            disk_warn_mb: 2048,
+            disk_critical_mb: 512,
         };
 
         let study_uid = "1.2.3.4.5\0\0".to_string();
@@ -279,6 +359,11 @@ mod tests {
             base_dir: "/tmp/dicom_storage".to_string(),
             delete_after_success: "no".to_string(),
             send_logs: "no".to_string(),
+            max_upload_attempts: 10,
+            retry_base_seconds: 30,
+            retry_cap_seconds: 3600,
+            disk_warn_mb: 2048,
+            disk_critical_mb: 512,
         };
 
         let study_uid = "1.2.3.4.5".to_string();
@@ -297,6 +382,11 @@ mod tests {
             base_dir: "/tmp/dicom_storage".to_string(),
             delete_after_success: "no".to_string(),
             send_logs: "no".to_string(),
+            max_upload_attempts: 10,
+            retry_base_seconds: 30,
+            retry_cap_seconds: 3600,
+            disk_warn_mb: 2048,
+            disk_critical_mb: 512,
         };
 
         let study_uid = "1.2.3.4.5\0".to_string();
@@ -315,6 +405,11 @@ mod tests {
             base_dir: "/custom/path".to_string(),
             delete_after_success: "no".to_string(),
             send_logs: "no".to_string(),
+            max_upload_attempts: 10,
+            retry_base_seconds: 30,
+            retry_cap_seconds: 3600,
+            disk_warn_mb: 2048,
+            disk_critical_mb: 512,
         };
 
         assert_eq!(config.get_base_dir(), "/custom/path");

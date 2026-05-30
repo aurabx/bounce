@@ -1,10 +1,33 @@
 use crate::db::{migrations, models::*};
 use crate::{load_config, log_error, log_info};
 use anyhow::{Context, Result};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use serde_json::Value;
 use sqlx::SqlitePool;
 use tauri::{AppHandle, Manager};
+
+/// Study upload lifecycle statuses persisted in `studies.status`.
+pub mod study_status {
+    /// Receiving images (debounce window). Default on creation.
+    pub const IN_PROGRESS: &str = "IN-PROGRESS";
+    /// Ready for an upload attempt.
+    pub const QUEUED: &str = "QUEUED";
+    /// An upload attempt is in flight (claimed).
+    pub const UPLOADING: &str = "UPLOADING";
+    /// Upload succeeded (terminal).
+    pub const SENT: &str = "SENT";
+    /// Last attempt failed; awaiting `next_retry_at`.
+    pub const RETRYING: &str = "RETRYING";
+    /// Exhausted max attempts (terminal until manual retry).
+    pub const FAILED: &str = "FAILED";
+}
+
+/// Per-attempt statuses persisted in `upload_attempts.status`.
+pub mod attempt_status {
+    pub const STARTED: &str = "STARTED";
+    pub const SUCCESS: &str = "SUCCESS";
+    pub const FAILED: &str = "FAILED";
+}
 
 #[derive(Clone, Debug)]
 pub struct Database {
@@ -175,6 +198,10 @@ impl Database {
                         "series_count": study.series_count,
                         "images": study.images,
                         "status": study.status,
+                        "attempts": study.attempts,
+                        "last_attempt_at": study.last_attempt_at,
+                        "next_retry_at": study.next_retry_at,
+                        "last_error": study.last_error,
                         "created_at": study.created_at,
                         "updated_at": study.updated_at,
                         "sent_at": study.sent_at,
@@ -333,8 +360,277 @@ impl Database {
         Ok(())
     }
 
+    /// Atomically claim a study for an upload attempt.
+    ///
+    /// Transitions the study to `UPLOADING` only if it is currently in one of
+    /// `eligible_statuses`, increments its attempt counter, and records a
+    /// `STARTED` row in `upload_attempts`. Returns `(attempt_id, attempt_no)`
+    /// when the claim succeeds, or `None` if another worker already holds it
+    /// (the conditional update matched no rows). This is the single guard that
+    /// prevents the debounce path and the retry scheduler from double-uploading
+    /// the same study.
+    pub async fn claim_study_for_upload(
+        &self,
+        study_uid: &str,
+        eligible_statuses: &[&str],
+        upload_id: &str,
+    ) -> Result<Option<(i64, i64)>> {
+        let now = Utc::now();
+        let placeholders = vec!["?"; eligible_statuses.len()].join(", ");
+        let update_sql = format!(
+            "UPDATE studies SET status = '{}', last_attempt_at = ?, attempts = attempts + 1 \
+             WHERE study_uid = ? AND status IN ({})",
+            study_status::UPLOADING,
+            placeholders
+        );
+
+        let mut tx = self.pool.begin().await?;
+
+        let mut query = sqlx::query(&update_sql).bind(now).bind(study_uid);
+        for status in eligible_statuses {
+            query = query.bind(*status);
+        }
+        let result = query.execute(&mut *tx).await?;
+
+        if result.rows_affected() == 0 {
+            tx.commit().await?;
+            return Ok(None);
+        }
+
+        let attempt_no: i64 =
+            sqlx::query_scalar("SELECT attempts FROM studies WHERE study_uid = ?")
+                .bind(study_uid)
+                .fetch_one(&mut *tx)
+                .await?;
+
+        let insert = sqlx::query(
+            r#"
+            INSERT INTO upload_attempts (study_uid, attempt_no, upload_id, status, started_at)
+            VALUES (?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(study_uid)
+        .bind(attempt_no)
+        .bind(upload_id)
+        .bind(attempt_status::STARTED)
+        .bind(now)
+        .execute(&mut *tx)
+        .await?;
+
+        let attempt_id = insert.last_insert_rowid();
+
+        tx.commit().await?;
+
+        Ok(Some((attempt_id, attempt_no)))
+    }
+
+    /// Mark a claimed attempt as succeeded. The study's transition to `SENT`
+    /// is handled separately via [`Self::update_study_status`].
+    pub async fn mark_attempt_success(&self, attempt_id: i64) -> Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE upload_attempts
+            SET status = ?,
+                finished_at = ?,
+                duration_ms = CAST((julianday('now') - julianday(started_at)) * 86400000 AS INTEGER)
+            WHERE id = ?
+            "#,
+        )
+        .bind(attempt_status::SUCCESS)
+        .bind(Utc::now())
+        .bind(attempt_id)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Mark a claimed attempt as failed and move the study into either
+    /// `RETRYING` (when `next_retry_at` is `Some`) or terminal `FAILED` (when
+    /// `None`, i.e. the caller has exhausted the retry budget). The attempt row
+    /// and the study summary columns are updated in one transaction so they
+    /// cannot diverge.
+    pub async fn mark_upload_failed(
+        &self,
+        attempt_id: i64,
+        study_uid: &str,
+        error: &str,
+        next_retry_at: Option<DateTime<Utc>>,
+    ) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+
+        sqlx::query(
+            r#"
+            UPDATE upload_attempts
+            SET status = ?,
+                error = ?,
+                finished_at = ?,
+                duration_ms = CAST((julianday('now') - julianday(started_at)) * 86400000 AS INTEGER)
+            WHERE id = ?
+            "#,
+        )
+        .bind(attempt_status::FAILED)
+        .bind(error)
+        .bind(Utc::now())
+        .bind(attempt_id)
+        .execute(&mut *tx)
+        .await?;
+
+        let new_status = if next_retry_at.is_some() {
+            study_status::RETRYING
+        } else {
+            study_status::FAILED
+        };
+
+        sqlx::query(
+            r#"
+            UPDATE studies
+            SET status = ?, last_error = ?, next_retry_at = ?
+            WHERE study_uid = ?
+            "#,
+        )
+        .bind(new_status)
+        .bind(error)
+        .bind(next_retry_at)
+        .bind(study_uid)
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+
+        Ok(())
+    }
+
+    /// Study UIDs eligible for an upload attempt now: `QUEUED` studies and
+    /// `RETRYING` studies whose backoff window has elapsed. Ordered oldest
+    /// first (NULL `next_retry_at`, i.e. freshly queued, sorts first in SQLite
+    /// ascending order).
+    pub async fn find_due_for_retry(&self, limit: i64) -> Result<Vec<String>> {
+        let now = Utc::now();
+        let uids: Vec<String> = sqlx::query_scalar(
+            r#"
+            SELECT study_uid FROM studies
+            WHERE status = ?
+               OR (status = ? AND next_retry_at IS NOT NULL AND next_retry_at <= ?)
+            ORDER BY next_retry_at ASC
+            LIMIT ?
+            "#,
+        )
+        .bind(study_status::QUEUED)
+        .bind(study_status::RETRYING)
+        .bind(now)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(uids)
+    }
+
+    /// One-shot recovery run at receiver startup. Re-queues work orphaned by a
+    /// crash so the backlog drains without manual intervention:
+    /// - `UPLOADING` studies (an attempt was in flight when the process died)
+    ///   become `QUEUED`, and their dangling `STARTED` attempt rows are closed
+    ///   as `FAILED`.
+    /// - Stale `IN-PROGRESS` studies (no update within the debounce grace
+    ///   window) become `QUEUED`; recently-updated ones are left alone so a
+    ///   study still being received is not grabbed mid-transfer.
+    ///
+    /// Returns the number of studies re-queued.
+    pub async fn recover_pending_on_startup(&self) -> Result<usize> {
+        let now = Utc::now();
+        let mut tx = self.pool.begin().await?;
+
+        // Close attempt rows left dangling by a crash.
+        sqlx::query(
+            r#"
+            UPDATE upload_attempts
+            SET status = ?, error = 'interrupted by restart', finished_at = ?
+            WHERE status = ?
+            "#,
+        )
+        .bind(attempt_status::FAILED)
+        .bind(now)
+        .bind(attempt_status::STARTED)
+        .execute(&mut *tx)
+        .await?;
+
+        let orphaned = sqlx::query(
+            r#"
+            UPDATE studies SET status = ?, next_retry_at = ?
+            WHERE status = ?
+            "#,
+        )
+        .bind(study_status::QUEUED)
+        .bind(now)
+        .bind(study_status::UPLOADING)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+
+        // Stale IN-PROGRESS: compare against SQLite's own clock since
+        // updated_at is written by the CURRENT_TIMESTAMP trigger.
+        let stale = sqlx::query(
+            r#"
+            UPDATE studies SET status = ?, next_retry_at = ?
+            WHERE status = ? AND updated_at < datetime('now', '-5 minutes')
+            "#,
+        )
+        .bind(study_status::QUEUED)
+        .bind(now)
+        .bind(study_status::IN_PROGRESS)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+
+        tx.commit().await?;
+
+        Ok((orphaned + stale) as usize)
+    }
+
+    /// Reset a study for a manual retry/send (the Retry and Send buttons).
+    /// Moves it to `QUEUED` for immediate pickup and clears the last error,
+    /// unless an attempt is already in flight (`UPLOADING`), which is left
+    /// untouched to avoid spawning a duplicate concurrent upload. The
+    /// cumulative `attempts` count and the `upload_attempts` history are
+    /// intentionally preserved as an audit trail.
+    pub async fn reset_for_manual_retry(&self, study_uid: &str) -> Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE studies
+            SET status = ?, next_retry_at = ?, last_error = NULL
+            WHERE study_uid = ? AND status != ?
+            "#,
+        )
+        .bind(study_status::QUEUED)
+        .bind(Utc::now())
+        .bind(study_uid)
+        .bind(study_status::UPLOADING)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Full upload-attempt history for a study, newest first.
+    pub async fn upload_attempts_for_study(&self, study_uid: &str) -> Result<Vec<UploadAttempt>> {
+        let attempts = sqlx::query_as::<_, UploadAttempt>(
+            "SELECT * FROM upload_attempts WHERE study_uid = ? ORDER BY started_at DESC",
+        )
+        .bind(study_uid)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(attempts)
+    }
+
     pub async fn delete_study(&self, study_uid: String) -> Result<()> {
         let mut tx = self.pool.begin().await?;
+
+        // Delete attempt history first to satisfy the foreign key.
+        sqlx::query("DELETE FROM upload_attempts WHERE study_uid = ?")
+            .bind(&study_uid)
+            .execute(&mut *tx)
+            .await?;
 
         // Delete study
         sqlx::query("DELETE FROM studies WHERE study_uid = ?")
@@ -356,7 +652,10 @@ impl Database {
             .fetch_one(&mut *tx)
             .await?;
 
-        // Delete all studies
+        // Delete attempt history then studies.
+        sqlx::query("DELETE FROM upload_attempts")
+            .execute(&mut *tx)
+            .await?;
         sqlx::query("DELETE FROM studies").execute(&mut *tx).await?;
 
         tx.commit().await?;

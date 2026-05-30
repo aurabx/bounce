@@ -602,6 +602,14 @@ impl DICOMServer {
                                                         },
                                                     )
                                                     .unwrap();
+
+                                                // Surface a disk warning if the
+                                                // storage volume is running low
+                                                // as studies accumulate.
+                                                crate::store::disk::warn_if_low(
+                                                    app_handle,
+                                                    &self.config,
+                                                );
                                             }
 
                                             let ts = dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN

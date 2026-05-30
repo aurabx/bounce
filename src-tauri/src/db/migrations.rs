@@ -58,5 +58,71 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<()> {
     .execute(pool)
     .await?;
 
+    // Add upload retry/recovery columns to the studies table. SQLite has no
+    // "ADD COLUMN IF NOT EXISTS", so each ADD is run individually and a
+    // "duplicate column name" error is swallowed to keep the migration
+    // re-runnable (consistent with the IF NOT EXISTS blocks above).
+    add_column_if_missing(pool, "ALTER TABLE studies ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0").await?;
+    add_column_if_missing(pool, "ALTER TABLE studies ADD COLUMN last_attempt_at DATETIME").await?;
+    add_column_if_missing(pool, "ALTER TABLE studies ADD COLUMN next_retry_at DATETIME").await?;
+    add_column_if_missing(pool, "ALTER TABLE studies ADD COLUMN last_error TEXT").await?;
+
+    // Index supporting the retry scheduler's "due for retry" query.
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_studies_status_next_retry
+            ON studies (status, next_retry_at);
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    // Per-attempt upload history. One row per individual upload attempt,
+    // giving a full audit trail rather than just the latest error held on
+    // the studies row.
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS upload_attempts (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            study_uid    TEXT NOT NULL,
+            attempt_no   INTEGER NOT NULL,
+            upload_id    TEXT,
+            status       TEXT NOT NULL,
+            error        TEXT,
+            started_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            finished_at  DATETIME,
+            duration_ms  INTEGER,
+            CONSTRAINT fk_attempt_study FOREIGN KEY (study_uid) REFERENCES studies (study_uid)
+        );
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_upload_attempts_study
+            ON upload_attempts (study_uid, started_at);
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
     Ok(())
+}
+
+/// Run an `ALTER TABLE ... ADD COLUMN` statement, treating an existing column
+/// as success so the migration remains idempotent across restarts.
+async fn add_column_if_missing(pool: &SqlitePool, sql: &str) -> Result<()> {
+    match sqlx::query(sql).execute(pool).await {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            let msg = e.to_string().to_lowercase();
+            if msg.contains("duplicate column name") {
+                Ok(())
+            } else {
+                Err(e.into())
+            }
+        }
+    }
 }

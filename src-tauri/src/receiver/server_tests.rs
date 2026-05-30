@@ -27,6 +27,11 @@ mod tests {
             base_dir: temp_dir.path().to_string_lossy().to_string(),
             delete_after_success: "no".to_string(),
             send_logs: "no".to_string(),
+            max_upload_attempts: 10,
+            retry_base_seconds: 30,
+            retry_cap_seconds: 3600,
+            disk_warn_mb: 2048,
+            disk_critical_mb: 512,
         };
 
         let server = DICOMServer::new_for_test(config, db);

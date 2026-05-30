@@ -45,6 +45,10 @@ mod tests {
             images: 10,
             series_count: 2,
             status: "PENDING".to_string(),
+            attempts: 0,
+            last_attempt_at: None,
+            next_retry_at: None,
+            last_error: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
             sent_at: None,
@@ -532,5 +536,268 @@ mod tests {
             .unwrap();
         assert_eq!(count, 0);
         assert!(studies.is_empty());
+    }
+
+    // ---- Upload retry / recovery state machine -------------------------------
+
+    use super::super::database::{attempt_status, study_status};
+
+    /// Build a `Database` while keeping a clonable handle to its pool so tests
+    /// can both call the public methods and assert against raw rows. The pool is
+    /// an `Arc` internally, so the clone shares the same in-memory database.
+    async fn setup_db_with_pool() -> (Database, SqlitePool) {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let db = Database::new_for_test(pool.clone()).await;
+        (db, pool)
+    }
+
+    async fn insert_study_with_status(db: &Database, study_uid: &str, status: &str) {
+        let study = create_test_study(study_uid);
+        db.create_or_update_study(study).await.unwrap();
+        // create_or_update_study always defaults to IN-PROGRESS; move it to the
+        // status the test needs.
+        db.update_study_status(study_uid, status).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_claim_study_for_upload_is_exclusive() {
+        let (db, _pool) = setup_db_with_pool().await;
+        insert_study_with_status(&db, "claim.1", study_status::QUEUED).await;
+
+        let first = db
+            .claim_study_for_upload("claim.1", &[study_status::QUEUED], "upload-a")
+            .await
+            .unwrap();
+        assert!(first.is_some(), "first claim should succeed");
+        let (attempt_id, attempt_no) = first.unwrap();
+        assert_eq!(attempt_no, 1);
+        assert!(attempt_id > 0);
+
+        // Study is now UPLOADING, so a second claim from QUEUED finds no rows.
+        let second = db
+            .claim_study_for_upload("claim.1", &[study_status::QUEUED], "upload-b")
+            .await
+            .unwrap();
+        assert!(second.is_none(), "second claim must not double-dispatch");
+
+        let study = db.get_study_by_uid("claim.1").await.unwrap();
+        assert_eq!(study.status, study_status::UPLOADING);
+        assert_eq!(study.attempts, 1);
+        assert!(study.last_attempt_at.is_some());
+
+        let attempts = db.upload_attempts_for_study("claim.1").await.unwrap();
+        assert_eq!(attempts.len(), 1, "exactly one STARTED attempt row");
+        assert_eq!(attempts[0].status, attempt_status::STARTED);
+        assert_eq!(attempts[0].attempt_no, 1);
+    }
+
+    #[tokio::test]
+    async fn test_mark_attempt_success_closes_attempt_row() {
+        let (db, _pool) = setup_db_with_pool().await;
+        insert_study_with_status(&db, "ok.1", study_status::QUEUED).await;
+
+        let (attempt_id, _) = db
+            .claim_study_for_upload("ok.1", &[study_status::QUEUED], "upload-a")
+            .await
+            .unwrap()
+            .unwrap();
+
+        db.mark_attempt_success(attempt_id).await.unwrap();
+
+        let attempts = db.upload_attempts_for_study("ok.1").await.unwrap();
+        assert_eq!(attempts[0].status, attempt_status::SUCCESS);
+        assert!(attempts[0].finished_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_mark_upload_failed_retrying_then_terminal() {
+        let (db, _pool) = setup_db_with_pool().await;
+        insert_study_with_status(&db, "fail.1", study_status::QUEUED).await;
+
+        // First failure with a retry window -> RETRYING.
+        let (attempt_id, _) = db
+            .claim_study_for_upload("fail.1", &[study_status::QUEUED], "upload-a")
+            .await
+            .unwrap()
+            .unwrap();
+        let next = Utc::now() + chrono::Duration::seconds(30);
+        db.mark_upload_failed(attempt_id, "fail.1", "boom", Some(next))
+            .await
+            .unwrap();
+
+        let study = db.get_study_by_uid("fail.1").await.unwrap();
+        assert_eq!(study.status, study_status::RETRYING);
+        assert_eq!(study.last_error.as_deref(), Some("boom"));
+        assert!(study.next_retry_at.is_some());
+
+        // Exhausted: no retry window -> terminal FAILED.
+        let (attempt_id2, _) = db
+            .claim_study_for_upload("fail.1", &[study_status::RETRYING], "upload-b")
+            .await
+            .unwrap()
+            .unwrap();
+        db.mark_upload_failed(attempt_id2, "fail.1", "boom again", None)
+            .await
+            .unwrap();
+
+        let study = db.get_study_by_uid("fail.1").await.unwrap();
+        assert_eq!(study.status, study_status::FAILED);
+        assert!(study.next_retry_at.is_none());
+        assert_eq!(study.attempts, 2);
+
+        let attempts = db.upload_attempts_for_study("fail.1").await.unwrap();
+        assert_eq!(attempts.len(), 2);
+        assert!(attempts.iter().all(|a| a.status == attempt_status::FAILED));
+    }
+
+    #[tokio::test]
+    async fn test_find_due_for_retry_respects_next_retry_at() {
+        let (db, _pool) = setup_db_with_pool().await;
+
+        insert_study_with_status(&db, "due.queued", study_status::QUEUED).await;
+
+        // RETRYING and already due.
+        insert_study_with_status(&db, "due.now", study_status::QUEUED).await;
+        let (aid, _) = db
+            .claim_study_for_upload("due.now", &[study_status::QUEUED], "u")
+            .await
+            .unwrap()
+            .unwrap();
+        db.mark_upload_failed(
+            aid,
+            "due.now",
+            "e",
+            Some(Utc::now() - chrono::Duration::seconds(5)),
+        )
+        .await
+        .unwrap();
+
+        // RETRYING but not yet due.
+        insert_study_with_status(&db, "due.later", study_status::QUEUED).await;
+        let (aid2, _) = db
+            .claim_study_for_upload("due.later", &[study_status::QUEUED], "u")
+            .await
+            .unwrap()
+            .unwrap();
+        db.mark_upload_failed(
+            aid2,
+            "due.later",
+            "e",
+            Some(Utc::now() + chrono::Duration::seconds(600)),
+        )
+        .await
+        .unwrap();
+
+        let due = db.find_due_for_retry(100).await.unwrap();
+        assert!(due.contains(&"due.queued".to_string()));
+        assert!(due.contains(&"due.now".to_string()));
+        assert!(
+            !due.contains(&"due.later".to_string()),
+            "study whose backoff window has not elapsed must not be returned"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_recover_pending_on_startup() {
+        let (db, pool) = setup_db_with_pool().await;
+
+        // Orphaned UPLOADING with a dangling STARTED attempt row.
+        insert_study_with_status(&db, "rec.uploading", study_status::QUEUED).await;
+        db.claim_study_for_upload("rec.uploading", &[study_status::QUEUED], "u")
+            .await
+            .unwrap();
+
+        // Fresh IN-PROGRESS (default updated_at = now) must be left alone.
+        insert_study_with_status(&db, "rec.fresh", study_status::IN_PROGRESS).await;
+
+        // Stale IN-PROGRESS: seed an old updated_at directly (the AFTER UPDATE
+        // trigger only fires on UPDATE, so the INSERT value is preserved).
+        sqlx::query(
+            "INSERT INTO studies (study_uid, status, images, series_count, updated_at) \
+             VALUES (?, ?, 1, 1, datetime('now', '-10 minutes'))",
+        )
+        .bind("rec.stale")
+        .bind(study_status::IN_PROGRESS)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let requeued = db.recover_pending_on_startup().await.unwrap();
+        assert_eq!(requeued, 2, "UPLOADING + stale IN-PROGRESS are requeued");
+
+        assert_eq!(
+            db.get_study_by_uid("rec.uploading").await.unwrap().status,
+            study_status::QUEUED
+        );
+        assert_eq!(
+            db.get_study_by_uid("rec.stale").await.unwrap().status,
+            study_status::QUEUED
+        );
+        assert_eq!(
+            db.get_study_by_uid("rec.fresh").await.unwrap().status,
+            study_status::IN_PROGRESS,
+            "a study still being received must not be grabbed"
+        );
+
+        // The dangling STARTED row was closed as FAILED.
+        let attempts = db.upload_attempts_for_study("rec.uploading").await.unwrap();
+        assert_eq!(attempts[0].status, attempt_status::FAILED);
+        assert_eq!(attempts[0].error.as_deref(), Some("interrupted by restart"));
+    }
+
+    #[tokio::test]
+    async fn test_reset_for_manual_retry() {
+        let (db, _pool) = setup_db_with_pool().await;
+
+        insert_study_with_status(&db, "man.failed", study_status::QUEUED).await;
+        let (aid, _) = db
+            .claim_study_for_upload("man.failed", &[study_status::QUEUED], "u")
+            .await
+            .unwrap()
+            .unwrap();
+        db.mark_upload_failed(aid, "man.failed", "boom", None)
+            .await
+            .unwrap();
+
+        db.reset_for_manual_retry("man.failed").await.unwrap();
+        let study = db.get_study_by_uid("man.failed").await.unwrap();
+        assert_eq!(study.status, study_status::QUEUED);
+        assert!(study.last_error.is_none());
+        assert!(study.next_retry_at.is_some());
+        // History/attempt count preserved as an audit trail.
+        assert_eq!(study.attempts, 1);
+
+        // An in-flight upload must not be reset out from under the worker.
+        insert_study_with_status(&db, "man.uploading", study_status::QUEUED).await;
+        db.claim_study_for_upload("man.uploading", &[study_status::QUEUED], "u")
+            .await
+            .unwrap();
+        db.reset_for_manual_retry("man.uploading").await.unwrap();
+        assert_eq!(
+            db.get_study_by_uid("man.uploading").await.unwrap().status,
+            study_status::UPLOADING
+        );
+    }
+
+    #[tokio::test]
+    async fn test_delete_study_cascades_to_upload_attempts() {
+        let (db, _pool) = setup_db_with_pool().await;
+        insert_study_with_status(&db, "del.1", study_status::QUEUED).await;
+        db.claim_study_for_upload("del.1", &[study_status::QUEUED], "u")
+            .await
+            .unwrap();
+        assert_eq!(
+            db.upload_attempts_for_study("del.1").await.unwrap().len(),
+            1
+        );
+
+        db.delete_study("del.1".to_string()).await.unwrap();
+        assert!(
+            db.upload_attempts_for_study("del.1")
+                .await
+                .unwrap()
+                .is_empty(),
+            "attempt history must be deleted with the study"
+        );
     }
 }
