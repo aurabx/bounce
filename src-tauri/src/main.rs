@@ -407,6 +407,10 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        // Registers Bounce with the OS login-items mechanism (LaunchAgent on
+        // macOS, registry Run key on Windows) so the receiver comes back up
+        // after a reboot. The toggle in Settings drives enable()/disable().
+        .plugin(tauri_plugin_autostart::Builder::new().build())
         .setup(|app| {
             let handle = app.app_handle();
             let config = Config::load(handle.clone());

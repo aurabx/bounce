@@ -346,6 +346,23 @@ hours.
 
 ---
 
+### Start on login
+
+**Location**: Settings → Startup (not stored in `store.json`)
+**Default**: Off
+
+Whether Bounce launches automatically when the current user signs in to the
+computer. This is useful for an unattended receiver: after a reboot, Bounce
+starts again without anyone logging in to the application manually.
+
+The setting is managed by the operating system's login-items mechanism — a
+LaunchAgent on macOS and a `Run` registry entry on Windows — rather than being
+persisted in `store.json`. The toggle in Settings reflects the actual
+registered state, so it stays in sync even if the login item is changed outside
+of Bounce.
+
+---
+
 ## API Key Format
 
 The API key encodes several pieces of information in its structure:

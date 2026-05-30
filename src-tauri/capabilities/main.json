@@ -17,6 +17,7 @@
     "opener:default",
     "os:default",
     "updater:default",
+    "autostart:default",
     {
       "identifier": "opener:allow-open-path",
       "allow": [

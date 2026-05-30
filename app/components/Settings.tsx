@@ -13,6 +13,7 @@ import {useSetupComplete} from "@/app/lib/customHooks";
 import {cn} from "@/app/lib/utils";
 import {invoke} from "@tauri-apps/api/core";
 import { relaunch } from '@tauri-apps/plugin-process';
+import { enable as enableAutostart, disable as disableAutostart, isEnabled as isAutostartEnabled } from '@tauri-apps/plugin-autostart';
 import {useAppDispatch, useAppSelector} from "@/app/lib/hook";
 import {verifyConnectivity} from "@/app/lib/server";
 import {useUpdate} from "@/app/lib/UpdateContext";
@@ -33,6 +34,8 @@ export default function Settings() {
     const [autoUpdate, setAutoUpdate] = useState<string>('no');
     const [autoUpdateStart, setAutoUpdateStart] = useState<string>('0');
     const [autoUpdateEnd, setAutoUpdateEnd] = useState<string>('0');
+    const [startOnLogin, setStartOnLogin] = useState<string>('no');
+    const [autostartError, setAutostartError] = useState<string | null>(null);
     const router = useRouter();
     const { setupComplete } = useSetupComplete();
     const dispatch = useAppDispatch();
@@ -207,6 +210,33 @@ export default function Settings() {
         },
     }
 
+    // The OS login-items mechanism is the source of truth for autostart, not
+    // store.json. Read the real registered state so the toggle never drifts
+    // from what the system will actually do on reboot.
+    const toggleStartOnLogin = async (value: string) => {
+        setAutostartError(null);
+        const previous = startOnLogin;
+        setStartOnLogin(value);
+        try {
+            if (value === 'yes') {
+                await enableAutostart();
+            } else {
+                await disableAutostart();
+            }
+            const actual = await isAutostartEnabled();
+            setStartOnLogin(actual ? 'yes' : 'no');
+        } catch (error) {
+            setStartOnLogin(previous);
+            setAutostartError(String(error));
+        }
+    }
+
+    useEffect(() => {
+        isAutostartEnabled()
+            .then((enabled) => setStartOnLogin(enabled ? 'yes' : 'no'))
+            .catch((error) => setAutostartError(String(error)));
+    }, [])
+
     useEffect(() => {
         loadStore().then(async () => {
             setLoaded(true)
@@ -291,6 +321,40 @@ export default function Settings() {
                             </div>
                         </form> : null)}
                     </Suspense>
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardContent className="pt-6 space-y-3">
+                    <div>
+                        <h3 className="text-base font-medium">Startup</h3>
+                        <p className="text-sm text-muted-foreground">
+                            Start Bounce automatically when you log in so the
+                            receiver comes back up after a reboot.
+                        </p>
+                    </div>
+
+                    <div className="space-y-4 border-t pt-4">
+                        <SelectInput
+                            config={{
+                                label: 'Start on login',
+                                key: 'start_on_login',
+                                help: 'Launch Bounce automatically when this user signs in to the computer.',
+                                options: { no: 'No', yes: 'Yes' },
+                            }}
+                            value={startOnLogin}
+                            onChange={async (e: any) => {
+                                await toggleStartOnLogin(e.target.value);
+                            }}
+                        />
+
+                        {autostartError && (
+                            <Alert variant="destructive">
+                                <AlertTitle>Could not change startup setting</AlertTitle>
+                                <AlertDescription>{autostartError}</AlertDescription>
+                            </Alert>
+                        )}
+                    </div>
                 </CardContent>
             </Card>
 
