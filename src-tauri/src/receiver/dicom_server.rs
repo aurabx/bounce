@@ -449,9 +449,15 @@ impl DICOMServer {
                                         .whatever_context("missing presentation context")?;
                                     let ts = &presentation_context.transfer_syntax;
 
+                                    let transfer_syntax = TransferSyntaxRegistry
+                                        .get(ts)
+                                        .whatever_context(format!(
+                                            "unsupported transfer syntax: {}",
+                                            ts
+                                        ))?;
                                     let obj = InMemDicomObject::read_dataset_with_ts(
                                         instance_buffer.as_slice(),
-                                        TransferSyntaxRegistry.get(ts).unwrap(),
+                                        transfer_syntax,
                                     )
                                     .whatever_context("failed to read DICOM data object")?;
 
