@@ -104,7 +104,13 @@ export default function TransactionsTable({attempts}: TransactionsTableProps) {
                     <col style={{width: '8rem'}}/>
                     <col style={{width: '6rem'}}/>
                     <col style={{width: '12rem'}}/>
-                    <col/>
+                    {/* Error column gets an explicit width — under
+                        `table-fixed` an unwidthed <col/> can collapse to
+                        near zero inside a constrained container (e.g. the
+                        dashboard Card), hiding the message entirely. The
+                        parent has `overflow-x-auto` so the table is free
+                        to grow horizontally. */}
+                    <col style={{width: '20rem'}}/>
                 </colgroup>
                 <thead className="bg-muted/40 text-muted-foreground">
                     <tr>
@@ -160,7 +166,7 @@ export default function TransactionsTable({attempts}: TransactionsTableProps) {
                                 <td className="px-3 py-2 align-top">
                                     {error
                                         ? <span
-                                            className="block truncate text-destructive"
+                                            className="block line-clamp-3 break-words whitespace-pre-line text-destructive"
                                             title={error}
                                         >
                                             {error}
