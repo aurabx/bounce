@@ -2,17 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [1.8.0] - 2026-06-02
 
 ### Added
 
 - Added a "Start receiver on app start" setting (Settings → Startup). When enabled, Bounce automatically starts the DICOM receiver every time the app launches — including after a manual quit and restart — without the operator needing to press Start. Combine with "Start on login" for fully unattended operation (AURA-2290).
+- Added a Stop button on Studies in the RETRYING state, giving operators an explicit escape from the automatic retry loop without waiting for the backoff budget to exhaust. The study transitions to FAILED with a "Retries stopped by user" message while the upload-attempt history is preserved (AURA-2294).
+- The Transactions view now refreshes live as uploads progress. The transmitter emits a debounced `transactions-updated` event on each attempt claim, success, or failure, and the page updates the visible row without a manual reload (AURA-2295).
+
+### Changed
+
+- Bounce now rejects incoming DICOM associations whose calling AE title is not registered as a known PACS. Unknown callers receive an A-ASSOCIATE-RJ with CallingAETitleNotRecognized during negotiation instead of being silently accepted and forwarded to Aurabox (AURA-2296).
 
 ### Fixed
 
 - Closing the window on Windows and Linux now reliably hides Bounce to the system tray instead of terminating the process. The `RunEvent::ExitRequested` handler now suppresses spurious exits on those platforms whenever no user-initiated quit is in flight and a tray-backed hidden window is still alive, so the receiver keeps running in the background as intended. The tray's Exit menu item is routed through a new `request_exit` Tauri command that explicitly marks the exit as user-initiated so it is still honoured. macOS keeps Cmd+Q semantics unchanged (AURA-2291).
 - Quitting the application now gracefully shuts down the DICOM receiver and releases its TCP listener, instead of leaving the process running in the background with the port bound. The window's close button still hides the app to the background as before; only a real exit (Cmd+Q, File → Quit, tray Quit, app.exit) terminates the process. This unblocks restart-then-start cycles that previously failed with "address already in use" (AURA-2289).
 - Restarting via the tray's Relaunch menu item now preserves receiver state the same way as Settings → Restart Now and the automatic-update restart: if the receiver was running before the relaunch, it is started again on the next launch. Previously only the Settings and auto-update paths persisted the running flag, so a tray relaunch left the receiver stopped after restart (AURA-2290).
+- The Retry button on Studies now shows a spinner and a "Retrying…" label while the backend reclaims the study, so a click no longer looks like a no-op until the next list refresh repaints the row (AURA-2292).
+- The Error column in the Transactions view (and the dashboard Recent transactions card) is now visible and always populated. The column was collapsing to near-zero width inside constrained containers and was hiding its content under `truncate`; the column now has an explicit width and renders multi-line messages legibly. The backend also substitutes a placeholder when a failure is recorded with an empty error string so FAILED rows are no longer indistinguishable from rows with no record (AURA-2293).
+- The Tools page is no longer reachable in production builds. The sidebar entry is now only present when `NODE_ENV` is `development`, so the page ships only in local `make dev` builds and is hidden from end users.
 
 ## [1.7.0] - 2026-05-30
 

@@ -15,7 +15,7 @@ export type NavigationItem = {
     icon: any;
 };
 
-export const items: NavigationItem[] = [{
+const baseItems: NavigationItem[] = [{
     label: "Dashboard",
     href: "/",
     title: false,
@@ -45,12 +45,18 @@ export const items: NavigationItem[] = [{
     href: "/settings",
     title: "Settings",
     icon: Cog6ToothIcon
-},{
+}];
+
+const toolsItem: NavigationItem = {
     label: "Tools",
     href: "/tools",
     title: "Tools",
     icon: WrenchScrewdriverIcon
-}];
+};
+
+export const items: NavigationItem[] = process.env.NODE_ENV === 'development'
+    ? [...baseItems, toolsItem]
+    : baseItems;
 
 
 export const resolveTitleFromPath = (path: string) => {
