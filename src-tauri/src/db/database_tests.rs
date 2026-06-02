@@ -860,6 +860,83 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_mark_upload_failed_defaults_empty_error() {
+        // Belt-and-braces: even if a future caller passes an empty error
+        // string, the persisted row must carry a human-readable placeholder
+        // so the Transactions view's Error column never shows a FAILED row
+        // with nothing alongside it.
+        let (db, _pool) = setup_db_with_pool().await;
+
+        insert_study_with_status(&db, "empty.1", study_status::QUEUED).await;
+        let (aid, _) = db
+            .claim_study_for_upload("empty.1", &[study_status::QUEUED], "u")
+            .await
+            .unwrap()
+            .unwrap();
+        db.mark_upload_failed(aid, "empty.1", "   ", None)
+            .await
+            .unwrap();
+
+        let attempts = db.upload_attempts_for_study("empty.1").await.unwrap();
+        assert!(
+            attempts[0]
+                .error
+                .as_deref()
+                .map(|e| !e.trim().is_empty())
+                .unwrap_or(false),
+            "empty error must be replaced with a placeholder",
+        );
+
+        let study = db.get_study_by_uid("empty.1").await.unwrap();
+        assert!(
+            study
+                .last_error
+                .as_deref()
+                .map(|e| !e.trim().is_empty())
+                .unwrap_or(false),
+            "study.last_error must mirror the persisted attempt error",
+        );
+    }
+
+    #[tokio::test]
+    async fn test_attempt_error_round_trips_through_paginated_query() {
+        // Repro for AURA-2293: the Error column in the Transactions view was
+        // always empty. Verify that an error written by mark_upload_failed is
+        // returned by the paginated query the UI uses, and survives the
+        // serde_json::to_value pass that mirrors what the Tauri command does.
+        let (db, _pool) = setup_db_with_pool().await;
+
+        insert_study_with_status(&db, "err.1", study_status::QUEUED).await;
+        let (aid, _) = db
+            .claim_study_for_upload("err.1", &[study_status::QUEUED], "u")
+            .await
+            .unwrap()
+            .unwrap();
+        let next = Utc::now() + chrono::Duration::seconds(30);
+        db.mark_upload_failed(aid, "err.1", "upload server returned 503", Some(next))
+            .await
+            .unwrap();
+
+        let (rows, _total) = db
+            .get_upload_attempts_paginated_filtered(0, 10, None)
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0].error.as_deref(),
+            Some("upload server returned 503"),
+            "error column must survive the round trip used by the Transactions view",
+        );
+
+        let json = serde_json::to_value(&rows[0]).unwrap();
+        assert_eq!(
+            json.get("error").and_then(|v| v.as_str()),
+            Some("upload server returned 503"),
+            "UploadAttempt must serialize the error field for the JS UI",
+        );
+    }
+
+    #[tokio::test]
     async fn test_delete_study_cascades_to_upload_attempts() {
         let (db, _pool) = setup_db_with_pool().await;
         insert_study_with_status(&db, "del.1", study_status::QUEUED).await;

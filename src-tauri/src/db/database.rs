@@ -513,6 +513,17 @@ impl Database {
         error: &str,
         next_retry_at: Option<DateTime<Utc>>,
     ) -> Result<()> {
+        // Never persist an empty error message on a FAILED row — operators
+        // rely on the Transactions view's Error column to tell them what went
+        // wrong, and an empty string is indistinguishable from "no record".
+        // The caller already formats anyhow chains via `{:#}`, but defaults
+        // here keep the contract local to the persistence layer.
+        let recorded_error = if error.trim().is_empty() {
+            "Upload failed (no error detail recorded)"
+        } else {
+            error
+        };
+
         let mut tx = self.pool.begin().await?;
 
         sqlx::query(
@@ -526,7 +537,7 @@ impl Database {
             "#,
         )
         .bind(attempt_status::FAILED)
-        .bind(error)
+        .bind(recorded_error)
         .bind(Utc::now())
         .bind(attempt_id)
         .execute(&mut *tx)
@@ -546,7 +557,7 @@ impl Database {
             "#,
         )
         .bind(new_status)
-        .bind(error)
+        .bind(recorded_error)
         .bind(next_retry_at)
         .bind(study_uid)
         .execute(&mut *tx)
