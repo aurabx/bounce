@@ -22,15 +22,35 @@ use crate::query::models::{CfindResult, DicomService, PacsService, QueryFilters}
 use crate::receiver::server::init_server_state;
 use crate::store::pacs_cache::{load_cached_services, save_cached_services};
 use crate::transmitter::transmission::{QueueUpload, Transmission};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use store::config::Config;
-use tauri::{AppHandle, Emitter, Listener, Manager, WindowEvent};
+use tauri::{AppHandle, Emitter, Listener, Manager, RunEvent, WindowEvent};
 use tauri_plugin_log::{Target, TargetKind};
 use tokio::sync::Mutex;
 
 #[derive(Clone)]
 struct AppState {
     pub transmission: Transmission,
+}
+
+/// Flag set when the app is genuinely exiting (Cmd+Q, tray Quit, app.exit).
+/// The `CloseRequested` window event handler must NOT hide the window in
+/// that case — doing so would keep the process alive with the DICOM
+/// listener bound to its TCP port, leaving subsequent instances unable
+/// to start the receiver (AURA-2289).
+struct ExitGuard(AtomicBool);
+
+impl ExitGuard {
+    fn new() -> Self {
+        Self(AtomicBool::new(false))
+    }
+    fn is_exiting(&self) -> bool {
+        self.0.load(Ordering::SeqCst)
+    }
+    fn mark_exiting(&self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
 }
 
 fn load_config(app: AppHandle) -> Config {
@@ -528,6 +548,12 @@ fn main() {
             // Initialize and manage server state
             app.manage(Arc::new(Mutex::new(init_server_state())));
 
+            // Track whether the app is exiting so the `CloseRequested`
+            // handler can distinguish a user X-click (hide to background)
+            // from a real exit (let the window close so the process can
+            // terminate after the receiver shuts down).
+            app.manage(ExitGuard::new());
+
             // Refresh the PACS services cache from Aurabox in the background
             // so the PACS tab shows fresh data on first open. Skipped if the
             // API key is unset; failures are logged and leave the cache as-is.
@@ -579,10 +605,22 @@ fn main() {
         )
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
-                // Don't close the window, just hide it
-                window.hide().unwrap();
-                // Prevent the window from actually closing
-                api.prevent_close();
+                // Only suppress the close when the user clicked the window's
+                // close button — keep the app running so the receiver stays
+                // up in the background. When the app is genuinely exiting
+                // (handled below in the RunEvent::ExitRequested branch), let
+                // the window close so the process can terminate.
+                let app = window.app_handle();
+                let exiting = app
+                    .try_state::<ExitGuard>()
+                    .map(|g| g.is_exiting())
+                    .unwrap_or(false);
+                if !exiting {
+                    if let Err(e) = window.hide() {
+                        log_error!("Failed to hide window on close: {}", e);
+                    }
+                    api.prevent_close();
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -610,6 +648,26 @@ fn main() {
             update_send_logs,
             verify_connectivity
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let RunEvent::ExitRequested { .. } = event {
+                // The app is genuinely exiting (Cmd+Q, File > Quit, tray
+                // Quit, app.exit, OS signal). Gracefully shut down the
+                // DICOM receiver, query poller, and retry scheduler before
+                // the process terminates so the TCP listener is released
+                // cleanly and the next instance can bind the same port
+                // (AURA-2289).
+                if let Some(guard) = app_handle.try_state::<ExitGuard>() {
+                    guard.mark_exiting();
+                }
+                let handle = app_handle.clone();
+                let shutdown_result = tauri::async_runtime::block_on(async move {
+                    receiver::server::stop(handle).await
+                });
+                if let Err(e) = shutdown_result {
+                    log_error!("Receiver shutdown on exit failed: {}", e);
+                }
+            }
+        });
 }

@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- Quitting the application now gracefully shuts down the DICOM receiver and releases its TCP listener, instead of leaving the process running in the background with the port bound. The window's close button still hides the app to the background as before; only a real exit (Cmd+Q, File → Quit, tray Quit, app.exit) terminates the process. This unblocks restart-then-start cycles that previously failed with "address already in use" (AURA-2289).
+
 ## [1.7.0] - 2026-05-30
 
 ### Added
