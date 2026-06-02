@@ -1,6 +1,6 @@
 'use client';
 
-import {Suspense, useCallback, useEffect, useState} from 'react'
+import {Suspense, useCallback, useEffect, useRef, useState} from 'react'
 import {invokeCommand} from "@/app/lib/commands";
 import {ArrowPathIcon} from '@heroicons/react/24/outline'
 import {classNames} from "@/app/lib/helpers";
@@ -9,6 +9,7 @@ import {Button} from "@/app/components/ui/button";
 import {Card, CardContent} from "@/app/components/ui/card";
 import {Input} from "@/app/components/ui/input";
 import TransactionsTable from "@/app/components/TransactionsTable";
+import {listen} from "@tauri-apps/api/event";
 
 const DEFAULT_PAGE_SIZE = 25;
 const PAGE_SIZE_OPTIONS = [25, 50, 100];
@@ -79,6 +80,63 @@ export default function Page() {
     useEffect(() => {
         loadAttempts(currentPage, pageSize, debouncedSearch);
     }, [loadAttempts, currentPage, pageSize, debouncedSearch]);
+
+    // Keep the latest paging/search params in a ref so the live-update
+    // listener (bound once) can re-fetch the page the user is currently
+    // viewing without re-binding on every input change.
+    const queryParamsRef = useRef({
+        page: currentPage,
+        limit: pageSize,
+        search: debouncedSearch,
+    });
+    useEffect(() => {
+        queryParamsRef.current = {
+            page: currentPage,
+            limit: pageSize,
+            search: debouncedSearch,
+        };
+    }, [currentPage, pageSize, debouncedSearch]);
+
+    // Subscribe to backend upload-attempt mutations and refresh the visible
+    // page. A short debounce coalesces bursts (claim → success/failure can
+    // emit multiple events per upload, and several uploads run concurrently).
+    useEffect(() => {
+        let unlisten: (() => void) | undefined;
+        let cancelled = false;
+        let debounceHandle: number | undefined;
+
+        const REFRESH_DEBOUNCE_MS = 250;
+
+        const scheduleRefresh = () => {
+            if (debounceHandle !== undefined) {
+                window.clearTimeout(debounceHandle);
+            }
+            debounceHandle = window.setTimeout(() => {
+                const params = queryParamsRef.current;
+                loadAttempts(params.page, params.limit, params.search);
+            }, REFRESH_DEBOUNCE_MS);
+        };
+
+        listen('transactions-updated', scheduleRefresh)
+            .then((dispose) => {
+                if (cancelled) {
+                    dispose();
+                    return;
+                }
+                unlisten = dispose;
+            })
+            .catch((e) => {
+                console.error('Failed to subscribe to transactions-updated:', e);
+            });
+
+        return () => {
+            cancelled = true;
+            if (debounceHandle !== undefined) {
+                window.clearTimeout(debounceHandle);
+            }
+            unlisten?.();
+        };
+    }, [loadAttempts]);
 
     const refresh = async () => {
         setIsRefreshing(true);

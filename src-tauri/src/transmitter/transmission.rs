@@ -157,6 +157,15 @@ impl Transmission {
         &self.database
     }
 
+    /// Notify the UI that the upload-attempt audit trail has changed so the
+    /// Transactions view can re-fetch its current page. Fire-and-forget: an
+    /// emit failure during shutdown is logged but never aborts the upload.
+    fn emit_transactions_updated(&self) {
+        if let Err(e) = self.app_handle.emit("transactions-updated", ()) {
+            log_error!("Failed to emit 'transactions-updated' event: {}", e);
+        }
+    }
+
     /// Build the retry policy from the current user configuration.
     fn retry_policy(&self) -> RetryPolicy {
         let config = load_config(self.app_handle.clone());
@@ -248,12 +257,14 @@ impl Transmission {
                 return;
             }
         };
+        self.emit_transactions_updated();
 
         match self.send_study(study_uid.clone(), upload_id).await {
             Ok(()) => {
                 if let Err(e) = self.database.mark_attempt_success(attempt_id).await {
                     log_error!("Failed to record upload success for {}: {}", study_uid, e);
                 }
+                self.emit_transactions_updated();
             }
             Err(err) => {
                 let err_str = format!("{:#}", err);
@@ -274,6 +285,7 @@ impl Transmission {
                 {
                     log_error!("Failed to record upload failure for {}: {}", study_uid, e);
                 }
+                self.emit_transactions_updated();
 
                 let outcome = if next_retry_at.is_some() {
                     "will retry"
