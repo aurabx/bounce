@@ -860,6 +860,62 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_cancel_retry_moves_retrying_to_failed() {
+        let (db, _pool) = setup_db_with_pool().await;
+
+        insert_study_with_status(&db, "stop.1", study_status::QUEUED).await;
+        let (aid, _) = db
+            .claim_study_for_upload("stop.1", &[study_status::QUEUED], "u")
+            .await
+            .unwrap()
+            .unwrap();
+        let next = Utc::now() + chrono::Duration::seconds(30);
+        db.mark_upload_failed(aid, "stop.1", "boom", Some(next))
+            .await
+            .unwrap();
+        assert_eq!(
+            db.get_study_by_uid("stop.1").await.unwrap().status,
+            study_status::RETRYING,
+        );
+
+        let changed = db.cancel_retry("stop.1").await.unwrap();
+        assert!(changed, "RETRYING study should transition");
+
+        let study = db.get_study_by_uid("stop.1").await.unwrap();
+        assert_eq!(study.status, study_status::FAILED);
+        assert!(study.next_retry_at.is_none());
+        assert_eq!(study.last_error.as_deref(), Some("Retries stopped by user"));
+        // Audit trail preserved.
+        assert_eq!(study.attempts, 1);
+        assert_eq!(
+            db.upload_attempts_for_study("stop.1").await.unwrap().len(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn test_cancel_retry_noop_when_not_retrying() {
+        let (db, _pool) = setup_db_with_pool().await;
+
+        // A study still uploading must not be flipped to FAILED — the
+        // scheduler/worker owns its lifecycle while the claim is held.
+        insert_study_with_status(&db, "stop.uploading", study_status::QUEUED).await;
+        db.claim_study_for_upload("stop.uploading", &[study_status::QUEUED], "u")
+            .await
+            .unwrap();
+        let changed = db.cancel_retry("stop.uploading").await.unwrap();
+        assert!(!changed, "UPLOADING study must not be cancelled");
+        assert_eq!(
+            db.get_study_by_uid("stop.uploading").await.unwrap().status,
+            study_status::UPLOADING,
+        );
+
+        // Unknown study UID is a no-op rather than an error.
+        let changed = db.cancel_retry("never-existed").await.unwrap();
+        assert!(!changed);
+    }
+
+    #[tokio::test]
     async fn test_delete_study_cascades_to_upload_attempts() {
         let (db, _pool) = setup_db_with_pool().await;
         insert_study_with_status(&db, "del.1", study_status::QUEUED).await;

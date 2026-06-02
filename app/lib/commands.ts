@@ -23,6 +23,7 @@ export interface CommandSignatures {
     }
     send_study: { args: { studyUid: string }; result: void }
     retry_study: { args: { studyUid: string }; result: void }
+    cancel_retry: { args: { studyUid: string }; result: void }
     study_upload_attempts: { args: { studyUid: string }; result: unknown }
     delete_study: { args: { studyUid: string }; result: void }
     receiver_start: { args?: undefined; result: void }

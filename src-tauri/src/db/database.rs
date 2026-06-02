@@ -667,6 +667,35 @@ impl Database {
         Ok(())
     }
 
+    /// Stop the automatic retry loop for a `RETRYING` study by moving it to
+    /// terminal `FAILED` and clearing its `next_retry_at` so the retry
+    /// scheduler ignores it. The conditional `status = RETRYING` predicate
+    /// makes this safe against the scheduler racing in to `claim_study_for_upload`
+    /// between the user click and this update — if the row was already claimed
+    /// (status `UPLOADING`) the update affects zero rows and we report that to
+    /// the caller. The historical `attempts` count and `upload_attempts` rows
+    /// are preserved so the audit trail still reflects what was tried.
+    ///
+    /// Returns `true` if the study was transitioned, `false` if it was no
+    /// longer in `RETRYING` (already claimed, already terminal, or unknown).
+    pub async fn cancel_retry(&self, study_uid: &str) -> Result<bool> {
+        let result = sqlx::query(
+            r#"
+            UPDATE studies
+            SET status = ?, next_retry_at = NULL, last_error = ?
+            WHERE study_uid = ? AND status = ?
+            "#,
+        )
+        .bind(study_status::FAILED)
+        .bind("Retries stopped by user")
+        .bind(study_uid)
+        .bind(study_status::RETRYING)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
     /// Full upload-attempt history for a study, newest first.
     pub async fn upload_attempts_for_study(&self, study_uid: &str) -> Result<Vec<UploadAttempt>> {
         let attempts = sqlx::query_as::<_, UploadAttempt>(
