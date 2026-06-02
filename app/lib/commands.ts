@@ -57,6 +57,7 @@ export interface CommandSignatures {
     refresh_pacs_services: { args?: undefined; result: DicomService[] }
     echo_pacs_service: { args: { serviceId: string }; result: EchoResult }
     show_window: { args?: undefined; result: void }
+    request_exit: { args?: undefined; result: void }
 }
 
 type CommandName = keyof CommandSignatures

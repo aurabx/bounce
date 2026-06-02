@@ -2,7 +2,6 @@
 import { Menu, MenuItem, PredefinedMenuItem } from "@tauri-apps/api/menu";
 import { getVersion, getName } from "@tauri-apps/api/app";
 import { TrayIcon, type TrayIconOptions } from "@tauri-apps/api/tray";
-import { exit } from "@tauri-apps/plugin-process";
 import {useEffect, useRef} from "react";
 import {resolveResource} from "@tauri-apps/api/path";
 import {useAppSelector} from "@/app/lib/hook";
@@ -104,7 +103,7 @@ const Tray = () => {
             }),
             MenuItem.new({
                 text: `Exit`,
-                action: () => exit(0),
+                action: () => invokeCommand('request_exit'),
             }),
         ]);
 

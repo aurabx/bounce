@@ -244,6 +244,18 @@ async fn receiver_stop(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Deliberate exit triggered from the tray's Exit menu item. Mark the
+/// `ExitGuard` so the `RunEvent::ExitRequested` handler knows this is a
+/// user-initiated quit (not a spurious all-windows-hidden exit on
+/// Windows/Linux) and allows the process to terminate (AURA-2291).
+#[tauri::command]
+fn request_exit(app: AppHandle) {
+    if let Some(guard) = app.try_state::<ExitGuard>() {
+        guard.mark_exiting();
+    }
+    app.exit(0);
+}
+
 #[tauri::command]
 async fn current_studies(
     app: AppHandle,
@@ -646,18 +658,45 @@ fn main() {
             echo_pacs_service,
             show_window,
             update_send_logs,
-            verify_connectivity
+            verify_connectivity,
+            request_exit
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
-            if let RunEvent::ExitRequested { .. } = event {
-                // The app is genuinely exiting (Cmd+Q, File > Quit, tray
-                // Quit, app.exit, OS signal). Gracefully shut down the
-                // DICOM receiver, query poller, and retry scheduler before
-                // the process terminates so the TCP listener is released
-                // cleanly and the next instance can bind the same port
-                // (AURA-2289).
+            if let RunEvent::ExitRequested { api, .. } = event {
+                // On Windows and Linux the runtime defaults to terminating
+                // the process when the last window is destroyed. Combined
+                // with our close-to-tray handler this is normally fine —
+                // the window is hidden, not destroyed, so the count is
+                // preserved — but several Windows paths (Alt+F4 in some
+                // shells, third-party "close all hidden windows" tools,
+                // taskbar Close) can still surface a spurious
+                // `ExitRequested`. When no user-initiated exit is in
+                // flight and a window is still alive (i.e. just hidden to
+                // the tray), suppress the exit so the receiver keeps
+                // running in the background (AURA-2291).
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let user_initiated = app_handle
+                        .try_state::<ExitGuard>()
+                        .map(|g| g.is_exiting())
+                        .unwrap_or(false);
+                    if !user_initiated && !app_handle.webview_windows().is_empty() {
+                        api.prevent_exit();
+                        return;
+                    }
+                }
+                #[cfg(target_os = "macos")]
+                let _ = api;
+
+                // Genuine exit (Cmd+Q, File > Quit, tray Exit via
+                // `request_exit`, app.exit, OS signal). Mark the guard so
+                // the `CloseRequested` handler stops hiding the window,
+                // then gracefully shut down the DICOM receiver, query
+                // poller, and retry scheduler before the process
+                // terminates so the TCP listener is released cleanly and
+                // the next instance can bind the same port (AURA-2289).
                 if let Some(guard) = app_handle.try_state::<ExitGuard>() {
                     guard.mark_exiting();
                 }

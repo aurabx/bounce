@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Closing the window on Windows and Linux now reliably hides Bounce to the system tray instead of terminating the process. The `RunEvent::ExitRequested` handler now suppresses spurious exits on those platforms whenever no user-initiated quit is in flight and a tray-backed hidden window is still alive, so the receiver keeps running in the background as intended. The tray's Exit menu item is routed through a new `request_exit` Tauri command that explicitly marks the exit as user-initiated so it is still honoured. macOS keeps Cmd+Q semantics unchanged (AURA-2291).
 - Quitting the application now gracefully shuts down the DICOM receiver and releases its TCP listener, instead of leaving the process running in the background with the port bound. The window's close button still hides the app to the background as before; only a real exit (Cmd+Q, File → Quit, tray Quit, app.exit) terminates the process. This unblocks restart-then-start cycles that previously failed with "address already in use" (AURA-2289).
 - Restarting via the tray's Relaunch menu item now preserves receiver state the same way as Settings → Restart Now and the automatic-update restart: if the receiver was running before the relaunch, it is started again on the next launch. Previously only the Settings and auto-update paths persisted the running flag, so a tray relaunch left the receiver stopped after restart (AURA-2290).
 

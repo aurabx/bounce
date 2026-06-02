@@ -380,6 +380,35 @@ try {
 
 ---
 
+### `request_exit`
+
+Begin a user-initiated exit of the application.
+
+**Signature**:
+```rust
+fn request_exit(app: AppHandle)
+```
+
+**Frontend Usage**:
+```typescript
+import { invoke } from '@tauri-apps/api/core';
+
+await invoke('request_exit');
+```
+
+**Behavior**:
+- Marks the internal `ExitGuard` so the `RunEvent::ExitRequested` handler
+  treats this as a deliberate quit and allows the process to terminate.
+- Calls `app.exit(0)`, which triggers receiver shutdown and process exit
+  through the normal exit path.
+
+**Use Case**: Called from the system tray's Exit menu item. Without this,
+the close-to-tray defence in `RunEvent::ExitRequested` (which keeps the
+app alive on Windows/Linux when only hidden windows remain) would also
+swallow the tray's Exit click.
+
+---
+
 ### `send_log`
 
 Send a log message to the backend logger.
