@@ -26,6 +26,7 @@ export default function Page() {
     const [searchInput, setSearchInput] = useState<string>('');
     const [debouncedSearch, setDebouncedSearch] = useState<string>('');
     const [selectedUids, setSelectedUids] = useState<Set<string>>(new Set());
+    const [pendingRetryUids, setPendingRetryUids] = useState<Set<string>>(new Set());
     const [diskWarning, setDiskWarning] = useState<{availableBytes: number, critical: boolean} | null>(null);
 
     const studies = useAppSelector((state) => state.main.studies);
@@ -116,8 +117,28 @@ export default function Page() {
     };
 
     const retryStudy = async (study: Study) => {
-        await invokeCommand('retry_study', {studyUid: study.study_uid});
-        await loadStudies(currentPage, pageSize, debouncedSearch);
+        const uid = study.study_uid;
+        // Mark the row as in-flight so the Retry button can render a
+        // disabled "Retrying…" spinner — without this the click feels
+        // like it has done nothing while the backend reclaims the study
+        // and the list reloads.
+        setPendingRetryUids((prev) => {
+            if (prev.has(uid)) return prev;
+            const next = new Set(prev);
+            next.add(uid);
+            return next;
+        });
+        try {
+            await invokeCommand('retry_study', {studyUid: uid});
+            await loadStudies(currentPage, pageSize, debouncedSearch);
+        } finally {
+            setPendingRetryUids((prev) => {
+                if (!prev.has(uid)) return prev;
+                const next = new Set(prev);
+                next.delete(uid);
+                return next;
+            });
+        }
     };
 
     const deleteStudy = async (study: Study) => {
@@ -388,6 +409,7 @@ export default function Page() {
                                 <StudiesTable
                                     studies={studies}
                                     selectedUids={selectedUids}
+                                    pendingRetryUids={pendingRetryUids}
                                     onToggleSelect={toggleSelect}
                                     onToggleSelectAll={toggleSelectAll}
                                     allOnPageSelected={allOnPageSelected}
