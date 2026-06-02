@@ -91,28 +91,44 @@ export default function EventHandler({ children, }: { children: React.ReactNode 
             }
         }
 
-        // If the previous session was restarted (e.g. by an automatic update)
-        // while the receiver was running, restore that state by starting the
-        // service again. The flag is cleared before starting so a failed start
-        // cannot cause a restart loop.
-        const resumeRunningIfNeeded = async () => {
+        // Decide whether to auto-start the DICOM receiver on launch.
+        //
+        // Two independent reasons trigger an auto-start:
+        //   1. `_resume_running` — a one-shot flag set on an in-app relaunch
+        //      (Settings → Restart Now, tray → Relaunch, automatic update)
+        //      when the receiver was running, so the service comes back in
+        //      the same state after the restart.
+        //   2. `start_receiver_on_start` — a user preference that asks Bounce
+        //      to always start the receiver when the app launches, including
+        //      after a manual quit. Without this, a manual quit + restart
+        //      leaves the receiver stopped until the operator presses Start.
+        //
+        // The one-shot flag is cleared before invoking `receiver_start` so a
+        // failing start cannot cause a restart loop. Only one start command
+        // is issued even when both conditions are true.
+        const startReceiverIfRequired = async () => {
             try {
                 const store = await load('store.json', { autoSave: false, defaults: {} })
-                const resume = await store.get('_resume_running')
-                if (resume === true) {
+                const resume = (await store.get('_resume_running')) === true
+                const autoStart = (await store.get('start_receiver_on_start')) === 'yes'
+
+                if (resume) {
                     await store.set('_resume_running', false)
                     await store.save()
+                }
+
+                if (resume || autoStart) {
                     await invokeCommand('receiver_start')
                 }
             } catch (e) {
-                console.error('Failed to resume running state', e)
+                console.error('Failed to auto-start receiver', e)
             }
         }
 
         bindEvents()
             .then(async (dispose) => {
                 cleanup = dispose
-                await resumeRunningIfNeeded()
+                await startReceiverIfRequired()
                 try {
                     await invokeCommand('current_studies')
                 } catch (e) {

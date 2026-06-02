@@ -36,6 +36,7 @@ export default function Settings() {
     const [autoUpdateEnd, setAutoUpdateEnd] = useState<string>('0');
     const [startOnLogin, setStartOnLogin] = useState<string>('no');
     const [autostartError, setAutostartError] = useState<string | null>(null);
+    const [startReceiverOnStart, setStartReceiverOnStart] = useState<string>('no');
     const router = useRouter();
     const { setupComplete } = useSetupComplete();
     const dispatch = useAppDispatch();
@@ -166,6 +167,7 @@ export default function Settings() {
         setAutoUpdate(((await store.get('auto_update')) as string) ?? 'no')
         setAutoUpdateStart(String((await store.get('auto_update_window_start')) ?? '0'))
         setAutoUpdateEnd(String((await store.get('auto_update_window_end')) ?? '0'))
+        setStartReceiverOnStart(((await store.get('start_receiver_on_start')) as string) ?? 'no')
     }
 
     const persistAutoUpdate = async (updates: {
@@ -177,6 +179,12 @@ export default function Settings() {
         for (const [key, value] of Object.entries(updates)) {
             await store.set(key, value)
         }
+        await store.save()
+    }
+
+    const persistStartReceiverOnStart = async (value: string) => {
+        const store = await load('store.json', { autoSave: false, defaults: {} });
+        await store.set('start_receiver_on_start', value)
         await store.save()
     }
 
@@ -355,6 +363,21 @@ export default function Settings() {
                                 <AlertDescription>{autostartError}</AlertDescription>
                             </Alert>
                         )}
+
+                        <SelectInput
+                            config={{
+                                label: 'Start receiver on app start',
+                                key: 'start_receiver_on_start',
+                                help: 'Automatically start the DICOM receiver every time Bounce launches. Without this, the receiver stays stopped after a manual quit and only comes back when Bounce relaunches itself (e.g. to apply an update) while the receiver was running.',
+                                options: { no: 'No', yes: 'Yes' },
+                            }}
+                            value={startReceiverOnStart}
+                            onChange={async (e: any) => {
+                                const value = e.target.value;
+                                setStartReceiverOnStart(value);
+                                await persistStartReceiverOnStart(value);
+                            }}
+                        />
                     </div>
                 </CardContent>
             </Card>

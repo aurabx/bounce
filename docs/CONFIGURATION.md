@@ -363,6 +363,27 @@ of Bounce.
 
 ---
 
+### `start_receiver_on_start`
+
+**Type**: String (`"yes"` or `"no"`)
+**Default**: `"no"`
+
+Whether the DICOM receiver is started automatically every time Bounce
+launches, including after a manual quit. With `"no"` the receiver only
+comes back when Bounce relaunches itself for an automatic update or when
+the user uses Restart Now / tray Relaunch while the receiver was running.
+
+Set this to `"yes"` for unattended deployments where the receiver should
+always be available whenever Bounce is running. Combine with **Start on
+login** so the service comes back after a reboot without manual steps.
+
+**Example**:
+```json
+"start_receiver_on_start": "yes"
+```
+
+---
+
 ## API Key Format
 
 The API key encodes several pieces of information in its structure:
