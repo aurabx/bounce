@@ -2,17 +2,25 @@
 import { Menu, MenuItem, PredefinedMenuItem } from "@tauri-apps/api/menu";
 import { getVersion, getName } from "@tauri-apps/api/app";
 import { TrayIcon, type TrayIconOptions } from "@tauri-apps/api/tray";
-import { exit, relaunch } from "@tauri-apps/plugin-process";
-import {useEffect} from "react";
+import { exit } from "@tauri-apps/plugin-process";
+import {useEffect, useRef} from "react";
 import {resolveResource} from "@tauri-apps/api/path";
 import {useAppSelector} from "@/app/lib/hook";
 import {receiverStart, receiverStop} from "@/app/lib/server";
 import {invokeCommand} from "@/app/lib/commands";
+import {persistRunningStateAndRelaunch} from "@/app/lib/relaunch";
 
 const TRAY_ID = 'bounce';
 
 const Tray = () => {
     const running = useAppSelector((state) => state.main.running)
+    // Mirror running into a ref so the tray menu's Relaunch action always
+    // reads the current value, even if it runs against a stale menu closure
+    // (the menu is rebuilt async when `running` changes).
+    const runningRef = useRef(running)
+    useEffect(() => {
+        runningRef.current = running
+    }, [running])
 
 
     useEffect(() => {
@@ -92,7 +100,7 @@ const Tray = () => {
             }),
             MenuItem.new({
                 text: `Relaunch`,
-                action: relaunch,
+                action: () => persistRunningStateAndRelaunch(runningRef.current),
             }),
             MenuItem.new({
                 text: `Exit`,

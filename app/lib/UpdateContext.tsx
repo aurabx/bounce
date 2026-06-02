@@ -10,9 +10,9 @@ import {
     useState,
 } from 'react';
 import { check, type Update } from '@tauri-apps/plugin-updater';
-import { relaunch } from '@tauri-apps/plugin-process';
 import { load } from '@tauri-apps/plugin-store';
 import { useAppSelector } from '@/app/lib/hook';
+import { persistRunningStateAndRelaunch } from '@/app/lib/relaunch';
 
 export type UpdateStatus =
     | 'idle'
@@ -105,20 +105,8 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
         runningRef.current = running;
     }, [running]);
 
-    // Persist whether the receiver is currently running, then relaunch. On the
-    // next boot EventHandler reads this flag and restarts the receiver so the
-    // service comes back in the same state it was in before the restart.
-    const persistRunningStateAndRelaunch = useCallback(async () => {
-        try {
-            const store = await load('store.json', { autoSave: false, defaults: {} });
-            await store.set('_resume_running', runningRef.current);
-            await store.save();
-        } catch (e) {
-            // If the flag cannot be persisted we still relaunch; the only
-            // consequence is the operator may need to start the service again.
-            console.error('Failed to persist resume-running flag', e);
-        }
-        await relaunch();
+    const triggerRelaunch = useCallback(async () => {
+        await persistRunningStateAndRelaunch(runningRef.current);
     }, []);
 
     const checkAndDownload = useCallback(async () => {
@@ -153,8 +141,8 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
     }, []);
 
     const restartApp = useCallback(() => {
-        void persistRunningStateAndRelaunch();
-    }, [persistRunningStateAndRelaunch]);
+        void triggerRelaunch();
+    }, [triggerRelaunch]);
 
     // Once an update has been downloaded and installed, automatically relaunch
     // when auto-update is enabled and the current time is inside the configured
@@ -172,7 +160,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
             if (!prefs.enabled) return;
             if (isWithinWindow(prefs.startHour, prefs.endHour, new Date())) {
                 if (timer) clearInterval(timer);
-                await persistRunningStateAndRelaunch();
+                await triggerRelaunch();
             }
         };
 
@@ -185,7 +173,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
             cancelled = true;
             if (timer) clearInterval(timer);
         };
-    }, [status, persistRunningStateAndRelaunch]);
+    }, [status, triggerRelaunch]);
 
     useEffect(() => {
         const initialTimer = setTimeout(() => {
