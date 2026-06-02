@@ -5,13 +5,15 @@ use crate::receiver::cfind_handler;
 use crate::receiver::cmove_handler;
 use crate::receiver::metadata::Metadata;
 use crate::transmitter::transmission::QueueUpload;
-use crate::{load_config, log_error, log_info, receiver, store};
+use crate::{load_config, log_error, log_info, log_warn, receiver, store};
 use dicom::core::{DataElement, Tag, VR};
 use dicom::dicom_value;
 use dicom::dictionary_std::tags;
 use dicom::encoding::TransferSyntaxIndex;
 use dicom::object::{FileMetaTableBuilder, InMemDicomObject, StandardDataDictionary};
 use dicom::transfer_syntax::TransferSyntaxRegistry;
+use dicom_ul::association::server::AccessControl;
+use dicom_ul::pdu::{AssociationRJServiceUserReason, UserIdentity};
 use dicom_ul::{pdu::PDataValueType, Pdu};
 use receiver::enums::{ABSTRACT_SYNTAXES, STUDY_ROOT_FIND, STUDY_ROOT_MOVE};
 use snafu::{OptionExt, Report, ResultExt, Whatever};
@@ -27,6 +29,55 @@ pub struct DICOMServer {
     config: Arc<Config>,
     app_handle: Option<AppHandle>,
     database: Database,
+}
+
+/// Policy controlling which remote application entities are allowed to open
+/// an association with this Bounce instance.
+///
+/// `AcceptRegistered(list)` accepts only callers whose AE title appears in the
+/// configured PACS list. An empty list rejects every caller — that is how
+/// Bounce refuses unregistered connections when no PACS has been configured
+/// (AURA-2296). `AcceptAny` exists for the unit tests, which exercise the
+/// protocol path without a `tauri::AppHandle` available to read the PACS
+/// cache from.
+#[derive(Debug, Clone)]
+enum CallerPolicy {
+    AcceptAny,
+    AcceptRegistered(Vec<String>),
+}
+
+impl AccessControl for CallerPolicy {
+    fn check_access(
+        &self,
+        _this_ae_title: &str,
+        calling_ae_title: &str,
+        _called_ae_title: &str,
+        _user_identity: Option<&UserIdentity>,
+    ) -> Result<(), AssociationRJServiceUserReason> {
+        match self {
+            CallerPolicy::AcceptAny => Ok(()),
+            CallerPolicy::AcceptRegistered(allowed) => {
+                let calling = calling_ae_title.trim();
+                let permitted = allowed.iter().any(|ae| ae.trim() == calling);
+                if permitted {
+                    Ok(())
+                } else {
+                    if allowed.is_empty() {
+                        log_warn!(
+                            "Rejecting association from {:?}: no PACS configured",
+                            calling
+                        );
+                    } else {
+                        log_warn!(
+                            "Rejecting association from {:?}: AE title not in registered PACS list",
+                            calling
+                        );
+                    }
+                    Err(AssociationRJServiceUserReason::CallingAETitleNotRecognized)
+                }
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -141,8 +192,22 @@ impl DICOMServer {
         let mut instance_buffer: Vec<u8> = Vec::with_capacity(1024 * 1024);
         let mut pending_command: Option<PendingDimseCommand> = None;
 
+        // Only allow associations from AE titles that correspond to a PACS
+        // configured in Aurabox. With no app handle (test harness) the cache
+        // is unreachable, so fall back to accepting any caller. See
+        // `CallerPolicy` for the wider rationale (AURA-2296).
+        let caller_policy = match &self.app_handle {
+            Some(app) => CallerPolicy::AcceptRegistered(
+                store::pacs_cache::load_cached_services(app)
+                    .into_iter()
+                    .map(|svc| svc.ae_title)
+                    .collect(),
+            ),
+            None => CallerPolicy::AcceptAny,
+        };
+
         let mut options = dicom_ul::association::ServerAssociationOptions::new()
-            .accept_any()
+            .ae_access_control(caller_policy)
             .ae_title(calling_ae_title)
             .strict(strict)
             .promiscuous(promiscuous);
@@ -844,6 +909,67 @@ impl DICOMServer {
             ),
             DataElement::new(tags::STATUS, VR::US, dicom_value!(U16, [0x0000])),
         ])
+    }
+}
+
+#[cfg(test)]
+mod caller_policy_tests {
+    use super::CallerPolicy;
+    use dicom_ul::association::server::AccessControl;
+    use dicom_ul::pdu::AssociationRJServiceUserReason;
+
+    fn check(policy: &CallerPolicy, calling: &str) -> Result<(), AssociationRJServiceUserReason> {
+        policy.check_access("BOUNCE", calling, "BOUNCE", None)
+    }
+
+    #[test]
+    fn accept_any_admits_every_caller() {
+        let policy = CallerPolicy::AcceptAny;
+        assert!(check(&policy, "MODALITY1").is_ok());
+        assert!(check(&policy, "").is_ok());
+    }
+
+    #[test]
+    fn empty_registered_list_rejects_every_caller() {
+        let policy = CallerPolicy::AcceptRegistered(Vec::new());
+        let err = check(&policy, "MODALITY1").expect_err("expected rejection");
+        assert!(matches!(
+            err,
+            AssociationRJServiceUserReason::CallingAETitleNotRecognized
+        ));
+    }
+
+    #[test]
+    fn registered_caller_is_admitted() {
+        let policy =
+            CallerPolicy::AcceptRegistered(vec!["MODALITY1".to_string(), "PACS_A".to_string()]);
+        assert!(check(&policy, "MODALITY1").is_ok());
+        assert!(check(&policy, "PACS_A").is_ok());
+    }
+
+    #[test]
+    fn unregistered_caller_is_rejected_even_when_others_registered() {
+        let policy = CallerPolicy::AcceptRegistered(vec!["MODALITY1".to_string()]);
+        let err = check(&policy, "ROGUE").expect_err("expected rejection");
+        assert!(matches!(
+            err,
+            AssociationRJServiceUserReason::CallingAETitleNotRecognized
+        ));
+    }
+
+    #[test]
+    fn ae_titles_are_compared_after_trimming_whitespace() {
+        // DICOM AE titles are 16-byte space-padded on the wire; comparison
+        // must tolerate trailing whitespace on either side of the equality.
+        let policy = CallerPolicy::AcceptRegistered(vec!["MODALITY1   ".to_string()]);
+        assert!(check(&policy, "MODALITY1").is_ok());
+        assert!(check(&policy, "MODALITY1     ").is_ok());
+    }
+
+    #[test]
+    fn ae_title_comparison_is_case_sensitive() {
+        let policy = CallerPolicy::AcceptRegistered(vec!["MODALITY1".to_string()]);
+        assert!(check(&policy, "modality1").is_err());
     }
 }
 
