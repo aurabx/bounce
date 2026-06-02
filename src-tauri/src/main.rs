@@ -145,6 +145,20 @@ async fn retry_study(app: AppHandle, study_uid: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Stop the automatic retry loop for a study currently in `RETRYING`.
+/// Resolves successfully even if the study has already moved out of
+/// `RETRYING` (e.g. the scheduler claimed it first); the caller refreshes
+/// the list and the user sees the current state.
+#[tauri::command]
+async fn cancel_retry(app: AppHandle, study_uid: String) -> Result<(), String> {
+    let database = app.state::<Database>();
+    database
+        .cancel_retry(&study_uid)
+        .await
+        .map_err(|e| format!("Failed to stop retries for {}: {}", study_uid, e))?;
+    Ok(())
+}
+
 #[tauri::command]
 async fn study_upload_attempts(
     app: AppHandle,
@@ -578,6 +592,7 @@ fn main() {
             send_log,
             send_study,
             retry_study,
+            cancel_retry,
             study_upload_attempts,
             delete_study,
             bulk_send_studies,

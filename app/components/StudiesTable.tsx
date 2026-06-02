@@ -31,6 +31,7 @@ export interface StudiesTableProps {
     someOnPageSelected: boolean,
     onSend: (study: Study) => void,
     onRetry: (study: Study) => void,
+    onStopRetry: (study: Study) => void,
     onDelete: (study: Study) => void,
 }
 
@@ -163,6 +164,7 @@ export default function StudiesTable(props: StudiesTableProps) {
         someOnPageSelected,
         onSend,
         onRetry,
+        onStopRetry,
         onDelete,
     } = props
 
@@ -351,6 +353,15 @@ export default function StudiesTable(props: StudiesTableProps) {
                                 </td>
                                 <td className="px-3 py-2 align-top text-right">
                                     <div className="inline-flex items-center gap-1">
+                                        {study.status === 'RETRYING' && (
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => onStopRetry(study)}
+                                            >
+                                                Stop
+                                            </Button>
+                                        )}
                                         {study.status === 'FAILED' && study.exists && (
                                             <Button
                                                 variant="ghost"

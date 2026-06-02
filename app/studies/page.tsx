@@ -120,6 +120,17 @@ export default function Page() {
         await loadStudies(currentPage, pageSize, debouncedSearch);
     };
 
+    const stopRetry = async (study: Study) => {
+        const ok = await confirm(
+            `Stop retrying ${study.study_description || study.study_uid}? It will be marked Failed and you can manually retry it later.`,
+            {title: 'Stop retrying', kind: 'warning'},
+        );
+        if (!ok) return;
+
+        await invokeCommand('cancel_retry', {studyUid: study.study_uid});
+        await loadStudies(currentPage, pageSize, debouncedSearch);
+    };
+
     const deleteStudy = async (study: Study) => {
         const ok = await confirm(
             `Delete study ${study.study_description || study.study_uid}? This removes it from disk and cannot be undone.`,
@@ -394,6 +405,7 @@ export default function Page() {
                                     someOnPageSelected={someOnPageSelected}
                                     onSend={sendStudy}
                                     onRetry={retryStudy}
+                                    onStopRetry={stopRetry}
                                     onDelete={deleteStudy}
                                 />
                             </div>
