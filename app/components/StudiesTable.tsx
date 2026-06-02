@@ -1,6 +1,7 @@
 'use client'
 
 import {useCallback, useEffect, useRef, useState} from "react";
+import {ArrowPathIcon} from '@heroicons/react/24/outline';
 import {Study} from "@/app/lib/types";
 import {Badge} from "@/app/components/ui/badge";
 import {Button} from "@/app/components/ui/button";
@@ -25,6 +26,10 @@ const statusMap: Record<string, {
 export interface StudiesTableProps {
     studies: Study[],
     selectedUids: Set<string>,
+    // UIDs whose Retry action is currently in flight. Drives the per-row
+    // spinner/disabled state so the click is clearly acknowledged before
+    // the status badge transitions on the next list refresh.
+    pendingRetryUids: Set<string>,
     onToggleSelect: (uid: string) => void,
     onToggleSelectAll: () => void,
     allOnPageSelected: boolean,
@@ -158,6 +163,7 @@ export default function StudiesTable(props: StudiesTableProps) {
     const {
         studies,
         selectedUids,
+        pendingRetryUids,
         onToggleSelect,
         onToggleSelectAll,
         allOnPageSelected,
@@ -290,6 +296,7 @@ export default function StudiesTable(props: StudiesTableProps) {
                 <tbody>
                     {studies.map((study) => {
                         const isSelected = selectedUids.has(study.study_uid)
+                        const isRetrying = pendingRetryUids.has(study.study_uid)
                         const status = statusMap[study.status]
                         const description = study.study_description?.trim()
                         const patient = study.patient_name?.trim()
@@ -367,8 +374,16 @@ export default function StudiesTable(props: StudiesTableProps) {
                                                 variant="ghost"
                                                 size="sm"
                                                 onClick={() => onRetry(study)}
+                                                disabled={isRetrying}
+                                                className="gap-1"
                                             >
-                                                Retry
+                                                {isRetrying && (
+                                                    <ArrowPathIcon
+                                                        className="h-3.5 w-3.5 animate-spin"
+                                                        aria-hidden="true"
+                                                    />
+                                                )}
+                                                {isRetrying ? 'Retrying…' : 'Retry'}
                                             </Button>
                                         )}
                                         {study.exists && (
