@@ -2,239 +2,143 @@
 
 <div align="center">
 
-**A lightweight DICOM C-STORE receiver that securely forwards medical imaging to Aurabox**
+**Bounce** is a cross-platform desktop application that connects on-premises DICOM systems with the [Aurabox](https://aurabox.cloud) cloud platform as a full **bidirectional DIMSE gateway**.
 
 [![License: BOUNCE EULA](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
 [![Platform: Windows | macOS | Linux](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.8.0-green.svg)](CHANGELOG.md)
 
 </div>
 
 ---
 
-## 📖 Overview
+## Overview
 
-**Bounce** is a cross-platform desktop application designed to bridge the gap between on-premises medical imaging equipment and cloud-based DICOM storage. Built with Tauri and Rust, Bounce runs behind healthcare providers' firewalls to receive DICOM files via the C-STORE protocol and securely forward them to [Aurabox](https://aurabox.cloud) over HTTPS.
+Built with Tauri and Rust, Bounce runs behind a healthcare provider's firewall and brokers the four core DICOM services — **store, query, retrieve, and echo** — in both directions, so a local modality or PACS and the Aurabox cloud can each act as a peer of the other without exposing either directly.
 
-### Key Capabilities
 
-- **DICOM C-STORE Receiver**: Accepts inbound DICOM C-STORE requests from PACS, modalities, and other DICOM sources
-- **Secure Cloud Upload**: Forwards received DICOM files to Aurabox backend using TUS protocol over HTTPS
-- **Metadata Extraction**: Automatically extracts and logs DICOM metadata (Study UID, Series UID, Patient info, etc.)
-- **Local Storage Management**: Temporarily stores DICOM files locally with configurable retention policies
-- **Study Aggregation**: Intelligently groups DICOM instances into studies with debouncing logic
-- **Compression**: Automatically compresses studies into ZIP archives before upload
-- **Desktop UI**: Modern web-based interface for monitoring, configuration, and study management
-- **System Tray Integration**: Runs in the background with system tray icon for quick access
-- **SQLite Database**: Tracks study status and transmission history
-- **Logging**: Comprehensive logging with optional remote logging to Better Stack
+### What Bounce Does
+
+- **A local DICOM SCP** — Local systems (modalities, PACS, viewers) connect to Bounce as if it were a normal DICOM peer. Bounce handles their C-ECHO, C-STORE, C-FIND, and C-MOVE requests, and fulfils them against Aurabox over HTTPS.
+- **A cloud-driven DICOM SCU** — Aurabox can drive Bounce to issue C-ECHO, C-FIND, C-MOVE, and C-STORE against any registered local PACS. A background poller pulls pending jobs from Aurabox, executes them as DIMSE operations on the local network, and reports progress, results, and failures back to the cloud.
+
+### Bidirectional Flows
+
+**From local systems into Aurabox**
+- **Store** — Modalities and PACS push studies to Bounce via C-STORE; Bounce extracts metadata, aggregates instances into studies, compresses them, and forwards over the resumable TUS protocol with retry and crash-recovery.
+- **Query** — Local viewers can issue C-FIND against Bounce to search Aurabox's catalogue without leaving the DICOM protocol.
+- **Retrieve** — Local viewers can issue C-MOVE against Bounce to pull studies *out* of Aurabox; Bounce fetches them and stores them to the requesting destination AE.
+- **Echo** — Standard C-ECHO connectivity verification.
+
+**From Aurabox into local systems**
+- **Query** — Aurabox queues C-FIND jobs against a registered local PACS; Bounce executes them as an SCU and returns the result set.
+- **Retrieve** — Aurabox queues C-MOVE jobs; Bounce drives the remote PACS to send studies into Bounce's own C-STORE SCP, which then uploads them to Aurabox.
+- **Send / push** — Aurabox can push a study to a local PACS: Bounce fetches the DICOM bytes from the Aurabox storage surface and issues C-STORE against the destination PACS as an SCU.
+- **Echo** — Connectivity health checks against registered local PACS, on demand or on a schedule.
+
+### Operational Capabilities
+
+- **AE title allowlist** — Inbound associations are rejected with `CallingAETitleNotRecognized` unless the calling AE title is registered as a known PACS. Outbound SCU operations target only PACS configured in the same registry.
+- **Resumable cloud transfer** — Uploads to Aurabox use TUS over HTTPS with automatic retry, exponential backoff, recovery on restart, and a disk-space safety check.
+- **Concurrent send throttling** — Outbound C-STORE jobs are bounded so a single slow remote PACS cannot starve the rest of the gateway.
+- **Transactions view** — A live, paginated, server-side searchable history of every upload attempt, with manual **Stop** and **Retry** controls on stuck studies.
+- **Unattended operation** — Optional *Start on login* and *Start receiver on app start* settings keep the gateway online across reboots and manual restarts.
+- **Automatic updates** — Optional auto-update mode applies downloaded updates inside a configurable restart window and resumes the receiver afterwards.
+- **System tray** — Runs in the background. Closing the window hides Bounce to the tray on Windows and Linux; only an explicit quit terminates the process.
+- **Local persistence** — SQLite tracks study status, transmission history, and job state; configurable retention controls how long received files remain on disk.
+- **Defensive boundaries** — DICOM UIDs and transfer syntaxes are validated before use; unsupported syntaxes are rejected rather than panicking; malformed configuration falls back to safe defaults.
+- **Structured logging** — Backend logging via the `tracing` crate, with optional remote log delivery. API keys, upload tokens, and PHI are kept out of plain-text log lines.
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Installation
 
-1. Visit the [Releases page](https://github.com/aurabx/bounce/releases)
-2. Download the latest installer for your platform:
-   - **Windows**: `.msi` or `.exe` installer
-   - **macOS**: `.dmg` disk image
-   - **Linux**: `.deb`, `.AppImage`, or `.tar.gz`
-3. Run the installer and follow the setup wizard
+1. Visit the [Releases page](https://github.com/aurabx/bounce/releases).
+2. Download the installer for your platform:
+   - **Windows** — `.msi` or `.exe`
+   - **macOS** — `.dmg`
+   - **Linux** — `.deb`, `.AppImage`, or `.tar.gz`
+3. Run the installer.
 
 ### Configuration
 
-1. Launch Bounce application
-2. Navigate to Settings
-3. Configure the following:
-   - **API Key**: Your Aurabox API key (required)
-   - **AE Title**: Application Entity title for DICOM (default: `BOUNCE`)
-   - **Port**: DICOM receiver port (default: `104`)
-   - **IP Address**: Network interface to bind to (default: `0.0.0.0`)
-   - **Storage Location**: Directory for temporary DICOM file storage
-   - **Delete After Send**: Automatically delete files after successful upload
+1. Launch Bounce.
+2. Open **Settings** and configure:
+   - **API Key** — Your Aurabox API key (required).
+   - **AE Title** — Application Entity title for DICOM (default `BOUNCE`).
+   - **Port** — DICOM receiver port (default `104`; binding below 1024 requires elevated privileges on most systems).
+   - **IP Address** — Network interface to bind to (default `0.0.0.0`).
+   - **Storage Location** — Directory for temporary DICOM file storage.
+   - **Delete After Send** — Remove local files after a successful upload.
+   - **Startup** — Optionally enable *Start on login* and *Start receiver on app start* for unattended operation.
+3. Click **Start Receiver** to begin accepting associations.
 
-4. Click "Start Server" to begin receiving DICOM files
-
-For detailed setup instructions, visit: https://docs.aurabox.cloud/applications/bounce/
+Detailed end-user setup instructions live at <https://docs.aurabox.cloud/applications/bounce/>.
 
 ---
 
-## 🧪 Testing
+## Testing Against a Real DICOM Peer
 
-### Send Test DICOM Files
+Use [DCMTK](https://dicom.offis.de/dcmtk.php.en) to drive Bounce as an SCP, and [NightOwl](https://aurabox.cloud/nightowl) — Aurabox's developer-grade test PACS — to act as a remote SCP that Bounce can drive as an SCU.
 
-Use `storescu` from [DCMTK](https://dicom.offis.de/dcmtk.php.en) to send test DICOM files:
+**Driving Bounce as an SCP (local-to-cloud flows)**
 
 ```bash
-# Send a single DICOM file
-storescu -aec BOUNCE 127.0.0.1 104 /path/to/test.dcm
+# C-ECHO connectivity
+make dicom-echo
+# or: echoscu -aec BOUNCE 127.0.0.1 104
 
-# Send multiple files
-storescu -aec BOUNCE 127.0.0.1 104 /path/to/dicom/folder/*.dcm
+# C-STORE a file (must come from a registered AE title)
+make dicom-send FILE=/path/to/test.dcm
+# or: storescu -aec BOUNCE 127.0.0.1 104 /path/to/test.dcm
 
-# Send with verbose output
-storescu -v -aec BOUNCE 127.0.0.1 104 /path/to/test.dcm
+# C-FIND (study-level query against Aurabox via Bounce)
+findscu -S -aec BOUNCE 127.0.0.1 104 -k 0008,0052="STUDY" -k 0010,0020=""
+
+# C-MOVE (pull a study out of Aurabox to a local destination)
+movescu -S -aec BOUNCE -aem LOCALVIEWER 127.0.0.1 104 -k 0008,0052="STUDY" -k 0020,000D=<StudyInstanceUID>
 ```
 
-### Verify C-ECHO (Connection Test)
+**Testing the SCU side (cloud-to-local flows)**
 
-```bash
-echoscu -aec BOUNCE 127.0.0.1 104
-```
+[NightOwl](https://aurabox.cloud/nightowl) is the recommended stand-in for an on-premises PACS that Bounce can query, retrieve from, and push to. Install it from <https://aurabox.cloud/nightowl> and run it locally, then register it as a known PACS in the Bounce **PACS** page using the AE title, host, and DIMSE port shown in NightOwl's configuration.
+
+Once registered, Aurabox-driven query, retrieve, and send jobs targeting that PACS will be executed by Bounce against the local NightOwl instance — exercising the full cloud-to-local SCU path (C-ECHO, C-FIND, C-MOVE, and outbound C-STORE) end-to-end.
 
 ---
 
-## 🛠 Development
+## Troubleshooting
 
-### Prerequisites
+**DICOM receiver will not start**
+- Confirm the configured port is free and not blocked by the host firewall.
+- Binding to port 104 requires elevated privileges on Linux and macOS. Use a port above 1024 to run as a normal user.
+- Check the **Logs** page or the log files under `~/.aurabox/bounce/logs/`.
 
-- **Node.js** 18+ and npm
-- **Rust** (latest stable) and Cargo
-- **Tauri CLI** (installed via npm)
-- **Platform-specific dependencies**:
-  - **Linux**: `libssl-dev`, `libsqlite3-dev`, `webkit2gtk-4.1-dev`
-  - **macOS**: Xcode Command Line Tools
-  - **Windows**: Visual Studio Build Tools
+**Incoming associations rejected**
+- Verify the sender's AE title is registered under **PACS** with the exact case it presents during negotiation.
+- A rejection with `CallingAETitleNotRecognized` always indicates a missing or mismatched entry — DICOM UIDs and AE titles are case-sensitive.
 
-### Setup Development Environment
+**Files are not uploading**
+- Confirm the API key is correct and the host can reach the Aurabox endpoint over HTTPS.
+- Open the **Transactions** view to inspect upload-attempt history, error messages, and retry state.
+- A study stuck in **RETRYING** can be cancelled with the **Stop** button; it will move to **FAILED** while preserving its attempt history.
 
-```bash
-# Clone the repository
-git clone https://github.com/aurabx/bounce.git
-cd bounce
-
-# Install Node dependencies
-npm install
-
-# Run in development mode
-npm run tauri:dev
-```
-
-The application will launch with hot-reload enabled for both the frontend and backend.
-
-### Project Structure
-
-```
-bounce/
-├── app/                    # Next.js frontend application
-│   ├── components/         # React components
-│   ├── lib/               # Frontend utilities and helpers
-│   ├── logs/              # Logs page
-│   ├── settings/          # Settings page
-│   ├── studies/           # Studies management page
-│   └── tools/             # Tools page
-├── src-tauri/             # Rust backend
-│   ├── src/
-│   │   ├── aura/          # Aurabox API client
-│   │   ├── db/            # SQLite database layer
-│   │   ├── receiver/      # DICOM C-STORE receiver
-│   │   ├── transmitter/   # Upload/transmission logic
-│   │   ├── store/         # Configuration management
-│   │   ├── lib/           # Utility modules
-│   │   └── main.rs        # Application entry point
-│   ├── Cargo.toml         # Rust dependencies
-│   └── tauri.conf.json    # Tauri configuration
-├── package.json           # Node.js dependencies and scripts
-└── README.md
-```
-
-### Available Commands
-
-```bash
-# Development
-npm run dev              # Run Next.js dev server only
-npm run tauri:dev        # Run full Tauri app in dev mode
-
-# Building
-npm run build            # Build Next.js frontend
-npm run tauri:build      # Build Tauri application for release
-
-# Linting
-npm run lint             # Run ESLint
-
-# Version Management
-./update-version.sh 1.2.3  # Update version across all config files
-```
-
-### Building for Release
-
-```bash
-# Update version number
-./update-version.sh 1.2.3
-
-# Build release binaries
-npm run tauri:build
-```
-
-Built applications will be in `src-tauri/target/release/bundle/`
+**Application will not launch**
+- Verify the OS meets the minimum requirements (Windows 10+, macOS 10.13+, modern Linux with WebKitGTK).
+- Launch from a terminal to capture startup diagnostics.
 
 ---
 
-## 📚 Documentation
+## License
 
-- **[Architecture Overview](./docs/ARCHITECTURE.md)** - System design and component interaction
-- **[Development Guide](./docs/DEVELOPMENT.md)** - Detailed development setup and guidelines  
-- **[Configuration Guide](./docs/CONFIGURATION.md)** - Configuration options and settings
-- **[API Reference](./docs/API.md)** - Tauri commands and API documentation
-- **[User Documentation](https://docs.aurabox.cloud/applications/bounce/)** - End-user guide
+See [LICENSE](LICENSE) (BOUNCE EULA — proprietary).
 
 ---
 
-## 🔐 Security
+## Support
 
-Bounce is designed for secure deployments in healthcare environments:
-
-- All uploads to Aurabox use HTTPS with TLS 1.2+
-- API key authentication for all cloud communications
-- Local storage uses filesystem permissions for access control
-- No PHI (Protected Health Information) is logged in plain text
-- Optional automatic deletion of files after successful upload
-
----
-
-## 🐛 Troubleshooting
-
-### DICOM Server Won't Start
-
-- Check if port 104 is available (may require admin/sudo privileges)
-- Verify firewall rules allow inbound connections on configured port
-- Check logs in the application's Logs tab
-
-### Files Not Uploading
-
-- Verify API key is correctly configured
-- Check internet connectivity to Aurabox
-- Review upload status in Studies tab
-- Check logs for error messages
-
-### Application Won't Launch
-
-- Ensure all dependencies are installed
-- Check system compatibility (Windows 10+, macOS 10.13+, recent Linux)
-- Try running from terminal to see error messages
-
----
-
-## 📝 License
-
-See [BOUNCE EULA](LICENSE).
-
----
-
-## 🙋 Support
-
-For issues, questions, or feature requests:
-
-- **Email**: support@aurabox.cloud
-- **Documentation**: https://docs.aurabox.cloud
-- **GitHub Issues**: https://github.com/aurabx/bounce/issues (for bug reports)
-
----
-
-## 🙏 Acknowledgments
-
-Built with:
-- [Tauri](https://tauri.app/) - Desktop application framework
-- [Next.js](https://nextjs.org/) - React frontend framework
-- [Rust DICOM](https://github.com/Enet4/dicom-rs) - DICOM protocol implementation
-- [TUS Protocol](https://tus.io/) - Resumable file upload protocol
+- **Email** — support@aurabox.cloud
+- **Documentation** — <https://docs.aurabox.cloud>
+- **Bug reports** — <https://github.com/aurabx/bounce/issues>

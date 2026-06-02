@@ -113,22 +113,6 @@ ifndef V
 endif
 	./update-version.sh $(V)
 
-# -------------------------------------------------------------------
-# DICOM Testing
-# -------------------------------------------------------------------
-
-## Test DICOM connectivity with C-ECHO (requires DCMTK)
-## Usage: make dicom-echo [PORT=104] [AE=BOUNCE]
-dicom-echo:
-	echoscu -v -aec $(or $(AE),BOUNCE) localhost $(or $(PORT),104)
-
-## Send a DICOM file via C-STORE (requires DCMTK)
-## Usage: make dicom-send FILE=/path/to/file.dcm [PORT=104] [AE=BOUNCE]
-dicom-send:
-ifndef FILE
-	$(error Usage: make dicom-send FILE=/path/to/file.dcm [PORT=104] [AE=BOUNCE])
-endif
-	storescu -v -aec $(or $(AE),BOUNCE) localhost $(or $(PORT),104) $(FILE)
 
 # -------------------------------------------------------------------
 # Help
@@ -172,7 +156,3 @@ help:
 	@echo "  install          Install all dependencies"
 	@echo "  check            Run lint + format check + tests"
 	@echo "  version V=x.y.z  Update version across all configs"
-	@echo ""
-	@echo "DICOM Testing (requires DCMTK):"
-	@echo "  dicom-echo               Test connectivity"
-	@echo "  dicom-send FILE=path.dcm Send a DICOM file"
