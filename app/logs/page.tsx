@@ -21,7 +21,7 @@ export default function Page() {
 
     const [search, setSearch] = useState('')
     const [selectedQuickFilter, setSelectedQuickFilter] = useState<(typeof QUICK_FILTERS)[number]['value']>('all')
-    const [showSystemLogs, setShowSystemLogs] = useState(false) // Default to false
+    const [showSystemLogs, setShowSystemLogs] = useState(true)
     const [wrapLines, setWrapLines] = useState(false) // Default to no-wrap for terminal feel
     const bottomRef = useRef<HTMLDivElement>(null)
 
