@@ -196,7 +196,13 @@ impl DICOMServer {
         // configured in Aurabox. With no app handle (test harness) the cache
         // is unreachable, so fall back to accepting any caller. See
         // `CallerPolicy` for the wider rationale (AURA-2296).
+        //
+        // When permissive mode is enabled the operator has explicitly opted
+        // into accepting any caller; received data is still stored to disk
+        // but is not forwarded to Aurabox (see the `queue-study` gate below).
+        let permissive_mode = self.config.permissive_mode == "yes";
         let caller_policy = match &self.app_handle {
+            Some(_) if permissive_mode => CallerPolicy::AcceptAny,
             Some(app) => CallerPolicy::AcceptRegistered(
                 store::pacs_cache::load_cached_services(app)
                     .into_iter()
@@ -668,7 +674,16 @@ impl DICOMServer {
                                             )?;
 
                                             if let Some(app_handle) = &self.app_handle {
-                                                if let Err(e) = app_handle.emit(
+                                                // In permissive mode we store
+                                                // the instance to disk but do
+                                                // not forward it to Aurabox.
+                                                if permissive_mode {
+                                                    log_warn!(
+                                                        "Permissive mode: stored {} from {} but not queuing for upload",
+                                                        sop_instance_uid,
+                                                        association.client_ae_title()
+                                                    );
+                                                } else if let Err(e) = app_handle.emit(
                                                     "queue-study",
                                                     QueueUpload {
                                                         study_uid: &study_uid,

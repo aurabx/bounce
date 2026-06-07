@@ -45,6 +45,10 @@ pub struct Config {
     pub ae_title: String,
     pub delete_after_success: String,
     pub send_logs: String,
+    /// When "yes", accept associations from any AE title and store received
+    /// data locally without forwarding it to Aurabox. Intended for diagnostic
+    /// or staging use only — the Settings UI surfaces a prominent warning.
+    pub permissive_mode: String,
     /// Maximum upload attempts before a study is marked terminally FAILED.
     pub max_upload_attempts: u32,
     /// Base delay (seconds) before the first retry; grows exponentially.
@@ -114,6 +118,8 @@ impl Config {
             delete_after_success: parse_string(&store.get("delete_after_success"), "yes"),
 
             send_logs: parse_string(&store.get("send_logs"), "yes"),
+
+            permissive_mode: parse_string(&store.get("permissive_mode"), "no"),
 
             max_upload_attempts: parse_numeric(&store.get("max_upload_attempts"), 10),
             retry_base_seconds: parse_numeric(&store.get("retry_base_seconds"), 30),

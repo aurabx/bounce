@@ -26,6 +26,7 @@ export const fieldKeys = [
     'ip_address',
     'delete_after_success',
     'send_logs',
+    'permissive_mode',
     'max_upload_attempts',
     'retry_base_seconds',
     'retry_cap_seconds',
@@ -89,6 +90,18 @@ export const fields: Field[] = [{
         label: 'Send logs to Aurabox team',
         key: 'send_logs',
         help: 'Help us by sending logs to Aurabox team',
+        options: {
+            'no' : 'No',
+            'yes' : 'Yes',
+        }
+    },
+    component: SelectInput
+},{
+    config: {
+        label: 'Permissive mode (insecure)',
+        key: 'permissive_mode',
+        help: 'Accept DICOM associations from any calling AE title. Received studies are stored locally but are NOT forwarded to Aurabox. Intended for diagnostics only — disable in production.',
+        fullWidth: true,
         options: {
             'no' : 'No',
             'yes' : 'Yes',

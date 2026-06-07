@@ -40,6 +40,7 @@ export default function Settings() {
     const router = useRouter();
     const { setupComplete } = useSetupComplete();
     const dispatch = useAppDispatch();
+    const running = useAppSelector((state) => state.main.running);
     const connectivity = useAppSelector((state) => state.main.connectivity);
     const verifying = connectivity.status === 'checking';
     const verifyError = connectivity.status === 'failed' ? connectivity.error : null;
@@ -86,6 +87,20 @@ export default function Settings() {
 
         // Update remote logging flag in the backend without requiring a restart
         await invokeCommand('update_send_logs', { enabled: settings?.['send_logs'] === 'yes' });
+
+        // Receiver settings (port, IP, AE title, permissive_mode, base_dir) are
+        // read by the DICOM server only at start time. Restart the receiver if
+        // it is currently running so the new values take effect immediately —
+        // otherwise the saved setting silently has no impact until the user
+        // toggles the receiver manually.
+        if (running) {
+            try {
+                await invokeCommand('receiver_stop');
+                await invokeCommand('receiver_start');
+            } catch (err) {
+                console.error('Failed to restart receiver after settings save:', err);
+            }
+        }
 
         // Update env warning from whatever key is now stored (may be the new
         // one or the existing one, depending on whether the user changed it).
@@ -146,6 +161,7 @@ export default function Settings() {
                 if (fieldKey === 'ip_address') val = '0.0.0.0';
                 if (fieldKey === 'send_logs') val = 'yes';
                 if (fieldKey === 'delete_after_success') val = 'yes';
+                if (fieldKey === 'permissive_mode') val = 'no';
             }
 
             // The API key is never copied into form state. We expose only
@@ -286,6 +302,15 @@ export default function Settings() {
             {env && <Alert variant="destructive">
                 <AlertTitle>Environment Warning</AlertTitle>
                 <AlertDescription>You are connected to the {env} environment.</AlertDescription>
+            </Alert>}
+            {settings?.permissive_mode === 'yes' && <Alert variant="destructive">
+                <AlertTitle>Insecure configuration: permissive mode is on</AlertTitle>
+                <AlertDescription>
+                    Bounce is accepting DICOM associations from any calling AE
+                    title. Received studies are stored locally but will not be
+                    forwarded to Aurabox. Disable permissive mode before using
+                    this instance in production.
+                </AlertDescription>
             </Alert>}
 
             <Card>

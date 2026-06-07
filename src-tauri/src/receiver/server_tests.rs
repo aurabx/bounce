@@ -27,6 +27,7 @@ mod tests {
             base_dir: temp_dir.path().to_string_lossy().to_string(),
             delete_after_success: "no".to_string(),
             send_logs: "no".to_string(),
+            permissive_mode: "no".to_string(),
             max_upload_attempts: 10,
             retry_base_seconds: 30,
             retry_cap_seconds: 3600,
