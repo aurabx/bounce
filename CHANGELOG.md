@@ -2,11 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [1.9.0] - 2026-06-07
+
+### Added
+
+- Added a permissive mode that stores incoming DICOM files locally without forwarding them to Aurabox, supporting deployments that need to receive and retain studies without uploading.
+- Added log filtering by level and module in the in-app log view, and stripped the `plugin-log` prefix from rendered lines so operator-facing logs are easier to scan.
 
 ### Fixed
 
+- The in-app log view now shows system logs by default instead of hiding them behind a filter toggle.
 - Hardened the Windows close-to-tray behaviour so closing the main window can no longer leave Bounce in a state where the process is alive with the DICOM port bound but no tray icon or window. The `RunEvent::ExitRequested` handler now treats any non-tray-initiated exit on Windows and Linux as a tray-hide regardless of whether the window has already been destroyed; if the window was torn down by a Windows close path before our preventer could run, the tray's "Show window" item now rebuilds it from config. The DICOM receiver's `stop()` also waits for the spawned listener task to actually drop before returning, so the TCP port is released before the process exits and the next launch (or autostart) can bind it cleanly (AURA-2291).
+
+### Internal
+
+- Documentation cleanup.
 
 ## [1.8.0] - 2026-06-02
 
