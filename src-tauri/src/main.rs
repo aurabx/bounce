@@ -473,10 +473,31 @@ async fn echo_pacs_service(app: AppHandle, service_id: String) -> Result<EchoRes
 
 #[tauri::command]
 fn show_window(app: AppHandle) -> Result<(), String> {
-    if let Some(window) = app.get_window("main") {
+    if let Some(window) = app.get_webview_window("main") {
         window.show().map_err(|e| e.to_string())?;
         window.set_focus().map_err(|e| e.to_string())?;
+        return Ok(());
     }
+
+    // The main window has been destroyed (some Windows close paths can
+    // tear it down before our `CloseRequested` prevent runs). Rebuild it
+    // from the bundled config so the tray "Show window" item still works
+    // after the process has been kept alive by `prevent_exit` (AURA-2291).
+    let window_config = app
+        .config()
+        .app
+        .windows
+        .first()
+        .cloned()
+        .ok_or_else(|| "No window configured in tauri.conf.json".to_string())?;
+
+    let window = tauri::WebviewWindowBuilder::from_config(&app, &window_config)
+        .map_err(|e| format!("Failed to build window: {}", e))?
+        .build()
+        .map_err(|e| format!("Failed to create window: {}", e))?;
+
+    window.show().map_err(|e| e.to_string())?;
+    window.set_focus().map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -671,18 +692,22 @@ fn main() {
                 // the window is hidden, not destroyed, so the count is
                 // preserved — but several Windows paths (Alt+F4 in some
                 // shells, third-party "close all hidden windows" tools,
-                // taskbar Close) can still surface a spurious
-                // `ExitRequested`. When no user-initiated exit is in
-                // flight and a window is still alive (i.e. just hidden to
-                // the tray), suppress the exit so the receiver keeps
-                // running in the background (AURA-2291).
+                // taskbar Close, WM_CLOSE delivered before our
+                // `CloseRequested` prevent runs) can still surface a
+                // spurious `ExitRequested`, and in some of those the
+                // window has already been destroyed by the time we get
+                // here. The only legitimate exit path is the tray "Exit"
+                // item which routes through `request_exit` and marks the
+                // `ExitGuard`; anything else on non-macOS gets suppressed
+                // so the DICOM receiver keeps running in the background
+                // (AURA-2291).
                 #[cfg(not(target_os = "macos"))]
                 {
                     let user_initiated = app_handle
                         .try_state::<ExitGuard>()
                         .map(|g| g.is_exiting())
                         .unwrap_or(false);
-                    if !user_initiated && !app_handle.webview_windows().is_empty() {
+                    if !user_initiated {
                         api.prevent_exit();
                         return;
                     }

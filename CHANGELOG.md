@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- Hardened the Windows close-to-tray behaviour so closing the main window can no longer leave Bounce in a state where the process is alive with the DICOM port bound but no tray icon or window. The `RunEvent::ExitRequested` handler now treats any non-tray-initiated exit on Windows and Linux as a tray-hide regardless of whether the window has already been destroyed; if the window was torn down by a Windows close path before our preventer could run, the tray's "Show window" item now rebuilds it from config. The DICOM receiver's `stop()` also waits for the spawned listener task to actually drop before returning, so the TCP port is released before the process exits and the next launch (or autostart) can bind it cleanly (AURA-2291).
+
 ## [1.8.0] - 2026-06-02
 
 ### Added

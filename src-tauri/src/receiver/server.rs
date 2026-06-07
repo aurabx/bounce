@@ -21,6 +21,14 @@ fn emit_or_log<S: serde::Serialize + Clone>(app: &AppHandle, event: &str, payloa
 // Define a struct to manage server state
 pub struct ServerState {
     shutdown_sender: Option<oneshot::Sender<()>>,
+    // JoinHandle of the spawned task that owns the DICOM `TcpListener`.
+    // `stop()` awaits this after sending the shutdown signal so the
+    // listener is fully dropped (and the port released) before stop
+    // returns. Without this, a synchronous shutdown in
+    // `RunEvent::ExitRequested` can race the process tear-down and leave
+    // the bound port in a state that blocks the next instance from
+    // binding (AURA-2291).
+    receiver_task: Option<tokio::task::JoinHandle<()>>,
     poller_state: QueryPollerState,
     retry_scheduler_state: RetrySchedulerState,
 }
@@ -29,6 +37,7 @@ pub struct ServerState {
 pub fn init_server_state() -> ServerState {
     ServerState {
         shutdown_sender: None,
+        receiver_task: None,
         poller_state: poller::init_poller_state(),
         retry_scheduler_state: retry_scheduler::init_retry_scheduler_state(),
     }
@@ -77,8 +86,12 @@ pub async fn start(app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let local_ip = local_ip().unwrap();
     log_info!("local IP address: {:?}", local_ip);
 
-    // Spawn server in a background task
-    tokio::spawn(async move {
+    // Spawn server in a background task. Clone the handle so the outer
+    // function can still acquire a fresh `app.state(...)` after the move
+    // in order to park the `JoinHandle` below.
+    let spawn_app = app.clone();
+    let receiver_task = tokio::spawn(async move {
+        let app = spawn_app;
         emit_or_log(&app, "log", "Starting server");
         emit_or_log(&app, "running", true);
 
@@ -126,6 +139,13 @@ pub async fn start(app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         emit_or_log(&app, "log", "Server stopped");
     });
 
+    // Park the JoinHandle so `stop()` can await the listener actually
+    // dropping before it returns.
+    {
+        let mut state = app_state.lock().await;
+        state.receiver_task = Some(receiver_task);
+    }
+
     Ok(())
 }
 
@@ -133,15 +153,20 @@ pub async fn start(app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 pub async fn stop(app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let app_state = app.state::<Arc<Mutex<ServerState>>>();
 
-    // Take the shutdown senders from the state
+    // Take the shutdown senders and the receiver JoinHandle from the
+    // state. The handle is awaited below so the `TcpListener` inside the
+    // receiver task is fully dropped (and the port released) before this
+    // function returns.
     let mut shutdown_sender = None;
     let mut poller_shutdown_sender = None;
     let mut retry_shutdown_sender = None;
+    let mut receiver_task = None;
     {
         let mut state = app_state.lock().await;
         shutdown_sender = state.shutdown_sender.take();
         poller_shutdown_sender = state.poller_state.shutdown_sender.take();
         retry_shutdown_sender = state.retry_scheduler_state.shutdown_sender.take();
+        receiver_task = state.receiver_task.take();
     }
 
     // Stop the query poller
@@ -156,18 +181,46 @@ pub async fn stop(app: AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         log_info!("Retry scheduler shutdown signal sent");
     }
 
+    let sender_existed = shutdown_sender.is_some();
+    let mut signal_delivered = false;
     if let Some(sender) = shutdown_sender {
-        // Send the shutdown signal
-        if sender.send(()).is_err() {
+        if sender.send(()).is_ok() {
+            signal_delivered = true;
+            emit_or_log(&app, "log", "Server stopping...");
+        } else {
             emit_or_log(&app, "log", "Server already stopped");
             emit_or_log(&app, "running", false);
             log_info!("Dicom server message: {:?}", "Stopped");
-            return Ok(());
         }
-
-        emit_or_log(&app, "log", "Server stopping...");
     } else {
         emit_or_log(&app, "log", "No running server to stop");
+    }
+
+    // Wait for the spawned receiver task to actually finish so the
+    // `TcpListener` is dropped before we return. The accept loop polls
+    // for shutdown every second, so a 5 second cap is generous; if it
+    // ever blew through we abort the task to force the drop rather than
+    // leaving the listener bound (AURA-2291).
+    if let Some(handle) = receiver_task {
+        if signal_delivered || sender_existed {
+            let abort_handle = handle.abort_handle();
+            match tokio::time::timeout(tokio::time::Duration::from_secs(5), handle).await {
+                Ok(Ok(())) => {
+                    log_info!("Receiver task exited cleanly");
+                }
+                Ok(Err(join_err)) => {
+                    log_error!("Receiver task join error on stop: {}", join_err);
+                }
+                Err(_) => {
+                    log_error!(
+                        "Receiver task did not exit within 5s of shutdown signal; aborting"
+                    );
+                    abort_handle.abort();
+                }
+            }
+        } else {
+            handle.abort();
+        }
     }
 
     Ok(())
