@@ -7,11 +7,13 @@ export interface RunningDetail {
     value: string,
 }
 
+export type LogLevelName = 'trace' | 'debug' | 'info' | 'warn' | 'error'
+
 export interface LogEntry {
     id: string,
-    level: 'trace' | 'debug' | 'info' | 'warn' | 'error',
+    level: LogLevelName,
     message: string,
-    source: 'event' | 'system',
+    module: string,
     timestamp: string,
 }
 

@@ -6,22 +6,40 @@ import { appLogDir, join } from '@tauri-apps/api/path'
 import { Button } from '@/app/components/ui/button'
 import { Input } from '@/app/components/ui/input'
 import { useAppDispatch, useAppSelector } from '@/app/lib/hook'
-import { clearLogs } from '@/app/lib/store'
+import { clearLogs, LogLevelName } from '@/app/lib/store'
 
-const QUICK_FILTERS = [
+const MODULE_FILTERS = [
     { label: 'All', value: 'all' },
-    { label: 'DIMSE', value: 'DIMSE' },
-    { label: 'Aura', value: 'Aura query' },
-    { label: 'Errors', value: 'error' },
+    { label: 'Receiver', value: 'receiver' },
+    { label: 'Transmitter', value: 'transmitter' },
+    { label: 'Query', value: 'query' },
+    { label: 'Aura', value: 'aura' },
 ] as const
+
+const LEVEL_FILTERS: { label: string; value: LogLevelName | 'all' }[] = [
+    { label: 'All', value: 'all' },
+    { label: 'Info', value: 'info' },
+    { label: 'Warn', value: 'warn' },
+    { label: 'Error', value: 'error' },
+]
+
+// Severity ranking used by the level filter — entries at or above the chosen
+// level pass.
+const LEVEL_RANK: Record<LogLevelName, number> = {
+    trace: 0,
+    debug: 1,
+    info: 2,
+    warn: 3,
+    error: 4,
+}
 
 export default function Page() {
     const dispatch = useAppDispatch()
     const logs = useAppSelector((state) => state.main.logs)
 
     const [search, setSearch] = useState('')
-    const [selectedQuickFilter, setSelectedQuickFilter] = useState<(typeof QUICK_FILTERS)[number]['value']>('all')
-    const [showSystemLogs, setShowSystemLogs] = useState(true)
+    const [selectedModule, setSelectedModule] = useState<(typeof MODULE_FILTERS)[number]['value']>('all')
+    const [minLevel, setMinLevel] = useState<LogLevelName | 'all'>('all')
     const [wrapLines, setWrapLines] = useState(false) // Default to no-wrap for terminal feel
     const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -31,22 +49,29 @@ export default function Page() {
     }, [logs.length])
 
     const filteredLogs = useMemo(() => {
+        const minRank = minLevel === 'all' ? -1 : LEVEL_RANK[minLevel]
+
         return logs.filter((entry) => {
-            if (!showSystemLogs && entry.source === 'system') {
+            if (LEVEL_RANK[entry.level] < minRank) {
                 return false
             }
 
-            const haystack = `${entry.level} ${entry.source} ${entry.message}`.toLowerCase()
-            const quickFilter = selectedQuickFilter === 'all'
+            const moduleMatch = selectedModule === 'all'
                 ? true
-                : haystack.includes(selectedQuickFilter.toLowerCase())
-            const searchFilter = search.trim().length === 0
-                ? true
-                : haystack.includes(search.trim().toLowerCase())
+                : entry.module.toLowerCase().includes(selectedModule)
 
-            return quickFilter && searchFilter
+            if (!moduleMatch) {
+                return false
+            }
+
+            if (search.trim().length === 0) {
+                return true
+            }
+
+            const haystack = `${entry.level} ${entry.module} ${entry.message}`.toLowerCase()
+            return haystack.includes(search.trim().toLowerCase())
         })
-    }, [logs, search, selectedQuickFilter, showSystemLogs])
+    }, [logs, search, selectedModule, minLevel])
 
     const openLogPath = async () => {
         const logDirPath = await appLogDir();
@@ -78,12 +103,28 @@ export default function Page() {
                     />
 
                     <div className="flex h-8 items-center rounded-md border bg-muted p-1">
-                        {QUICK_FILTERS.map((filter) => (
+                        {MODULE_FILTERS.map((filter) => (
                             <button
                                 key={filter.value}
-                                onClick={() => setSelectedQuickFilter(filter.value)}
+                                onClick={() => setSelectedModule(filter.value)}
                                 className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
-                                    selectedQuickFilter === filter.value
+                                    selectedModule === filter.value
+                                        ? 'bg-background text-foreground shadow-sm'
+                                        : 'text-muted-foreground hover:text-foreground'
+                                }`}
+                            >
+                                {filter.label}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="flex h-8 items-center rounded-md border bg-muted p-1">
+                        {LEVEL_FILTERS.map((filter) => (
+                            <button
+                                key={filter.value}
+                                onClick={() => setMinLevel(filter.value)}
+                                className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
+                                    minLevel === filter.value
                                         ? 'bg-background text-foreground shadow-sm'
                                         : 'text-muted-foreground hover:text-foreground'
                                 }`}
@@ -96,14 +137,6 @@ export default function Page() {
                     <div className="flex-1" />
 
                     <div className="flex items-center gap-1">
-                        <Button
-                            variant={showSystemLogs ? 'secondary' : 'ghost'}
-                            size="sm"
-                            className="h-8 px-3 text-xs"
-                            onClick={() => setShowSystemLogs(!showSystemLogs)}
-                        >
-                            Sys
-                        </Button>
                         <Button
                             variant={wrapLines ? 'secondary' : 'ghost'}
                             size="sm"
@@ -157,8 +190,8 @@ export default function Page() {
                                 <span className={`shrink-0 w-10 uppercase select-none font-semibold ${getLevelColor(entry.level)}`}>
                                     {entry.level}
                                 </span>
-                                <span className="shrink-0 w-16 select-none text-slate-400 truncate" title={entry.source}>
-                                    {entry.source}
+                                <span className="shrink-0 w-20 select-none text-slate-400 truncate" title={entry.module}>
+                                    {entry.module}
                                 </span>
                                 <span className="flex-1">{entry.message}</span>
                             </div>

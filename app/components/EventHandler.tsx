@@ -2,7 +2,7 @@
 
 import { useEffect} from 'react'
 import { attachLogger, LogLevel } from '@tauri-apps/plugin-log'
-import {logMessage, setRunning, setCurrentStudies, setRunningDetail, setErrors, setError} from '../lib/store'
+import {logMessage, setRunning, setCurrentStudies, setRunningDetail, setErrors, setError, LogLevelName} from '../lib/store'
 import {useAppDispatch} from "@/app/lib/hook";
 import {listen} from "@tauri-apps/api/event";
 import {CurrentStudies} from "@/app/lib/types";
@@ -10,11 +10,27 @@ import {invokeCommand} from "@/app/lib/commands";
 import {load} from "@tauri-apps/plugin-store";
 
 
+// tauri-plugin-log default desktop format:
+//   [YYYY-MM-DD][HH:MM:SS][module::path][LEVEL] message
+// We strip the prefix so the log row shows a clean message and a separate
+// module column.
+const LOG_PREFIX_RE = /^\[\d{4}-\d{2}-\d{2}\]\[\d{2}:\d{2}:\d{2}\]\[([^\]]+)\]\[[A-Z]+\]\s?([\s\S]*)$/
+
+const shortModule = (target: string): string => {
+    // Trim the leading crate name so "bounce::receiver::dicom_server" → "receiver".
+    // Falls back to the full target when the path is shorter than expected.
+    const parts = target.split('::')
+    if (parts.length >= 2 && parts[0] === 'bounce') {
+        return parts[1] ?? target
+    }
+    return parts[0] ?? target
+}
+
 export default function EventHandler({ children, }: { children: React.ReactNode }) {
 
     const dispatch = useAppDispatch()
 
-    const normalizeLogLevel = (level: LogLevel): 'trace' | 'debug' | 'info' | 'warn' | 'error' => {
+    const normalizeLogLevel = (level: LogLevel): LogLevelName => {
         switch (level) {
             case LogLevel.Trace:
                 return 'trace'
@@ -32,13 +48,13 @@ export default function EventHandler({ children, }: { children: React.ReactNode 
 
     const createLogEntry = (
         message: string,
-        source: 'event' | 'system',
-        level: 'trace' | 'debug' | 'info' | 'warn' | 'error' = 'info',
+        module: string,
+        level: LogLevelName = 'info',
     ) => ({
-        id: `${source}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         level,
         message,
-        source,
+        module,
         timestamp: new Date().toISOString(),
     })
 
@@ -48,12 +64,15 @@ export default function EventHandler({ children, }: { children: React.ReactNode 
         const bindEvents = async () => {
             // Manual emit("log", ...) calls from Rust (server start/stop, association events)
             const unlistenLogEvent = await listen("log", (event) => {
-                dispatch(logMessage(createLogEntry(event.payload as string, 'event', 'info')))
+                dispatch(logMessage(createLogEntry(event.payload as string, 'app', 'info')))
             })
 
             // tauri_plugin_log webview target — receives all log::info!/log::error! records
             const detachLogger = await attachLogger((entry) => {
-                dispatch(logMessage(createLogEntry(entry.message, 'system', normalizeLogLevel(entry.level))))
+                const match = LOG_PREFIX_RE.exec(entry.message)
+                const moduleName = match ? shortModule(match[1]) : 'app'
+                const message = match ? match[2] : entry.message
+                dispatch(logMessage(createLogEntry(message, moduleName, normalizeLogLevel(entry.level))))
             })
 
             const unlistenRunning = await listen("running", (event) => {
