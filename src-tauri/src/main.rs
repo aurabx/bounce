@@ -471,18 +471,28 @@ async fn echo_pacs_service(app: AppHandle, service_id: String) -> Result<EchoRes
     }
 }
 
-#[tauri::command]
-fn show_window(app: AppHandle) -> Result<(), String> {
+/// Bring the main window to the foreground, recreating it first if it no
+/// longer exists.
+///
+/// Used by the tray "Show window" item, and by the single-instance plugin
+/// callback when a second launch is folded back into the already-running
+/// process. Some Windows close paths can destroy the window even though
+/// the process is kept alive in the tray, so a plain `get_webview_window`
+/// is not enough — we rebuild it from the bundled config when missing
+/// (AURA-2291).
+fn focus_or_create_main_window(app: &AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("main") {
         window.show().map_err(|e| e.to_string())?;
+        // Restore from a minimized state if needed; a non-minimized window
+        // makes this a harmless no-op, so a failure here must not block the
+        // show/focus path.
+        if let Err(e) = window.unminimize() {
+            log_error!("Failed to unminimize main window: {}", e);
+        }
         window.set_focus().map_err(|e| e.to_string())?;
         return Ok(());
     }
 
-    // The main window has been destroyed (some Windows close paths can
-    // tear it down before our `CloseRequested` prevent runs). Rebuild it
-    // from the bundled config so the tray "Show window" item still works
-    // after the process has been kept alive by `prevent_exit` (AURA-2291).
     let window_config = app
         .config()
         .app
@@ -491,7 +501,7 @@ fn show_window(app: AppHandle) -> Result<(), String> {
         .cloned()
         .ok_or_else(|| "No window configured in tauri.conf.json".to_string())?;
 
-    let window = tauri::WebviewWindowBuilder::from_config(&app, &window_config)
+    let window = tauri::WebviewWindowBuilder::from_config(app, &window_config)
         .map_err(|e| format!("Failed to build window: {}", e))?
         .build()
         .map_err(|e| format!("Failed to create window: {}", e))?;
@@ -499,6 +509,11 @@ fn show_window(app: AppHandle) -> Result<(), String> {
     window.show().map_err(|e| e.to_string())?;
     window.set_focus().map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[tauri::command]
+fn show_window(app: AppHandle) -> Result<(), String> {
+    focus_or_create_main_window(&app)
 }
 
 fn main() {
@@ -509,6 +524,20 @@ fn main() {
     init_logtail_channel();
 
     tauri::Builder::default()
+        // Single-instance MUST be registered first so it runs before any
+        // other plugin or setup work can bind resources. When a second
+        // process is launched (manual reopen of a tray-hidden app, or the
+        // "Start on login" entry firing while the app is already running),
+        // this callback fires in the ORIGINAL process to surface its
+        // window, and the second process exits immediately — before it can
+        // attempt to bind the DICOM port the first process already holds.
+        // This is the actual fix for "only one usage of each socket
+        // address" on reopen (AURA-2291).
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Err(e) = focus_or_create_main_window(app) {
+                log_error!("single-instance: failed to surface main window: {}", e);
+            }
+        }))
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())

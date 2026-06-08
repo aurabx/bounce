@@ -56,6 +56,11 @@ tauri-plugin-opener = "2"
 tauri-plugin-os = "2"
 tauri-plugin-updater = { version = "2", default-features = false, features = ["native-tls", "zip"] }
 tauri-plugin-autostart = "2"
+# Guarantees a single running instance so a second launch (manual reopen
+# or "Start on login" firing while the app is already in the tray) hands
+# off to the existing process instead of trying to bind the DICOM port a
+# second time (AURA-2291).
+tauri-plugin-single-instance = "2"
 gethostname = "1.0.1"
 this = "0.3.0"
 

@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- Bounce now enforces a single running instance, fixing the case where closing the window and reopening Bounce — or the "Start on login" entry firing while it was already in the tray — failed with a DICOM port conflict ("only one usage of each socket address"). Closing the window keeps Bounce alive in the system tray with the receiver running and the port bound, as intended; the problem was that launching it *again* started a second process that collided with the first on the port. The new single-instance guard makes any second launch surface the already-running window and exit immediately, so the port is never contended. This complements the existing tray-hide and graceful-shutdown behaviour rather than replacing it (AURA-2291).
+
 ## [1.9.0] - 2026-06-07
 
 ### Added
