@@ -13,11 +13,12 @@ the project) when revising this document.
 ## Purpose / Big Picture
 
 Today, Bounce is a Tauri desktop application. It binds one DICOM listener,
-runs a single-flight uploader, and reads all of its operational
-configuration from a Tauri-managed JSON store edited through the
-Next.js UI. There is no way to run it without a graphical session, and
-there is no way to have one machine accept DICOM traffic on behalf of
-more than one logical "tenant" or upload destination.
+runs an uploader capped at two concurrent uploads by a process-global
+semaphore, and reads all of its operational configuration from a
+Tauri-managed JSON store edited through the Next.js UI. There is no way
+to run it without a graphical session, and there is no way to have one
+machine accept DICOM traffic on behalf of more than one logical
+"tenant" or upload destination.
 
 After this refactor, an operator can take a single `bounce.json` file,
 copy it onto a Linux box with no display server, and run:
@@ -109,11 +110,13 @@ concrete.
   *different* product's "Bounce for X" gateway without modification.
   This plan produces three such crates: `dimse-gateway` (DICOM SCP
   framework with pluggable C-STORE / C-FIND / C-MOVE handler
-  callbacks), `study-pipeline` (per-profile debounce + bounded MPSC +
-  N-worker pool), and `tus-uploader` (chunked TUS POST/PATCH client
-  taking endpoint, token, chunk size, and metadata as inputs). They
-  are not used polymorphically inside Bounce; they are the layered
-  building blocks Bounce composes against.
+  callbacks and a pluggable association `AccessPolicy`),
+  `study-pipeline` (per-profile debounce + bounded MPSC + N-worker
+  pool, plus the pure capped-exponential-backoff arithmetic), and
+  `tus-uploader` (chunked TUS POST/PATCH client taking endpoint,
+  token, chunk size, and metadata as inputs). They are not used
+  polymorphically inside Bounce; they are the layered building
+  blocks Bounce composes against.
 - **Product crate** — A library crate that wires reusable primitives
   to one specific cloud product. For Bounce 2.0 the product crate is
   `bounce-aurabox`, which depends on the three primitive crates plus
@@ -154,8 +157,11 @@ recording completion.
   column; existing single-profile behaviour reproduced via a
   one-profile JSON file.
 - [ ] M5: Per-profile bounded MPSC queue and N-worker pool from
-  `study-pipeline` replace the single-flight debounced uploader;
-  load test with two concurrent uploads shows both progressing.
+  `study-pipeline` replace the debounce-plus-global-semaphore
+  uploader; the retry scheduler and claim/attempt/record lifecycle
+  are preserved per profile; the `UPLOAD_SEMAPHORE` static is
+  deleted; load test with two concurrent uploads shows both
+  progressing.
 - [ ] M6: Generic `tus-uploader` crate extracted, exposing a
   `TusClient` that takes endpoint/token/chunk-size/metadata as
   inputs. The existing Aurabox-specific `upload_init` /
@@ -247,7 +253,7 @@ must be appended as the work proceeds.
   Date/Author: 2026-05-26 / planner.
 
 - Decision: The Tauri UI is *retained* in 2.0, not retired. It becomes
-  one of two front-ends to the same `bounce-core`.
+  one of two front-ends to the same `bounce-aurabox` runtime.
   Rationale: The user statement says 2.0 "needs to" run headless and
   describes profile semantics; it does not say the desktop UI is
   going away. Keeping the UI working preserves the existing install
@@ -257,17 +263,102 @@ must be appended as the work proceeds.
   Date/Author: 2026-05-26 / planner.
 
 - Decision: One shared SQLite database file (`bounce.db`) for all
-  profiles. The `studies` and `uploads` tables gain a `profile_id`
-  text column. Queries that previously had no scope are now scoped
-  by `profile_id`.
+  profiles. The `studies` and `upload_attempts` tables gain a
+  `profile_id` text column, and the uniqueness constraint on
+  `studies` changes from `study_uid` alone to the composite
+  `(profile_id, study_uid)`. Queries that previously had no scope are
+  now scoped by `profile_id`.
   Rationale: Per-profile databases would multiply file-handle usage
   and complicate the UI's "list everything I've ever received" view.
   A single database with a `profile_id` discriminator is the smallest
-  change and matches how the existing migrations layer is structured.
-  Date/Author: 2026-05-26 / planner.
+  change. The composite key is forced by a real scenario: the same
+  modality can be configured to send the same study to two profiles
+  on one host (two tenancies receiving the same patient), and study
+  instance UIDs are globally stable, so `study_uid` alone would
+  collide. SQLite cannot alter a UNIQUE constraint in place, so this
+  migration is a guarded table rebuild (create `studies_new` with the
+  composite key, copy rows with `profile_id = 'default'`, drop, and
+  rename) rather than a simple `ADD COLUMN`.
+  Date/Author: 2026-06-10 / planner (supersedes the 2026-05-26 entry
+  which predated the `upload_attempts` table and assumed an
+  additive-only migration).
+
+- Decision: The upload retry/recovery machinery added in 1.6
+  (status machine on `studies`, per-attempt `upload_attempts` audit
+  rows, exponential backoff, the 30-second retry scheduler, and the
+  disk-space guard) is preserved in 2.0 and becomes profile-aware
+  rather than being replaced by the worker pool. Specifically:
+  the pure backoff math (`RetryPolicy`, `next_retry_delay`) moves
+  into `study-pipeline` as a vendor-neutral module; the DB-driven
+  retry scheduler stays in `bounce-aurabox` (it is coupled to the
+  Bounce schema) but scans per profile and feeds due studies into
+  that profile's pipeline queue; the atomic claim
+  (`claim_study_for_upload`) and attempt recording stay inside the
+  `AuraboxShipper`, so every upload — debounced, retried, or manual —
+  flows through one code path. The process-global static
+  `UPLOAD_SEMAPHORE` (`MAX_CONCURRENT_UPLOADS = 2`) is deleted; the
+  per-profile worker count *is* the concurrency limit.
+  Rationale: The retry subsystem is recent, tested, operator-visible
+  (the Transactions view is built on it), and orthogonal to
+  profiles — discarding it to "simplify" the worker-pool refactor
+  would regress 1.6–1.9 behaviour. The global semaphore, by
+  contrast, is exactly the kind of cross-profile shared state
+  profiles exist to remove, and it is a static `OnceLock` global
+  that could never be per-profile anyway.
+  Date/Author: 2026-06-10 / planner.
+
+- Decision: AE-title allow-listing (AURA-2296) becomes per-profile.
+  Each profile's SCP accepts only calling AE titles present in *that
+  profile's* Aurabox services catalog; `permissive_mode` becomes a
+  per-profile boolean that switches the policy to accept-any and
+  stores received instances without queueing them for upload. The
+  services catalog cache moves out of the Tauri plugin-store into a
+  `pacs_services` table in `bounce.db` keyed by `profile_id`
+  (refreshed by each profile's poller on the existing cadence).
+  `dimse-gateway` exposes the acceptance decision as a generic
+  `AccessPolicy` hook on `GatewayConfig` (the same seam as
+  `dicom_ul`'s `AccessControl` trait); the Aurabox-aware policy that
+  reads the per-profile catalog lives in `bounce-aurabox`.
+  Rationale: The allow-list is derived from the services catalog,
+  which is tenancy-scoped — two tenancies on one host have different
+  registered PACS, so a global list would let clinic B's modality
+  store into clinic A's profile. The cache must leave the
+  plugin-store regardless (the plugin-store is being removed); the
+  database is the natural home because the cache must be shared
+  between the headless and Tauri front-ends and is already
+  per-profile keyed data.
+  Date/Author: 2026-06-10 / planner.
+
+- Decision: Retry policy (`max_attempts`, `base_seconds`,
+  `cap_seconds`) is per-profile with defaults matching today's
+  values (10 / 30 / 3600). Disk thresholds (`disk_warn_mb`,
+  `disk_critical_mb`) stay **global** in the config root.
+  Rationale: Retry aggressiveness is a per-tenancy service decision
+  (a research tenancy may tolerate week-long retry tails; a clinical
+  one may want fast terminal failure and human follow-up). Disk
+  space is a property of the shared storage volume — per-profile
+  thresholds against one volume would just mean the lowest value
+  wins, which is the same behaviour with extra configuration
+  surface.
+  Date/Author: 2026-06-10 / planner.
+
+- Decision: Single-instance enforcement stays a Tauri-app concern.
+  `bounce-tauri` keeps `tauri-plugin-single-instance` (AURA-2291).
+  The headless `bounced` does not get an equivalent lock file;
+  instead, `Runtime::start` treats a bind failure on any profile's
+  port as fatal, reports which profile and port collided, and exits
+  non-zero before any other profile is left half-started (bind all
+  listeners first, then start workers/pollers).
+  Rationale: On a server, running two `bounced` processes with
+  *different* configs is legitimate (e.g. blue/green on different
+  ports), so a process-level mutex would be wrong. The port bind is
+  the actual contended resource and already serialises access; what
+  matters is failing loudly and atomically rather than partially
+  starting.
+  Date/Author: 2026-06-10 / planner.
 
 - Decision: The JSON config is the single source of truth at runtime;
-  the Tauri plugin-store is removed from `bounce-core`. The UI
+  the Tauri plugin-store is removed from the product crate. The UI
   edit-and-save flow becomes "load `bounce.json` → mutate in memory →
   write `bounce.json` atomically → signal the running runtime to
   reload."
@@ -341,33 +432,75 @@ lives under `app`. Build orchestration lives in `Makefile`,
 contains `ARCHITECTURE.md`, `API.md`, `CONFIGURATION.md`,
 `DEVELOPMENT.md`, and this plan.
 
-The current backend is a single Cargo crate, `app`, declared in
+The current backend (version 1.9.1 at the time this section was last
+verified) is a single Cargo crate, `app`, declared in
 `src-tauri/Cargo.toml`. Its `main.rs` builds a `tauri::Builder`,
 registers IPC commands, and wires up background tasks. The relevant
 modules are:
 
 - `src-tauri/src/store/config.rs` — `Config` struct loaded synchronously
   from the Tauri plugin-store. Holds `api_key`, `port`, `ip_address`,
-  `ae_title`, `base_dir`, `delete_after_success`, `send_logs`. Singular
-  fields — there is no concept of more than one of any of them.
+  `ae_title`, `base_dir`, `delete_after_success`, `send_logs`,
+  `permissive_mode`, and five retry/disk knobs:
+  `max_upload_attempts` (default 10), `retry_base_seconds` (30),
+  `retry_cap_seconds` (3600), `disk_warn_mb` (2048),
+  `disk_critical_mb` (512). Singular fields — there is no concept of
+  more than one of any of them. The frontend additionally persists a
+  `start_receiver_on_start` preference and a transient
+  `_resume_running` flag directly in the plugin-store.
+- `src-tauri/src/store/pacs_cache.rs` — caches the Aurabox services
+  catalog (the list of remote PACS the tenancy knows about) in the
+  plugin-store so the UI renders offline. Since AURA-2296 this cache
+  is also the **SCP allow-list**: the receiver only accepts
+  associations whose calling AE title appears in the cached services
+  list.
+- `src-tauri/src/store/disk.rs` — disk-space guard. `check_disk()`
+  reads free space on the storage volume via the `fs2` crate;
+  `warn_if_low()` emits a `disk-warning` event when below
+  `disk_warn_mb` and returns `true` (pause new uploads) when below
+  `disk_critical_mb`.
 - `src-tauri/src/receiver/dicom_server.rs` — `DICOMServer::start()`
   binds a single `tokio::net::TcpListener` to `(config.ip_address,
   config.port)`, then loops on `listener.accept()` and processes each
   association serially inside `run_store_sync()`. Holds an
   `Option<AppHandle>` that it uses to emit `queue-study` and `log`
-  events to the UI.
+  events to the UI. Association acceptance is governed by a
+  `CallerPolicy` enum implementing `dicom_ul`'s `AccessControl`
+  trait: `AcceptRegistered(list)` admits only calling AE titles in
+  the cached PACS services list (an empty list rejects everyone);
+  `AcceptAny` is used when `permissive_mode` is "yes". In permissive
+  mode received instances are stored to disk but **not** queued for
+  upload.
 - `src-tauri/src/receiver/server.rs` — `start()` and `stop()` manage
-  the receiver's lifecycle. State (the oneshot shutdown sender, the
-  poller's shutdown sender) is stashed in Tauri-managed
-  `Arc<Mutex<ServerState>>`.
+  the receiver's lifecycle. `ServerState` (stashed in Tauri-managed
+  `Arc<Mutex<…>>`) now holds three shutdown senders: the receiver's,
+  the query poller's, and the retry scheduler's. Starting the
+  receiver also starts the poller and the retry scheduler; stopping
+  it shuts down all three.
 - `src-tauri/src/transmitter/transmission.rs` — `Transmission` owns a
   `reqwest::Client`, a `HashMap` of debounce timers
   (`scheduled_studies`), and an `AppHandle`. `schedule_study_push()`
-  runs the 10-second debounce, `send_study()` runs the full pipeline:
-  `compress_study()` zips the study directory, `fetch_uploader_config()`
-  calls Aurabox to get TUS endpoint + token + bucket, `upload_init()`
-  hands metadata to Aurabox, `upload_via_tus()` does the chunked
-  upload, `upload_save()` reports completion.
+  runs the 10-second debounce, then routes through
+  `attempt_upload()`, which: acquires a process-global static
+  `UPLOAD_SEMAPHORE` (`MAX_CONCURRENT_UPLOADS = 2`); refuses to
+  start when disk space is critical; atomically claims the study via
+  `Database::claim_study_for_upload` (eligible states: IN_PROGRESS,
+  QUEUED, RETRYING); runs `send_study()` (compress → Aurabox
+  `upload_init` → `upload_via_tus` → `upload_save`); and records the
+  outcome — `mark_attempt_success` or `mark_upload_failed` with an
+  exponential-backoff `next_retry_at` computed by
+  `transmitter/backoff.rs`. A study whose attempts exceed
+  `max_upload_attempts` is marked terminally FAILED.
+- `src-tauri/src/transmitter/backoff.rs` — pure functions:
+  `RetryPolicy` (max attempts, base delay, cap) and
+  `next_retry_delay(attempt_no, policy)` implementing capped
+  exponential backoff. No I/O, no Tauri.
+- `src-tauri/src/transmitter/retry_scheduler.rs` — background loop
+  (30-second cadence) that scans the database for studies due for an
+  attempt (`find_due_for_retry`, batch limit 100) and dispatches each
+  through `Transmission::attempt_upload`, tracking in-flight UIDs to
+  avoid redundant dispatch. Mirrors the query poller's
+  shutdown-channel shape.
 - `src-tauri/src/aura/aura_api.rs` and `aura/query_api.rs` — Aurabox
   HTTP clients. Construct a `reqwest::Client` per instance and read
   `api_key`/`api_endpoint` from `Config` at call time.
@@ -378,33 +511,64 @@ modules are:
 - `src-tauri/src/db/database.rs` — `Database` wraps a `SqlitePool`
   rooted at `app_data_dir/bounce.db`. Uses `app_handle.path()` to
   resolve the directory, so it cannot construct itself without a Tauri
-  `AppHandle`.
+  `AppHandle`. The `studies` table carries upload-lifecycle columns
+  (`attempts`, `last_attempt_at`, `next_retry_at`, `last_error`) and
+  a per-attempt audit table `upload_attempts` (one row per attempt:
+  `attempt_no`, `upload_id`, `status`, `error`, timings) feeds the
+  UI's Transactions view.
 - `src-tauri/src/logger.rs` — Custom `log::Log` implementation that
   batches log lines and POSTs them to Better Stack Logtail. Wired up
   in `main.rs::setup_logger_with_config()`.
 
 The frontend (`app/`) reads and writes the plugin-store via Tauri IPC
-and listens for the same events (`log`, `running`, `running-details`,
-`current-studies`, `upload-progress`, `queue-study`). It does not
-currently know anything about profiles.
+and listens for events (`log`, `running`, `running-details`,
+`current-studies`, `upload-progress`, `queue-study`,
+`transactions-updated`, `disk-warning`). It has a Transactions view
+(per-attempt history with Retry and Stop buttons), a dashboard status
+summary, and a Studies table with search and bulk actions. It does
+not currently know anything about profiles.
+
+The Tauri commands registered today (all of which must keep working
+after the port): `receiver_start`, `receiver_stop`, `reset_app`,
+`send_log`, `send_study`, `retry_study`, `cancel_retry`,
+`study_upload_attempts`, `delete_study`, `bulk_send_studies`,
+`bulk_delete_studies`, `delete_all_studies`, `api_start_upload`,
+`current_studies`, `current_upload_attempts`, `dashboard_stats`,
+`cfind_query`, `list_pacs_services`, `refresh_pacs_services`,
+`echo_pacs_service`, `show_window`, `update_send_logs`,
+`verify_connectivity`, `request_exit`.
+
+The Tauri builder also registers `tauri-plugin-single-instance`
+(prevents a second app instance fighting over the DICOM port,
+AURA-2291), `tauri-plugin-autostart` (start-on-login), and
+`tauri-plugin-updater` (automatic updates with a restart window that
+preserves receiver state via the `_resume_running` flag). On launch,
+the receiver auto-starts when `start_receiver_on_start` is "yes" or
+`_resume_running` was set by a prior in-app relaunch (AURA-2290).
 
 Key coupling points between "Tauri" and "business logic" today:
 
 1. **Config loading.** `Config::load(AppHandle)` reads from
    `app.store("store.json")`. Everywhere a piece of code needs config,
    it calls `crate::load_config(app)` which forwards to that.
-2. **Event emission.** Server status, log messages, study progress are
-   all delivered via `app_handle.emit("log", ...)`. Without an
-   `AppHandle`, there is no place for the events to go.
+2. **Event emission.** Server status, log messages, study progress,
+   transaction updates, and disk warnings are all delivered via
+   `app_handle.emit(...)`. Without an `AppHandle`, there is no place
+   for the events to go.
 3. **Database location.** `Database::new(AppHandle)` resolves the path
    via `app_handle.path().app_data_dir()`.
 4. **Logger backend.** `tauri-plugin-log` is registered on the Tauri
    builder; in a headless world it would not exist.
+5. **PACS cache / SCP allow-list.** `store/pacs_cache.rs` persists the
+   services catalog in the plugin-store, and the receiver reads it at
+   association time to build its `CallerPolicy`. Removing the
+   plugin-store therefore requires a new home for this cache.
 
-The refactor's job is to make those four coupling points pluggable and
+The refactor's job is to make those five coupling points pluggable and
 to introduce profile-aware container types around the existing logic.
-The existing DICOM, TUS, and SQLite code is largely correct and can be
-re-used in place once it stops reaching for `AppHandle`.
+The existing DICOM, TUS, SQLite, retry, and disk-guard code is largely
+correct and can be re-used in place once it stops reaching for
+`AppHandle`.
 
 ## Plan of Work
 
@@ -424,12 +588,16 @@ Primitive crates (vendor-neutral; no Aurabox or Tauri knowledge):
   `tokio::net::TcpListener` accept loop and the `dicom_ul` PDU
   parsing currently in `receiver/dicom_server.rs`. Exposes a
   `GatewayBuilder` that takes the bind address, AE title,
-  abstract-syntax list, and a set of trait-shaped handlers
-  (`CStoreHandler`, `CFindHandler`, `CMoveHandler`, `CEchoHandler`).
+  abstract-syntax list, an association `AccessPolicy` (the
+  generalisation of today's `CallerPolicy`), and a set of
+  trait-shaped handlers (`CStoreHandler`, `CFindHandler`,
+  `CMoveHandler`, `CEchoHandler`).
 - `crates/study-pipeline` — Per-profile worker pool. The 10-second
   debounce, the bounded `mpsc` queue, the N upload-worker tasks.
   Takes a `Shipper` callback (`async fn ship(study_uid, &Path)
-  -> Result<()>`) and a study directory provider.
+  -> Result<()>`) and a study directory provider. Also hosts the
+  pure backoff arithmetic (`RetryPolicy`, `next_retry_delay`) moved
+  from `transmitter/backoff.rs`.
 - `crates/tus-uploader` — Chunked TUS client. Exposes a
   `TusClient::new(endpoint, token, chunk_size_mb,
   Vec<(metadata_key, metadata_value)>)` and an
@@ -533,10 +701,25 @@ share a JSON file.
         #[serde(default)]
         pub telemetry: Option<TelemetryConfig>,
 
+        /// Disk-space thresholds for the (shared) storage volume.
+        /// Global, not per-profile: the volume is shared, so the
+        /// lowest threshold would win anyway. Defaults match 1.9
+        /// behaviour: warn below 2048 MB, pause uploads below 512 MB.
+        #[serde(default)]
+        pub disk: DiskConfig,
+
         /// One or more profiles. Must be non-empty. Each profile's
         /// `id` must be unique. No two profiles may bind the same
         /// `(local.ip, local.port)` pair.
         pub profiles: Vec<ProfileConfig>,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct DiskConfig {
+        #[serde(default = "default_disk_warn_mb")]     // 2048
+        pub warn_mb: u64,
+        #[serde(default = "default_disk_critical_mb")] // 512
+        pub critical_mb: u64,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -570,6 +753,33 @@ share a JSON file.
         /// Defaults to false.
         #[serde(default)]
         pub delete_after_success: bool,
+
+        /// Accept associations from ANY calling AE title and store
+        /// received instances locally WITHOUT queueing them for
+        /// upload. Diagnostic use only; defaults to false. When
+        /// false, the profile's SCP only admits calling AE titles
+        /// present in this profile's cached Aurabox services
+        /// catalog (AURA-2296 behaviour, now per profile).
+        #[serde(default)]
+        pub permissive_mode: bool,
+
+        /// Upload retry policy. Defaults match 1.9 behaviour.
+        #[serde(default)]
+        pub retry: RetryConfig,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct RetryConfig {
+        /// Attempts before a study is marked terminally FAILED.
+        #[serde(default = "default_max_attempts")]   // 10
+        pub max_attempts: u32,
+        /// Base delay (seconds) before the first retry; grows
+        /// exponentially per attempt.
+        #[serde(default = "default_retry_base")]     // 30
+        pub base_seconds: u64,
+        /// Cap (seconds) the exponential backoff is clamped to.
+        #[serde(default = "default_retry_cap")]      // 3600
+        pub cap_seconds: u64,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -623,23 +833,58 @@ takes a `ProfileRuntime` reference (see below) instead of a flat
 the AE title is `profile.local.ae_title`. On `C-STORE` it writes files
 under `{storage_dir}/{profile.id}/{study_uid}/{series_uid}/{sop_uid}.dcm`
 and inserts/updates the `studies` row with `profile_id = profile.id`.
+When the profile has `permissive_mode: true`, the C-STORE handler
+stores the instance but skips `pipeline.enqueue` — the existing 1.9
+behaviour, now per profile.
+
+Association acceptance: the existing `CallerPolicy` (AURA-2296)
+generalises into an `AccessPolicy` trait on `GatewayConfig` in
+`dimse-gateway` — the same seam as `dicom_ul`'s `AccessControl`
+trait, which the current code already implements. `bounce-aurabox`
+provides the concrete policy: admit a calling AE title only if it
+appears in this profile's cached services catalog, or admit anyone
+when the profile is permissive. The services catalog cache moves
+from the Tauri plugin-store (`store/pacs_cache.rs`) into a new
+`pacs_services` table in `bounce.db`, keyed by `profile_id`, written
+by each profile's poller on its existing refresh cadence and on the
+explicit "Refresh" action in the UI.
 
 The shutdown channel becomes a `tokio::sync::broadcast::Sender<()>`
-held by a new `ProfileRuntime` struct (see Phase 4) so that both the
-receiver, the workers, and the poller can be cancelled in lockstep.
+held by a new `ProfileRuntime` struct (see Phase 5) so that the
+receiver, the workers, the retry scheduler, and the poller can be
+cancelled in lockstep.
 
-The database schema gains:
+The database migration for profiles has two parts. The simple part
+is additive:
 
-    ALTER TABLE studies ADD COLUMN profile_id TEXT NOT NULL DEFAULT '';
-    ALTER TABLE uploads ADD COLUMN profile_id TEXT NOT NULL DEFAULT '';
-    CREATE INDEX IF NOT EXISTS idx_studies_profile_id ON studies(profile_id);
+    ALTER TABLE upload_attempts ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default';
+    CREATE TABLE IF NOT EXISTS pacs_services (
+        profile_id TEXT NOT NULL,
+        service_id TEXT NOT NULL,
+        ae_title   TEXT NOT NULL,
+        host       TEXT NOT NULL,
+        port       INTEGER NOT NULL,
+        name       TEXT,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (profile_id, service_id)
+    );
 
-This goes into a new migration file under
-`crates/bounce-core/src/db/migrations/`. Existing rows get
-`profile_id = 'default'` (set explicitly in the migration) so older
-databases continue to round-trip; the upgraded binary writes one
-"legacy" profile shim on first boot for any existing single-config
-install (see Phase 6 / Tauri port).
+The hard part is the `studies` table: its uniqueness must change
+from `study_uid` alone to `(profile_id, study_uid)`, because the
+same study can legitimately arrive on two profiles. SQLite cannot
+alter constraints in place, so the migration rebuilds the table:
+create `studies_new` with the composite UNIQUE constraint and a
+`profile_id TEXT NOT NULL DEFAULT 'default'` column, copy all rows,
+drop `studies`, rename, and recreate indexes — all inside one
+transaction, guarded by a check that the column does not already
+exist (matching the `add_column_if_missing` idiom already used in
+`src-tauri/src/db/migrations.rs`). Existing rows get
+`profile_id = 'default'` so older databases continue to round-trip;
+the upgraded binary maps the old single-config install onto one
+"default" profile on first boot (see Phase 9 / Tauri port).
+
+This goes into the migrations module at
+`crates/bounce-aurabox/src/db/migrations.rs`.
 
 ### Phase 5: Per-profile worker pool (M5)
 
@@ -674,11 +919,44 @@ pool.
         pub async fn enqueue(&self, study_uid: String);
     }
 
+`study-pipeline` also absorbs the pure backoff math from
+`transmitter/backoff.rs` as a `backoff` module (`RetryPolicy`,
+`next_retry_delay`) — it is already free of I/O and Tauri, and any
+"Bounce for X" needs the same capped-exponential arithmetic.
+
 `bounce-aurabox` defines an `AuraboxShipper` (implements `Shipper`)
-that captures the profile's `AuraboxClient`, runs `compress_study →
-upload_init → tus_upload → upload_save → cleanup` for one study,
-and updates the database. The receiver enqueues a study UID via
-`pipeline.enqueue(study_uid)` after a successful C-STORE.
+that preserves the 1.6 upload lifecycle for one study end-to-end:
+
+1. Check the global disk guard (`DiskConfig` thresholds); if free
+   space is critical, leave the study QUEUED and return without
+   attempting (the retry scheduler re-dispatches it later).
+2. Atomically claim the study via
+   `Database::claim_study_for_upload(profile_id, study_uid, …)` —
+   eligible states IN_PROGRESS / QUEUED / RETRYING; a study already
+   claimed or terminal is skipped. This is also what makes worker
+   dispatch idempotent: the same study UID can sit in the queue
+   twice (debounce + retry scheduler racing) and only one attempt
+   runs.
+3. Run compress → `upload_init` → TUS upload → `upload_save` →
+   cleanup, then `mark_attempt_success`.
+4. On failure, `mark_upload_failed` with a `next_retry_at` computed
+   from this profile's `RetryConfig` via
+   `study_pipeline::backoff::next_retry_delay`; a study past
+   `retry.max_attempts` goes terminally FAILED. Either way an
+   `upload_attempts` audit row is written (the Transactions view is
+   built on these) and a `transactions-updated` event is emitted via
+   the `EventSink`.
+
+The receiver enqueues a study UID via `pipeline.enqueue(study_uid)`
+after the debounce window — except in permissive mode, where nothing
+is enqueued. The per-profile **retry scheduler** (today's
+`transmitter/retry_scheduler.rs`, kept in `bounce-aurabox`) scans
+every 30 seconds for studies of this profile due for an attempt
+(`find_due_for_retry` scoped by `profile_id`) and enqueues them into
+the same pipeline, so workers are the single execution path for all
+uploads — debounced, retried, and manual alike. The process-global
+static `UPLOAD_SEMAPHORE` (`MAX_CONCURRENT_UPLOADS = 2`) is deleted;
+the profile's `workers` count is the concurrency limit.
 
 `ProfileRuntime` becomes:
 
@@ -692,15 +970,22 @@ and updates the database. The receiver enqueues a study UID via
     }
 
 `ProfileRuntime::start()` spawns: the `dimse-gateway` accept loop
-(with the three Aurabox-aware handlers), the `study-pipeline` worker
-pool, and the per-profile Aurabox poller (`aurabox-client` calling
-`fetch_pending_jobs` / `fetch_pending_queries` on this profile's
-API key every `aurabox.poll_interval_secs`). All spawned tasks
-subscribe to the broadcast shutdown channel.
+(with the three Aurabox-aware handlers and the per-profile
+`AccessPolicy`), the `study-pipeline` worker pool, the per-profile
+retry scheduler, and the per-profile Aurabox poller
+(`aurabox-client` calling `fetch_pending_jobs` /
+`fetch_pending_queries` on this profile's API key every
+`aurabox.poll_interval_secs`). All spawned tasks subscribe to the
+broadcast shutdown channel.
 
 The Aurabox-specific `MAX_CONCURRENT_SENDS` constant in
 `query/poller.rs` becomes the per-profile
 `max_concurrent_sends` field (default 2) and is plumbed through.
+
+The Tauri commands `retry_study` and `cancel_retry` are reworked to
+resolve the study's profile from its `profile_id` column and then
+enqueue into (or mark STOPPED in) that profile's pipeline; today
+they construct a `Transmission` ad hoc.
 
 ### Phase 6: Extract the TUS primitive (M6)
 
@@ -826,18 +1111,28 @@ The Tauri front-end:
 - Settings page is rewritten to render a list of profiles instead of a
   single set of fields. Each profile row exposes the local endpoint
   fields, the Aurabox API key, worker count, debounce window, TUS
-  chunk size, poll interval, and delete-after-success toggle.
-  Validation runs client-side and is re-checked by the backend
-  before save.
+  chunk size, poll interval, delete-after-success toggle, the
+  permissive-mode toggle (with its existing destructive-warning
+  banner, now scoped to the profile row), and the retry policy
+  fields. Global (non-profile) settings — disk thresholds, telemetry
+  / send-logs, `start_receiver_on_start`, start-on-login, automatic
+  updates — render in a separate "Application" section. Validation
+  runs client-side and is re-checked by the backend before save.
 - Save action calls a new IPC command, `save_config(BounceConfig)`,
   which writes `bounce.json` atomically (write-to-temp + rename) and
   then triggers `Runtime::reload()` on the backend. The runtime
   supports reloading by stopping any profiles whose binding has
   changed, starting any new ones, and leaving alone any profiles
   whose `local` and `aurabox` blocks are unchanged so the worker
-  pool and any in-flight uploads survive.
-- "Studies" and "Logs" pages get a profile filter dropdown driven by
-  the `profile_id` column in the database.
+  pool and any in-flight uploads survive. This generalises the 1.9
+  behaviour where saving receiver-affecting settings restarts the
+  receiver automatically.
+- "Studies", "Transactions", and "Logs" pages get a profile filter
+  dropdown driven by the `profile_id` column in the database. The
+  Transactions view's Retry and Stop buttons keep working; they now
+  route through the owning profile's pipeline (see Phase 5).
+- The dashboard status summary aggregates across profiles, with a
+  per-profile breakdown row per profile.
 
 This phase is the largest UI change, and the test plan splits it from
 the headless work so each can be validated independently.
@@ -875,8 +1170,11 @@ working directory is the repository root unless otherwise stated.
     rustc --version
 
 Expected: clean working tree (or only the documentation changes in this
-plan), recent commits including the 1.5.0 release tag, Cargo
+plan), recent commits including the 1.9.1 release tag, Cargo
 ≥ 1.80 (matching `rust-version = "1.80"` in `src-tauri/Cargo.toml`).
+If the version has moved past 1.9.1, re-verify the Context and
+Orientation section against the code before starting — that section
+was last verified against 1.9.1 (2026-06-10).
 
 ### Step 2: Build & test the existing code as a regression baseline
 
@@ -939,7 +1237,7 @@ back-reference from a primitive into a product crate).
 
 ### Step 5: Implement the new config schema (M3)
 
-Add `bounce-core::config::{BounceConfig, ProfileConfig, ...}` with
+Add `bounce_aurabox::config::{BounceConfig, ProfileConfig, ...}` with
 `serde` derive and a `validate()` method. Add round-trip tests that
 load `crates/bounce-cli/examples/bounce.example.json` and assert the
 expected profile count, IDs, and validation results. Sample contents:
@@ -948,6 +1246,7 @@ expected profile count, IDs, and validation results. Sample contents:
       "version": "2",
       "storage_dir": "/var/lib/bounce",
       "telemetry": null,
+      "disk": { "warn_mb": 2048, "critical_mb": 512 },
       "profiles": [
         {
           "id": "clinic-a",
@@ -961,7 +1260,9 @@ expected profile count, IDs, and validation results. Sample contents:
           "workers": 4,
           "max_concurrent_sends": 2,
           "debounce_secs": 10,
-          "delete_after_success": true
+          "delete_after_success": true,
+          "permissive_mode": false,
+          "retry": { "max_attempts": 10, "base_seconds": 30, "cap_seconds": 3600 }
         },
         {
           "id": "clinic-b",
@@ -975,7 +1276,9 @@ expected profile count, IDs, and validation results. Sample contents:
           "workers": 2,
           "max_concurrent_sends": 2,
           "debounce_secs": 15,
-          "delete_after_success": false
+          "delete_after_success": false,
+          "permissive_mode": false,
+          "retry": { "max_attempts": 5, "base_seconds": 60, "cap_seconds": 1800 }
         }
       ]
     }
@@ -984,31 +1287,50 @@ expected profile count, IDs, and validation results. Sample contents:
 
 Lift the accept loop, PDU parsing, and ServerAssociationOptions
 construction from `bounce-aurabox/src/receiver/dicom_server.rs`
-into `crates/dimse-gateway/src/`. Define the `CStoreHandler`,
-`CFindHandler`, `CMoveHandler`, `CEchoHandler` traits. Implement
-them concretely in `bounce-aurabox::receiver::handlers` against the
-existing Aurabox-aware behaviour. Write the SQLite migration
-described in Phase 4 (`ALTER TABLE studies ADD COLUMN profile_id …`).
-Confirm:
+into `crates/dimse-gateway/src/`, including the `AccessPolicy` hook
+(generalising the existing `CallerPolicy` / `AccessControl`
+implementation — its unit tests move with it). Define the
+`CStoreHandler`, `CFindHandler`, `CMoveHandler`, `CEchoHandler`
+traits. Implement them concretely in
+`bounce-aurabox::receiver::handlers` against the existing
+Aurabox-aware behaviour, including the permissive-mode store-only
+path. Write the SQLite migrations described in Phase 4: the
+`studies` table rebuild for the composite `(profile_id, study_uid)`
+uniqueness, the additive `upload_attempts.profile_id` column, and
+the new `pacs_services` table that replaces the plugin-store PACS
+cache. Confirm:
 
     cd src-tauri && cargo test -p dimse-gateway
     cd src-tauri && cargo test -p bounce-aurabox receiver
+    cd src-tauri && cargo test -p bounce-aurabox migrations
 
-Receiver tests pass with the new shape. Legacy single-profile
+Receiver and migration tests pass with the new shape, including a
+test that migrates a pre-2.0 database fixture (with populated
+`studies` and `upload_attempts` rows) and asserts no rows are lost
+and all rows carry `profile_id = 'default'`. Legacy single-profile
 behaviour is reproduced exactly when `profiles` has length 1.
 
 ### Step 7: Move the worker pool into `study-pipeline` (M5)
 
 Lift the debounce + worker shape from
 `bounce-aurabox/src/transmitter/transmission.rs` into
-`crates/study-pipeline/src/`. Define the `Shipper` trait. Write
-`AuraboxShipper` in `bounce-aurabox/src/transmitter/`. Verify with a
+`crates/study-pipeline/src/`, and move the pure backoff functions
+from `bounce-aurabox/src/transmitter/backoff.rs` into
+`study_pipeline::backoff` (their unit tests move with them). Define
+the `Shipper` trait. Write `AuraboxShipper` in
+`bounce-aurabox/src/transmitter/`, preserving the claim → attempt →
+record lifecycle from today's `attempt_upload` (see Phase 5). Delete
+the `UPLOAD_SEMAPHORE` static. Rework the retry scheduler to scan
+per profile and enqueue into the profile's pipeline. Verify with a
 new integration test in `crates/study-pipeline/tests/worker_pool.rs`
 that two studies pushed back-to-back into a 2-worker pool are
 processed concurrently (measured by start/finish timestamps in a stub
 `Shipper` that sleeps for 500 ms). The test must fail if work is
 serialised. The same crate's `examples/in_memory_shipper.rs` is the
-M9 vendor-neutrality probe.
+M9 vendor-neutrality probe. Also verify in `bounce-aurabox` that the
+existing retry tests still pass: a failing shipper produces an
+`upload_attempts` row, sets `next_retry_at` per the profile's
+`RetryConfig`, and goes terminally FAILED after `max_attempts`.
 
 ### Step 8: Extract the TUS uploader (M6)
 
@@ -1076,7 +1398,7 @@ see a transcript that matches.
 
 ### M1 acceptance
 
-- `cd src-tauri && cargo build` builds all three workspace members.
+- `cd src-tauri && cargo build` builds all seven workspace members.
 - `cd src-tauri && cargo test` reports the same number of tests
   passing as before the workspace split.
 
@@ -1108,10 +1430,22 @@ see a transcript that matches.
 ### M4 acceptance
 
 - Running the existing Rust receiver tests under the new
-  `ReceiverServer` path passes with no behavioural regression.
+  gateway-handler path passes with no behavioural regression,
+  including the `CallerPolicy`/`AccessPolicy` tests (accept-any
+  admits everyone; an empty registered list rejects everyone; a
+  registered caller is admitted; an unregistered caller is rejected
+  even when others are registered).
 - A fresh `bounce.db` written by the new code shows a `profile_id`
-  column on `studies` and `uploads` (`sqlite3 bounce.db ".schema
-  studies"`).
+  column on `studies` and `upload_attempts`, a composite UNIQUE on
+  `studies(profile_id, study_uid)`, and the new `pacs_services`
+  table (`sqlite3 bounce.db ".schema studies"` /
+  `".schema pacs_services"`).
+- The pre-2.0 fixture migration test passes: row counts are
+  unchanged across the `studies` table rebuild, and every migrated
+  row carries `profile_id = 'default'`.
+- Two profiles can store the *same* study UID concurrently and both
+  rows exist, distinguished by `profile_id` (regression test for the
+  composite-key change).
 
 ### M5 acceptance
 
@@ -1188,8 +1522,14 @@ Then, after `storescu -aec BOUNCE 127.0.0.1 11112 sample.dcm`:
   "write to `bounce.json.tmp` → fsync → rename" semantics. A crash
   mid-write therefore leaves either the old or the new file intact,
   never a half-written one.
-- Database migrations are additive (`ALTER TABLE ... ADD COLUMN`) and
-  bracketed by SQLx's migration tracker so re-running them is a no-op.
+- Database migrations are guarded so re-running them is a no-op: the
+  additive ones use the existing `add_column_if_missing` /
+  `CREATE TABLE IF NOT EXISTS` idiom, and the `studies` table rebuild
+  (needed for the composite `(profile_id, study_uid)` uniqueness)
+  first checks whether `profile_id` already exists on `studies` and
+  skips entirely if it does. The rebuild runs inside a single
+  transaction, so a crash mid-migration rolls back to the pre-2.0
+  schema rather than leaving a half-renamed table.
 - `bounced` accepts `SIGTERM` and `SIGINT` and exits cleanly after
   all in-flight uploads finish or time out (configurable via
   `BOUNCE_SHUTDOWN_TIMEOUT_SECS`, default 30).
@@ -1236,6 +1576,18 @@ In `crates/dimse-gateway/src/lib.rs`:
         pub promiscuous: bool,
         pub max_pdu_length: u32,
     }
+
+    /// Decides whether to admit an incoming association. Generalises
+    /// the existing `CallerPolicy` (AURA-2296); product crates supply
+    /// an implementation that consults their own registry. The
+    /// built-in `AcceptAny` admits everyone (used by permissive mode
+    /// and the echo_only example).
+    pub trait AccessPolicy: Send + Sync + 'static {
+        fn admit(&self, calling_ae_title: &str, called_ae_title: &str)
+            -> Result<(), RejectReason>;
+    }
+
+    pub struct AcceptAny;
 
     #[async_trait::async_trait]
     pub trait CStoreHandler: Send + Sync + 'static {
@@ -1294,6 +1646,22 @@ In `crates/study-pipeline/src/lib.rs`:
         ) -> Self;
         pub async fn enqueue(&self, study_uid: String);
     }
+
+In `crates/study-pipeline/src/backoff.rs` (moved verbatim from
+`src-tauri/src/transmitter/backoff.rs`, tests included):
+
+    pub struct RetryPolicy {
+        pub max_attempts: u32,
+        pub base_delay: Duration,
+        pub cap: Duration,
+    }
+
+    impl RetryPolicy {
+        pub fn should_retry(&self, attempt_no: u32) -> bool;
+    }
+
+    pub fn next_retry_delay(attempt_no: u32, policy: &RetryPolicy)
+        -> Duration;
 
 In `crates/tus-uploader/src/lib.rs`:
 
@@ -1377,12 +1745,15 @@ External crates added:
 - `tokio` continues to be a `full` features dependency in
   `bounce-aurabox`; the primitive crates pull only the subset of
   Tokio features they actually use (`net`, `sync`, `time`, `fs`).
+- `fs2` (already a dependency, used by the disk guard) moves with
+  the disk-check helper into `bounce-aurabox`.
 
 Crates removed from `bounce-aurabox` (still used by `bounce-tauri`):
 
 - `tauri`, `tauri-plugin-store`, `tauri-plugin-log`,
   `tauri-plugin-process`, `tauri-plugin-shell`, `tauri-plugin-dialog`,
-  `tauri-plugin-opener`, `tauri-plugin-os`, `tauri-plugin-updater`.
+  `tauri-plugin-opener`, `tauri-plugin-os`, `tauri-plugin-updater`,
+  `tauri-plugin-single-instance`, `tauri-plugin-autostart`.
 
 What is deliberately **not** present:
 
@@ -1419,3 +1790,52 @@ remain re-readable top-to-bottom as a single self-contained guide.
   `chunk_size_mb`, and `poll_interval_secs`. Sample JSON, Decision
   Log, Plan of Work, Concrete Steps, Validation, and Interfaces are
   all updated.
+
+- 2026-06-10 — Re-baselined against the current codebase. The plan
+  was drafted against ~1.5.0; the repo is now at 1.9.1 and several
+  subsystems landed in between that the plan must preserve rather
+  than accidentally regress:
+  - **Upload retry/recovery (1.6):** status machine on `studies`
+    (`attempts`, `next_retry_at`, `last_error`), per-attempt
+    `upload_attempts` audit table, pure backoff module
+    (`transmitter/backoff.rs`), a 30-second DB-scanning retry
+    scheduler, a process-global two-permit upload semaphore, and a
+    disk-space guard (`store/disk.rs`, `fs2`) with warn/critical
+    thresholds. The plan now: moves the pure backoff math into
+    `study-pipeline`; keeps the retry scheduler and disk guard in
+    `bounce-aurabox` (per-profile scheduler, global disk
+    thresholds); folds the claim/attempt/record lifecycle into
+    `AuraboxShipper`; and deletes the global semaphore in favour of
+    per-profile worker counts. Retry policy becomes a per-profile
+    `retry` block in the schema; disk thresholds a global `disk`
+    block.
+  - **Transactions view (1.7):** new commands (`retry_study`,
+    `cancel_retry`, `study_upload_attempts`,
+    `current_upload_attempts`, `dashboard_stats`, bulk operations)
+    and `transactions-updated` events. The UI-port phase now scopes
+    the Transactions view per profile and routes Retry/Stop through
+    the owning profile's pipeline.
+  - **AE-title allow-listing (AURA-2296, 1.7):** the receiver now
+    rejects callers not present in the cached Aurabox services
+    catalog via a `CallerPolicy` implementing `dicom_ul`'s
+    `AccessControl`. The plan generalises this as an `AccessPolicy`
+    hook on `dimse-gateway` and makes the allow-list per-profile,
+    moving the PACS cache from the plugin-store into a
+    `pacs_services` DB table.
+  - **Permissive mode (1.9):** per the new `permissive_mode` setting
+    the SCP accepts any caller and stores without queueing uploads;
+    now a per-profile boolean in the schema.
+  - **Lifecycle hardening (1.8–1.9.1):** graceful receiver shutdown,
+    `start_receiver_on_start`, tray/close-to-tray fixes,
+    single-instance plugin, autostart plugin, automatic updates.
+    The plan records that single-instance stays Tauri-side and
+    `bounced` instead fails fast on port-bind conflict.
+  - The `studies` uniqueness constraint must become composite
+    `(profile_id, study_uid)` — the same study UID can arrive on two
+    profiles — which makes the migration a guarded table rebuild
+    rather than a simple `ADD COLUMN`; the earlier decision-log
+    entry assuming additive-only migration is superseded in place.
+  Context and Orientation was rewritten against 1.9.1, the schema
+  and sample JSON gained `permissive_mode`/`retry`/`disk`, and the
+  acceptance criteria gained migration-fixture and same-study-UID
+  regression tests.
