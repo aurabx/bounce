@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.2] - 2026-09-25
+
+### Internal
+
+- Refreshed frontend (npm) dependencies to the latest versions within their existing semver ranges, including Next.js 15.5.26 and the Tauri JS plugins.
+- Updated the `tauri-plugin-updater` (2.12.0) and `tauri-plugin-log` (2.9.2) Rust crates to match their JS counterparts, as Tauri refuses to build with mismatched plugin minor versions.
+
 ## [1.9.1] - 2026-06-09
 
 ### Fixed
