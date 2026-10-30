@@ -1,0 +1,169 @@
+{
+  "agents": [
+    "claude",
+    "opencode",
+    "codex",
+    "cursor"
+  ],
+  "contexts": [
+    "aurabox"
+  ],
+  "custom_agents": [],
+  "custom_commands": [],
+  "custom_skills": [
+    {
+      "content": "---\nname: bounce-release\ndescription: \"Prepare and tag a release for the Bounce project. Use when the user asks to create a release, tag a release, cut a release, or bump the version. Handles the full release workflow: determining the next semver tag, bumping versions across all three config files atomically, drafting a changelog entry from commits since the last tag, updating CHANGELOG.md, committing, and creating an annotated git tag. Triggers on 'release', 'tag a release', 'cut a release', 'prepare release', 'new release', 'bump version', or any request to version or ship the current codebase.\"\n---\n\n# Bounce Release Workflow\n\n## Tag Format\n\nTags follow the pattern `aurabox-bounce-vX.Y.Z` where `X.Y.Z` is a semantic\nversion number.\n\nExamples: `aurabox-bounce-v1.2.1`, `aurabox-bounce-v1.3.0`, `aurabox-bounce-v2.0.0`\n\n**Always include the `aurabox-bounce-v` prefix. Never use bare `vX.Y.Z` or\ndate-based tags.**\n\nSemver rules:\n- **Patch** (`Z`) — bug fixes, internal changes, no new user-facing features\n- **Minor** (`Y`) — new features, backward-compatible\n- **Major** (`X`) — breaking changes or major milestones\n\n## Workflow\n\n### 1. Check working tree state\n\n```bash\ngit status --porcelain\n```\n\nIf there are uncommitted changes **unrelated** to the release, warn the user\nand ask whether to proceed. Do not silently include stray changes in the\nrelease commit.\n\n### 2. Determine the current version and next tag\n\n```bash\n# Current version from package.json (source of truth)\nnode -p \"require('./package.json').version\"\n\n# Most recent Bounce release tag\ngit tag --list 'aurabox-bounce-v*' --sort=-version:refname | head -1\n```\n\nIf the user has not specified a version, propose one based on the commits\nsince the last tag (patch for fixes/chores, minor for features, major for\nbreaking changes) and ask for confirmation before proceeding.\n\n### 3. Collect commits since the last release tag\n\n```bash\nLAST_TAG=$(git tag --list 'aurabox-bounce-v*' --sort=-version:refname | head -1)\n\nif [ -n \"$LAST_TAG\" ]; then\n    git log \"${LAST_TAG}..HEAD\" --oneline --no-merges\nelse\n    git log --oneline --no-merges | tail -50\nfi\n```\n\n### 4. Draft the changelog entry\n\nGroup commits into sections using these headings (omit empty sections):\n\n- **Added** — new features, new commands, new UI pages\n- **Changed** — behaviour changes, refactors, dependency upgrades, config changes\n- **Fixed** — bug fixes\n- **Internal** — tests, CI, developer tooling, documentation, logging\n\nFormat:\n\n```markdown\n## [X.Y.Z] - YYYY-MM-DD\n\n### Added\n\n- Brief description of the new capability\n\n### Fixed\n\n- Brief description of what was broken and how it was resolved\n```\n\nRules for drafting:\n- Combine related commits into a single bullet where appropriate\n- Omit pure merge commits and version-bump commits\n- Keep each bullet to one concise sentence\n- Use past tense (\"Added\", \"Fixed\", \"Updated\") — match the existing entries in\n  CHANGELOG.md for style consistency\n- Do not include commit hashes in the changelog\n\n### 5. Prepend the entry to CHANGELOG.md\n\nInsert the new entry **after** the `# Changelog` heading and the blank line\nthat follows it, and **before** the previous entry. Do not alter any existing\nentries.\n\nExample structure after insertion:\n\n```\n# Changelog\n\nAll notable changes to this project will be documented in this file.\n\n## [1.3.0] - 2026-03-13\n\n### Added\n\n- DICOM C-MOVE support for pulling studies from remote PACS\n\n## [1.2.1] - 2026-02-21\n...\n```\n\n### 6. Bump the version atomically\n\nUse the Makefile helper to update `package.json`, `src-tauri/Cargo.toml`, and\n`src-tauri/tauri.conf.json` in one step:\n\n```bash\nmake version V=X.Y.Z\n```\n\nVerify all three files reflect the new version before continuing:\n\n```bash\nnode -p \"require('./package.json').version\"\ngrep '^version' src-tauri/Cargo.toml\ngrep '\"version\"' src-tauri/tauri.conf.json\n```\n\n### 7. Stage and commit the release changes\n\n```bash\ngit add CHANGELOG.md package.json src-tauri/Cargo.toml src-tauri/tauri.conf.json\ngit commit -m \"release: bump version to X.Y.Z\"\n```\n\nDo **not** use `--no-verify`. If the pre-commit hook fails, fix the issue and\nretry — do not amend.\n\n### 8. Create an annotated tag\n\n```bash\ngit tag -a \"aurabox-bounce-vX.Y.Z\" -m \"Release aurabox-bounce-vX.Y.Z\"\n```\n\n### 9. Write a short release summary\n\nAfter the tag is created, output a brief human-readable summary covering:\n\n- **Version**: the new tag\n- **Release date**: today's date\n- **What's new**: 2–5 bullet points drawn from the changelog entry\n- **Commit**: the SHA the tag points to (`git rev-parse HEAD`)\n- **Next step**: remind the user to push with `git push && git push --tags`\n\nExample summary format:\n\n```\nRelease aurabox-bounce-v1.3.0 — 2026-03-13\n\n  - Added DICOM C-MOVE support for pulling studies from remote PACS\n  - Added backend log streaming into the app UI\n  - Fixed C-FIND command PDU ordering when responding to remote queries\n\nTagged at: abc1234\nPush with: git push && git push --tags\n```\n\n## Rules\n\n- **Never** force-push or delete an existing tag without explicit user\n  instruction.\n- **Never** skip hooks (`--no-verify`).\n- **Never** modify `CHANGELOG.md` entries from previous releases.\n- **Always** use `make version V=x.y.z` — do not edit the three version files\n  individually to avoid drift.\n- **Always** confirm the proposed version with the user before making any\n  changes if they did not specify one.\n- **Always** verify version consistency across all three files after running\n  `make version`.\n- If `Cargo.lock` is dirty after a version bump, stage it too — the lock file\n  must stay consistent with `Cargo.toml`.\n",
+      "name": "bounce-release"
+    },
+    {
+      "content": "---\nname: Next linear task\ndescription: When asked to work on the next linear task.\n---\n\nAccess Linear using MCP for the Aurabox workspace, find the Engineering team, and work on the next issue in Selected tagged with \"[System] Bounce\".\n\nMove the task to \"In progress\", when it's complete, move to \"In review\" and stop.\n",
+      "name": "linear-next-task"
+    }
+  ],
+  "description": "",
+  "file_rules": {
+    "_project": [
+      "automatic-service",
+      "automatic-general",
+      "automatic-process",
+      "automatic-code",
+      "automatic-prose",
+      "local-git-rules",
+      "thinking-effort",
+      "automatic-workflow",
+      "local-rules"
+    ]
+  },
+  "id": "f540e3fc-e2ef-4a14-aa1d-ed8752ff24ba",
+  "instruction_mode": "unified",
+  "instructions_index_mode": false,
+  "manage_gitignore": false,
+  "mcp_servers": [
+    "automatic",
+    "nightowl",
+    "github",
+    "aurabox-teams",
+    "spacelift",
+    "better-stack",
+    "sentry-aura",
+    "linear-aurabox"
+  ],
+  "name": "bounce",
+  "profile_contributions": {
+    "Aurabox": {
+      "mcp_servers": [
+        "aurabox-teams",
+        "spacelift",
+        "better-stack",
+        "sentry-aura",
+        "nightowl",
+        "linear-aurabox"
+      ],
+      "skills": [
+        "aurabox-rest-api"
+      ]
+    },
+    "General": {
+      "agents": [
+        "claude",
+        "codex",
+        "cursor",
+        "opencode"
+      ],
+      "mcp_servers": [
+        "github"
+      ],
+      "rules": [
+        "automatic-service",
+        "automatic-process",
+        "automatic-code",
+        "automatic-general",
+        "automatic-prose",
+        "local-git-rules",
+        "thinking-effort",
+        "automatic-workflow",
+        "local-rules"
+      ]
+    }
+  },
+  "profiles": [
+    "General",
+    "Aurabox"
+  ],
+  "providers": [],
+  "skill_collections": {
+    "automatic": "automatic-skills",
+    "automatic-code-review": "automatic-skills",
+    "automatic-debugging": "automatic-skills",
+    "automatic-documentation": "automatic-skills",
+    "automatic-performance": "automatic-skills",
+    "automatic-refactoring": "automatic-skills",
+    "automatic-security-review": "automatic-skills",
+    "automatic-testing": "automatic-skills",
+    "codex-plans": "In development"
+  },
+  "skill_sources": {
+    "automatic": {
+      "id": "automatic/automatic-app/automatic",
+      "kind": "bundled",
+      "source": "automatic/automatic-app"
+    },
+    "automatic-code-review": {
+      "id": "automatic/automatic-app/automatic-code-review",
+      "kind": "bundled",
+      "source": "automatic/automatic-app"
+    },
+    "automatic-debugging": {
+      "id": "automatic/automatic-app/automatic-debugging",
+      "kind": "bundled",
+      "source": "automatic/automatic-app"
+    },
+    "automatic-documentation": {
+      "id": "automatic/automatic-app/automatic-documentation",
+      "kind": "bundled",
+      "source": "automatic/automatic-app"
+    },
+    "automatic-performance": {
+      "id": "automatic/automatic-app/automatic-performance",
+      "kind": "bundled",
+      "source": "automatic/automatic-app"
+    },
+    "automatic-refactoring": {
+      "id": "automatic/automatic-app/automatic-refactoring",
+      "kind": "bundled",
+      "source": "automatic/automatic-app"
+    },
+    "automatic-security-review": {
+      "id": "automatic/automatic-app/automatic-security-review",
+      "kind": "bundled",
+      "source": "automatic/automatic-app"
+    },
+    "automatic-testing": {
+      "id": "automatic/automatic-app/automatic-testing",
+      "kind": "bundled",
+      "source": "automatic/automatic-app"
+    },
+    "git-commit": {
+      "id": "github/awesome-copilot/git-commit",
+      "kind": "github",
+      "source": "github/awesome-copilot"
+    }
+  },
+  "skills": [
+    "git-commit",
+    "automatic-code-review",
+    "automatic-debugging",
+    "automatic-documentation",
+    "automatic-performance",
+    "automatic-refactoring",
+    "automatic-security-review",
+    "automatic-testing",
+    "automatic",
+    "codex-plans",
+    "nightowl",
+    "aurabox-rest-api"
+  ],
+  "tools": [
+    "dev-servers"
+  ]
+}

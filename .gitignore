@@ -42,3 +42,4 @@ keys/*
 /.agents/
 /.claude/
 .codex/
+/.cursor

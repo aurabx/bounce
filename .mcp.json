@@ -1,24 +1,53 @@
 {
   "mcpServers": {
-    "Sentry": {
+    "aurabox-teams": {
       "args": [
         "mcp-proxy",
-        "Sentry"
+        "aurabox-teams"
       ],
-      "command": "/Applications/Automatic.app/Contents/MacOS/automatic"
+      "command": "/usr/local/bin/automatic"
     },
     "automatic": {
       "args": [
         "mcp-serve"
       ],
-      "command": "/Applications/Automatic.app/Contents/MacOS/automatic",
+      "command": "/usr/local/bin/automatic",
       "env": {
-        "AUTOMATIC_PROJECT": "bounce"
+        "AUTOMATIC_PROJECT": "f540e3fc-e2ef-4a14-aa1d-ed8752ff24ba"
       }
+    },
+    "better-stack": {
+      "args": [
+        "mcp-proxy",
+        "better-stack"
+      ],
+      "command": "/usr/local/bin/automatic"
+    },
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/"
+    },
+    "linear-aurabox": {
+      "args": [
+        "mcp-proxy",
+        "linear-aurabox"
+      ],
+      "command": "/usr/local/bin/automatic"
     },
     "nightowl": {
       "type": "http",
       "url": "http://127.0.0.1:7300/mcp"
+    },
+    "sentry-aura": {
+      "args": [
+        "mcp-proxy",
+        "sentry-aura"
+      ],
+      "command": "/usr/local/bin/automatic"
+    },
+    "spacelift": {
+      "type": "http",
+      "url": "https://<account-name>.app.spacelift.io/mcp"
     }
   }
 }
