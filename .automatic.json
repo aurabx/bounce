@@ -31,7 +31,9 @@
       "local-git-rules",
       "thinking-effort",
       "automatic-workflow",
-      "local-rules"
+      "local-rules",
+      "local-long-running-work",
+      "ethics"
     ]
   },
   "id": "f540e3fc-e2ef-4a14-aa1d-ed8752ff24ba",
@@ -82,7 +84,9 @@
         "local-git-rules",
         "thinking-effort",
         "automatic-workflow",
-        "local-rules"
+        "local-rules",
+        "local-long-running-work",
+        "ethics"
       ]
     }
   },
