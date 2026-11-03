@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Internal
+
+- Bumped Next.js from 15.5.26 to 15.5.29 (November 2026 security release) and aligned `eslint-config-next` to 15.5.29. The UI remains a static export (`output: 'export'`), so the patched server-side paths are not used at runtime, but the lockfile now matches the patched 15.x line.
+
 ## [1.9.2] - 2026-09-25
 
 ### Internal
