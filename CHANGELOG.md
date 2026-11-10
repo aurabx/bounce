@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - Fixed the release build failing with "Found version mismatched Tauri packages". CI installs frontend dependencies with `yarn install` and no `yarn.lock`, so the `@tauri-apps/plugin-*` packages floated to newer minors than the Rust crates pinned in `Cargo.lock`. The plugin ranges in `package.json` are now capped (`~`) to the minors the Rust crates use.
+- Fixed the Linux release build failing with "duplicate file entry" for `icons/icon.ico`. The file was listed in `bundle.resources` both by name and through the `icons/**/*` glob, which newer Tauri CLI versions reject. The explicit entry was removed; the glob still bundles the icon at the same path.
 
 ### Internal
 
