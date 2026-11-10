@@ -51,108 +51,11 @@
     "linear-aurabox"
   ],
   "name": "bounce",
-  "profile_contributions": {
-    "Aurabox": {
-      "mcp_servers": [
-        "aurabox-teams",
-        "spacelift",
-        "better-stack",
-        "sentry-aura",
-        "nightowl",
-        "linear-aurabox"
-      ],
-      "skills": [
-        "aurabox-rest-api"
-      ]
-    },
-    "General": {
-      "agents": [
-        "claude",
-        "codex",
-        "cursor",
-        "opencode"
-      ],
-      "mcp_servers": [
-        "github"
-      ],
-      "rules": [
-        "automatic-service",
-        "automatic-process",
-        "automatic-code",
-        "automatic-general",
-        "automatic-prose",
-        "local-git-rules",
-        "thinking-effort",
-        "automatic-workflow",
-        "local-rules",
-        "local-long-running-work",
-        "ethics"
-      ]
-    }
-  },
   "profiles": [
     "General",
     "Aurabox"
   ],
   "providers": [],
-  "skill_collections": {
-    "automatic": "automatic-skills",
-    "automatic-code-review": "automatic-skills",
-    "automatic-debugging": "automatic-skills",
-    "automatic-documentation": "automatic-skills",
-    "automatic-performance": "automatic-skills",
-    "automatic-refactoring": "automatic-skills",
-    "automatic-security-review": "automatic-skills",
-    "automatic-testing": "automatic-skills",
-    "codex-plans": "In development"
-  },
-  "skill_sources": {
-    "automatic": {
-      "id": "automatic/automatic-app/automatic",
-      "kind": "bundled",
-      "source": "automatic/automatic-app"
-    },
-    "automatic-code-review": {
-      "id": "automatic/automatic-app/automatic-code-review",
-      "kind": "bundled",
-      "source": "automatic/automatic-app"
-    },
-    "automatic-debugging": {
-      "id": "automatic/automatic-app/automatic-debugging",
-      "kind": "bundled",
-      "source": "automatic/automatic-app"
-    },
-    "automatic-documentation": {
-      "id": "automatic/automatic-app/automatic-documentation",
-      "kind": "bundled",
-      "source": "automatic/automatic-app"
-    },
-    "automatic-performance": {
-      "id": "automatic/automatic-app/automatic-performance",
-      "kind": "bundled",
-      "source": "automatic/automatic-app"
-    },
-    "automatic-refactoring": {
-      "id": "automatic/automatic-app/automatic-refactoring",
-      "kind": "bundled",
-      "source": "automatic/automatic-app"
-    },
-    "automatic-security-review": {
-      "id": "automatic/automatic-app/automatic-security-review",
-      "kind": "bundled",
-      "source": "automatic/automatic-app"
-    },
-    "automatic-testing": {
-      "id": "automatic/automatic-app/automatic-testing",
-      "kind": "bundled",
-      "source": "automatic/automatic-app"
-    },
-    "git-commit": {
-      "id": "github/awesome-copilot/git-commit",
-      "kind": "github",
-      "source": "github/awesome-copilot"
-    }
-  },
   "skills": [
     "git-commit",
     "automatic-code-review",
