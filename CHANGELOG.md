@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ## [1.9.3] - 2026-11-10
 
+### Fixed
+
+- Fixed the release build failing with "Found version mismatched Tauri packages". CI installs frontend dependencies with `yarn install` and no `yarn.lock`, so the `@tauri-apps/plugin-*` packages floated to newer minors than the Rust crates pinned in `Cargo.lock`. The plugin ranges in `package.json` are now capped (`~`) to the minors the Rust crates use.
+
 ### Internal
 
 - Bumped Next.js from 15.5.26 to 15.5.29 (November 2026 security release) and aligned `eslint-config-next` to 15.5.29. The UI remains a static export (`output: 'export'`), so the patched server-side paths are not used at runtime, but the lockfile now matches the patched 15.x line.
