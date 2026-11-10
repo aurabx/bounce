@@ -4,9 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.9.3] - 2026-11-10
+
 ### Internal
 
 - Bumped Next.js from 15.5.26 to 15.5.29 (November 2026 security release) and aligned `eslint-config-next` to 15.5.29. The UI remains a static export (`output: 'export'`), so the patched server-side paths are not used at runtime, but the lockfile now matches the patched 15.x line.
+- Bumped the `openssl` Rust crate to 0.10.78 (security update).
 
 ## [1.9.2] - 2026-09-25
 
